@@ -1,0 +1,75 @@
+"use client"
+
+import { Link as LinkIcon } from "lucide-react"
+import { DashboardCard } from "@/components/dashboard-card"
+import { cn } from "@/lib/utils"
+import type { UptimeKumaMonitor, UptimeKumaStatus } from "@/lib/uptime-kuma"
+
+const STATUS_STYLES: Record<UptimeKumaStatus, { label: string; className: string }> = {
+    up: { label: "Up", className: "bg-emerald-500" },
+    down: { label: "Down", className: "bg-red-600" },
+    pending: { label: "Pending", className: "bg-orange-500" },
+    maintenance: { label: "Maintenance", className: "bg-blue-600" },
+}
+
+function StatusBadge({ status }: { status: UptimeKumaStatus }) {
+    const style = STATUS_STYLES[status]
+    return (
+        <span
+            className={cn(
+                "inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-semibold text-white",
+                style.className
+            )}
+        >
+            {style.label}
+        </span>
+    )
+}
+
+function HeartbeatBar({ statuses }: { statuses: UptimeKumaStatus[] }) {
+    return (
+        <div className="flex items-end gap-0.5">
+            {statuses.map((status, index) => (
+                <span
+                    key={index}
+                    className={cn("h-6 w-1.5 rounded-sm", STATUS_STYLES[status].className)}
+                />
+            ))}
+        </div>
+    )
+}
+
+function MonitorUrl({ url }: { url?: string }) {
+    if (!url) return null
+
+    return (
+        <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-w-0 items-center gap-1 text-xs text-blue-100 hover:underline dark:text-slate-400"
+        >
+            <LinkIcon className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="truncate">{url}</span>
+        </a>
+    )
+}
+
+export function UptimeKumaDashboardCard({ monitor }: { monitor: UptimeKumaMonitor }) {
+    return (
+        <DashboardCard className="h-full flex flex-col gap-3 px-4 py-4">
+            <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-sm font-bold" title={monitor.name}>
+                    {monitor.name}
+                </span>
+                <StatusBadge status={monitor.status} />
+            </div>
+            <MonitorUrl url={monitor.url} />
+            <HeartbeatBar statuses={monitor.recentStatuses} />
+            <div className="flex items-center justify-between text-xs text-blue-100 dark:text-slate-400">
+                <span>現在: {monitor.currentPing !== null ? `${monitor.currentPing}ms` : "-"}</span>
+                <span>平均: {monitor.avgPing !== null ? `${monitor.avgPing}ms` : "-"}</span>
+            </div>
+        </DashboardCard>
+    )
+}

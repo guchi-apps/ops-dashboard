@@ -1,0 +1,87 @@
+import { requireSessionForPage } from "@/lib/session"
+import { MonitorCard, MonitorCardGrid } from "@/components/monitor-card"
+import { SectionHeading } from "@/components/section-heading"
+import { ServerStats } from "@/components/server-stats"
+import { Button } from "@/components/ui/button"
+import { UptimeKumaDashboardCard } from "@/components/uptime-kuma-card"
+import { fetchUptimeRobotMonitorsServer, getUptimeRobotStatusInfo } from "@/lib/uptimerobot"
+import { fetchUptimeKumaDashboardMonitors } from "@/lib/uptime-kuma"
+
+export const dynamic = "force-dynamic"
+
+async function UptimeRobotSection() {
+    const monitors = await fetchUptimeRobotMonitorsServer()
+
+    return (
+        <section className="space-y-4">
+            <SectionHeading title="UptimeRobot" />
+            {monitors.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                    UptimeRobot のモニターが取得できません。APIキーを確認してください。
+                </p>
+            ) : (
+                <MonitorCardGrid count={monitors.length}>
+                    {monitors.map((monitor) => {
+                        const status = getUptimeRobotStatusInfo(monitor.status)
+                        const ratioStr = monitor.custom_uptime_ratio || monitor.uptime_ratio || "0"
+                        const ratio = parseFloat(ratioStr.split("-")[0])
+                        return (
+                            <MonitorCard
+                                key={monitor.id}
+                                label={monitor.friendly_name}
+                                statusText={status.text}
+                                statusColor={status.color}
+                                uptimeLabel={`${ratio}% uptime (30d)`}
+                                href={monitor.url}
+                            />
+                        )
+                    })}
+                </MonitorCardGrid>
+            )}
+        </section>
+    )
+}
+
+async function UptimeKumaSection() {
+    const monitors = await fetchUptimeKumaDashboardMonitors()
+    if (monitors.length === 0) return null
+
+    return (
+        <section className="space-y-4">
+            <SectionHeading title="Uptime Kuma" />
+            <MonitorCardGrid count={monitors.length}>
+                {monitors.map((monitor) => (
+                    <UptimeKumaDashboardCard key={monitor.id} monitor={monitor} />
+                ))}
+            </MonitorCardGrid>
+        </section>
+    )
+}
+
+export default async function Home() {
+    const session = await requireSessionForPage()
+
+    return (
+        <div className="min-h-screen p-4 md:p-8">
+            <div className="max-w-4xl mx-auto space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h1 className="text-2xl font-bold shrink-0">ダッシュボード</h1>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm text-slate-500 dark:text-slate-400">
+                            {session.user.email}
+                        </span>
+                        <form action="/auth/signout" method="POST">
+                            <Button variant="outline" type="submit">
+                                ログアウト
+                            </Button>
+                        </form>
+                    </div>
+                </div>
+
+                <ServerStats />
+                <UptimeKumaSection />
+                <UptimeRobotSection />
+            </div>
+        </div>
+    )
+}
