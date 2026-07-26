@@ -124,7 +124,6 @@ jobs:
           tar -czf deploy.tar.gz \
             package.json \
             package-lock.json \
-            public \
             .next \
             deploy \
             next.config.ts
