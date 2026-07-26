@@ -126,6 +126,7 @@ jobs:
             package-lock.json \
             .next \
             deploy \
+            scripts \
             next.config.ts
 
       - name: Upload artifact
@@ -203,7 +204,7 @@ jobs:
             PORT="${APP_PORT:-3110}"
 
             echo "Cleaning up old release files..."
-            rm -rf .next public package.json package-lock.json deploy next.config.ts
+            rm -rf .next package.json package-lock.json deploy scripts next.config.ts
 
             echo "Extracting archive..."
             tar -xzf deploy.tar.gz
