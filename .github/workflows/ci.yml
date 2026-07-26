@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # ビルド・テストに必要な最小限のプレースホルダー環境変数（本番の1Password参照は不要）
+  NEXT_PUBLIC_SUPABASE_URL: https://dummy-project.supabase.co
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: dummy-publishable-key-for-ci-only
+  ALLOWED_EMAILS: test@example.com
+  UPTIMEROBOT_READ_ONLY_KEY: dummy-key
+  UPTIMEKUMA_BASE_URL: https://dummy-uptime-kuma.example.com
+  UPTIMEKUMA_DASHBOARD_SLUG: dummy-slug
+  SYSTEM_STATS_DISK_PATH: /
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint check
+        run: npm run lint
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build check
+        run: npm run build
+
+  notify:
+    needs: [verify]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine workflow status
+        id: status
+        run: |
+          verify="${{ needs.verify.result }}"
+          if [ "$verify" = "success" ]; then
+            result=success
+          elif [ "$verify" = "cancelled" ]; then
+            result=cancelled
+          else
+            result=failure
+          fi
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+          echo "jobs=verify: $verify" >> "$GITHUB_OUTPUT"
+          # develop push: failure only. main PR: success, failure, and cancelled.
+          if [ "$result" = "failure" ]; then
+            echo "should_notify=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.base_ref }}" = "main" ]; then
+            echo "should_notify=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_notify=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Load secrets from 1Password
+        if: steps.status.outputs.should_notify == 'true'
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENV_FILE: ".github/ci.env.tpl"
+
+      - name: Signaly に通知
+        if: steps.status.outputs.should_notify == 'true'
+        env:
+          SIGNALY_WEBHOOK_URL: ${{ env.SIGNALY_WEBHOOK_URL }}
+          NOTIFY_APP: ops-dashboard
+          NOTIFY_KIND: CI
+          NOTIFY_STATUS: ${{ steps.status.outputs.result }}
+          NOTIFY_JOB: ${{ steps.status.outputs.jobs }}
+        run: bash .github/scripts/signaly-notify.sh
