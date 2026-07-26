@@ -29,4 +29,10 @@ npm run build
 
 ## デプロイ
 
-未整備（issue #65のロードマップ④）。VPS Apacheリバースプロキシ設定・1Passwordアイテム・GitHub Actions CI/CDは今後整備する。
+`admin.gucchii.com`（VPS上、PM2プロセス名 `ops-dashboard`、ポート3110）で公開する。
+
+- **CI**: `.github/workflows/ci.yml`。`develop`へのpushと`main`/`develop`へのPRでlint・型チェック・buildを実行
+- **デプロイ**: `.github/workflows/deploy.yml`。`main`へのpushで、`package.json`のversionからGitタグ・GitHub Releaseを作成し、ビルド成果物をVPSへ配置してPM2で再起動する（`deploy/ecosystem.config.js`）
+- **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する
+- **Apache**: リバースプロキシ設定は`vps`リポジトリ（`apache/sites-available/admin.gucchii.com.conf`）が一次情報源。`deploy/apache-vhost.example.conf`は参考用の雛形
+- **Supabase**: Authentication → URL Configuration の Redirect URLs に `https://admin.gucchii.com/auth/callback` を追加登録すること
