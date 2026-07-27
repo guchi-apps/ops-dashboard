@@ -37,6 +37,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Claude Code（サブエージェント用worktree等の作業ディレクトリ）
+/.claude/
+/.icon/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
