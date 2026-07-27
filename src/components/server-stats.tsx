@@ -52,7 +52,7 @@ function MetricCard({
             <span className="text-xs opacity-70 uppercase tracking-widest mb-2">{label}</span>
             <div className={cn("text-2xl font-bold font-mono", valueClassName)}>{value}</div>
             {detail && (
-                <div className="text-sm font-medium text-blue-100 dark:text-slate-400 mt-2">
+                <div className="text-sm font-medium text-primary-foreground/70 dark:text-muted-foreground mt-2">
                     {detail}
                 </div>
             )}
@@ -109,7 +109,7 @@ export function ServerStats() {
                                 MOCK
                             </span>
                         )}
-                        <span className="text-xs font-mono text-slate-500 dark:text-slate-400 truncate">
+                        <span className="text-xs font-mono text-muted-foreground truncate">
                             {stats.hostname}
                         </span>
                     </>

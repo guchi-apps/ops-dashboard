@@ -20,6 +20,31 @@ npm run dev
 
 [http://localhost:3000](http://localhost:3000) で確認できる。
 
+### スマホなど同一LAN上の別端末から確認する
+
+Next.js 16 では `next dev` のデフォルトホストが `0.0.0.0` のため、`npm run dev` を実行するだけでLAN内の他端末からアクセスできる状態になる（追加のCLIオプションは不要）。
+
+WSL2はNAT構成のため、Windowsホスト側でWSLへのポートフォワーディングとファイアウォール許可が必要（このマシンでは他プロジェクト用に設定済みのため、通常は以下の確認だけで動く）。
+
+1. WSL側でIPを確認する: `ip addr show eth0 | grep inet`
+2. Windows側（PowerShell、管理者権限）でポートフォワーディングを設定・更新する（WSLは再起動のたびにIPが変わるため、変わった場合はここを再実行する）
+   ```powershell
+   netsh interface portproxy delete v4tov4 listenport=3000 listenaddress=0.0.0.0
+   netsh interface portproxy add v4tov4 listenport=3000 listenaddress=0.0.0.0 connectport=3000 connectaddress=<WSLのIP>
+   ```
+3. Windowsファイアウォールで TCP 3000 の受信を許可する（他プロジェクトで許可済みなら不要）
+   ```powershell
+   New-NetFirewallRule -DisplayName "WSL ops-dashboard Dev 3000" -Direction Inbound -Protocol TCP -LocalPort 3000 -Action Allow
+   ```
+4. スマホなど同一Wi-FiにいるほかのデバイスからWindowsのLAN IP（`ipconfig`の「IPv4 アドレス」）にアクセスする: `http://<WindowsのLAN IP>:3000`
+
+**Googleログインを試す場合の注意**: `http://<WindowsのLAN IP>:3000` のように生のIPアドレスのままでは**Googleログインが必ず失敗する**。SupabaseのAuth（GoTrue）は `redirect_to` のホスト名が生のIPアドレスの場合、ループバック（`127.0.0.1`）以外は許可リストの設定に関わらず無条件で拒否する実装になっているため（[internal/utilities/request.go](https://github.com/supabase/auth/blob/master/internal/utilities/request.go)）。
+
+回避策として、[sslip.io](https://sslip.io) のようなワイルドカードDNS（`<IP>.sslip.io` がそのIPに解決される）でIPアドレスをホスト名に変換してアクセスする。
+
+1. Supabaseダッシュボードの Authentication → URL Configuration → Redirect URLs に `http://<WindowsのLAN IP>.sslip.io:3000/auth/callback` を追加登録する（**完全一致のURLのみ登録すること**。`http://<WindowsのLAN IP>.sslip.io:*/**` のようなポート部分をワイルドカードにしたパターンを混ぜると、Redirect URLs許可リスト全体の反映が壊れ、完全一致の行も含めて効かなくなる現象を確認済み）
+2. スマホからは `http://<WindowsのLAN IP>:3000` ではなく `http://<WindowsのLAN IP>.sslip.io:3000` でアクセスする
+
 ## テスト
 
 ```bash

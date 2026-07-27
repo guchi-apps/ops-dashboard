@@ -10,8 +10,8 @@ export function DashboardCard({ children, className, noPadding = false, ...props
         <div
             className={cn(
                 "rounded-xl overflow-hidden shadow-sm transition-all duration-300 hover:shadow-md relative group",
-                "bg-blue-600 text-white border-none",
-                "dark:bg-slate-900 dark:border dark:border-slate-700 dark:text-slate-100",
+                "bg-primary text-primary-foreground border-none",
+                "dark:bg-card dark:border dark:border-border dark:text-card-foreground",
                 noPadding ? "p-0" : "p-6",
                 className
             )}
