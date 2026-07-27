@@ -2,8 +2,6 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -26,53 +24,67 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-highlight: var(--highlight);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
 }
 
+/*
+ * デザイントークン（issue #7）
+ * ①ベースカラー: slate系ニュートラルグレー（従来から各画面で使っていた slate-* を正式なトークン化）
+ * ②メインカラー: ネイビー（低彩度の深い青。カード背景・ボタン・フォーカスリング等に使用）
+ *   低彩度・低明度にすることで、カード上に載る各種ステータス色（緑=Up/赤=Down/橙=Pending/青=Maintenance）
+ *   と明度差がしっかり付き、色が馴染んで見えにくくなるのを避けている。
+ * ③アクセントカラー: コーラル（使用量5%程度。見出し脇のバー等、目を引く箇所にのみ使用）
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(98.4% 0.003 247.858); /* slate-50 */
+  --foreground: oklch(20.8% 0.042 265.755); /* slate-900 */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(20.8% 0.042 265.755); /* slate-900 */
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
+  --popover-foreground: oklch(20.8% 0.042 265.755); /* slate-900 */
+  --primary: oklch(45% 0.09 264); /* ネイビー（低彩度の深い青、濃すぎないよう調整） */
   --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --secondary: oklch(96.8% 0.007 247.896); /* slate-100 */
+  --secondary-foreground: oklch(20.8% 0.042 265.755); /* slate-900 */
+  --muted: oklch(96.8% 0.007 247.896); /* slate-100 */
+  --muted-foreground: oklch(55.4% 0.046 257.417); /* slate-500 */
+  --accent: oklch(96.8% 0.007 247.896); /* slate-100 */
+  --accent-foreground: oklch(20.8% 0.042 265.755); /* slate-900 */
+  --highlight: oklch(74% 0.16 31); /* コーラル */
+  --highlight-foreground: oklch(22% 0.05 31);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(92.9% 0.013 255.508); /* slate-200 */
+  --input: oklch(92.9% 0.013 255.508); /* slate-200 */
+  --ring: oklch(45% 0.09 264); /* ネイビー系フォーカスリング */
   --radius: 0.625rem;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(12.9% 0.042 264.695); /* slate-950 */
+  --foreground: oklch(98.4% 0.003 247.858); /* slate-50 */
+  --card: oklch(20.8% 0.042 265.755); /* slate-900 */
+  --card-foreground: oklch(98.4% 0.003 247.858); /* slate-50 */
+  --popover: oklch(20.8% 0.042 265.755); /* slate-900 */
+  --popover-foreground: oklch(98.4% 0.003 247.858); /* slate-50 */
+  --primary: oklch(68% 0.07 264); /* ネイビー（暗背景で視認できるよう明度を上げた明るめのスチールブルー） */
+  --primary-foreground: oklch(12.9% 0.042 264.695); /* slate-950 */
+  --secondary: oklch(27.9% 0.041 260.031); /* slate-800 */
+  --secondary-foreground: oklch(98.4% 0.003 247.858); /* slate-50 */
+  --muted: oklch(27.9% 0.041 260.031); /* slate-800 */
+  --muted-foreground: oklch(70.4% 0.04 256.788); /* slate-400 */
+  --accent: oklch(27.9% 0.041 260.031); /* slate-800 */
+  --accent-foreground: oklch(98.4% 0.003 247.858); /* slate-50 */
+  --highlight: oklch(72% 0.17 31); /* コーラル（暗背景向けに微調整） */
+  --highlight-foreground: oklch(20% 0.05 31);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --border: oklch(37.2% 0.044 257.287); /* slate-700 */
+  --input: oklch(37.2% 0.044 257.287); /* slate-700 */
+  --ring: oklch(68% 0.07 264); /* ネイビー系フォーカスリング（暗背景向け） */
 }
 
 @layer base {
@@ -91,23 +103,25 @@
    .light / .dark が明示的に付いている場合はそちらを優先するため :not(.light):not(.dark) に限定する。 */
 @media (prefers-color-scheme: dark) {
   :root:not(.light):not(.dark) {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --background: oklch(12.9% 0.042 264.695); /* slate-950 */
+    --foreground: oklch(98.4% 0.003 247.858); /* slate-50 */
+    --card: oklch(20.8% 0.042 265.755); /* slate-900 */
+    --card-foreground: oklch(98.4% 0.003 247.858); /* slate-50 */
+    --popover: oklch(20.8% 0.042 265.755); /* slate-900 */
+    --popover-foreground: oklch(98.4% 0.003 247.858); /* slate-50 */
+    --primary: oklch(68% 0.07 264); /* ネイビー（暗背景向け） */
+    --primary-foreground: oklch(12.9% 0.042 264.695); /* slate-950 */
+    --secondary: oklch(27.9% 0.041 260.031); /* slate-800 */
+    --secondary-foreground: oklch(98.4% 0.003 247.858); /* slate-50 */
+    --muted: oklch(27.9% 0.041 260.031); /* slate-800 */
+    --muted-foreground: oklch(70.4% 0.04 256.788); /* slate-400 */
+    --accent: oklch(27.9% 0.041 260.031); /* slate-800 */
+    --accent-foreground: oklch(98.4% 0.003 247.858); /* slate-50 */
+    --highlight: oklch(72% 0.17 31);
+    --highlight-foreground: oklch(20% 0.05 31);
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --border: oklch(37.2% 0.044 257.287); /* slate-700 */
+    --input: oklch(37.2% 0.044 257.287); /* slate-700 */
+    --ring: oklch(68% 0.07 264); /* ネイビー系フォーカスリング（暗背景向け） */
   }
 }

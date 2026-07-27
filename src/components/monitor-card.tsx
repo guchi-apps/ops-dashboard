@@ -30,7 +30,7 @@ function MonitorCardLink({
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`${label}（外部リンク）`}
-            className="block h-full w-full rounded-xl transition-transform hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+            className="block h-full w-full rounded-xl transition-transform hover:scale-[1.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
             {children}
         </a>
@@ -70,7 +70,7 @@ export function MonitorCard({
                 )}
                 <div className={`text-2xl font-bold font-mono ${statusColor}`}>{statusText}</div>
                 {uptimeLabel && (
-                    <div className="text-sm font-medium text-blue-100 dark:text-slate-400">
+                    <div className="text-sm font-medium text-primary-foreground/70 dark:text-muted-foreground">
                         {uptimeLabel}
                     </div>
                 )}

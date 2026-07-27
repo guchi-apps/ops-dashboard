@@ -47,7 +47,7 @@ function MonitorUrl({ url }: { url?: string }) {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex min-w-0 items-center gap-1 text-xs text-blue-100 hover:underline dark:text-slate-400"
+            className="flex min-w-0 items-center gap-1 text-xs text-primary-foreground/70 hover:underline dark:text-muted-foreground"
         >
             <LinkIcon className="h-3 w-3 shrink-0" aria-hidden />
             <span className="truncate">{url}</span>
@@ -66,7 +66,7 @@ export function UptimeKumaDashboardCard({ monitor }: { monitor: UptimeKumaMonito
             </div>
             <MonitorUrl url={monitor.url} />
             <HeartbeatBar statuses={monitor.recentStatuses} />
-            <div className="flex items-center justify-between text-xs text-blue-100 dark:text-slate-400">
+            <div className="flex items-center justify-between text-xs text-primary-foreground/70 dark:text-muted-foreground">
                 <span>現在: {monitor.currentPing !== null ? `${monitor.currentPing}ms` : "-"}</span>
                 <span>平均: {monitor.avgPing !== null ? `${monitor.avgPing}ms` : "-"}</span>
             </div>
