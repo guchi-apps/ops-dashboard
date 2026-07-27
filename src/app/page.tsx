@@ -16,7 +16,7 @@ async function UptimeRobotSection() {
         <section className="space-y-4">
             <SectionHeading title="UptimeRobot" />
             {monitors.length === 0 ? (
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-muted-foreground">
                     UptimeRobot のモニターが取得できません。APIキーを確認してください。
                 </p>
             ) : (
@@ -67,7 +67,7 @@ export default async function Home() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <h1 className="text-2xl font-bold shrink-0">ダッシュボード</h1>
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm text-slate-500 dark:text-slate-400">
+                        <span className="text-sm text-muted-foreground">
                             {session.user.email}
                         </span>
                         <form action="/auth/signout" method="POST">
