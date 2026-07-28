@@ -19,3 +19,6 @@ SYSTEM_STATS_DISK_PATH=op://apps/ops-dashboard/system-stats-disk-path
 
 # CI / デプロイ通知
 SIGNALY_WEBHOOK_URL=op://apps/ops-dashboard/ci-webhook-url
+
+# ログイン通知
+SIGNALY_LOGIN_WEBHOOK_URL=op://apps/ops-dashboard/login-webhook-url

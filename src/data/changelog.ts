@@ -7,6 +7,13 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.2.1",
+        date: "2026-07-28",
+        changes: [
+            "ホーム画面に追加した際のアイコンなど、一部の画像が本番環境で正しく表示されない不具合を修正しました。",
+        ],
+    },
+    {
         version: "0.2.0",
         date: "2026-07-28",
         changes: [

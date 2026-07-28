@@ -118,12 +118,14 @@ jobs:
           UPTIMEKUMA_BASE_URL: ${{ env.UPTIMEKUMA_BASE_URL }}
           UPTIMEKUMA_DASHBOARD_SLUG: ${{ env.UPTIMEKUMA_DASHBOARD_SLUG }}
           SYSTEM_STATS_DISK_PATH: ${{ env.SYSTEM_STATS_DISK_PATH }}
+          SIGNALY_LOGIN_WEBHOOK_URL: ${{ env.SIGNALY_LOGIN_WEBHOOK_URL }}
 
       - name: Create archive
         run: |
           tar -czf deploy.tar.gz \
             package.json \
             package-lock.json \
+            public \
             .next \
             deploy \
             scripts \
@@ -189,6 +191,7 @@ jobs:
           UPTIMEKUMA_BASE_URL: ${{ env.UPTIMEKUMA_BASE_URL }}
           UPTIMEKUMA_DASHBOARD_SLUG: ${{ env.UPTIMEKUMA_DASHBOARD_SLUG }}
           SYSTEM_STATS_DISK_PATH: ${{ env.SYSTEM_STATS_DISK_PATH }}
+          SIGNALY_LOGIN_WEBHOOK_URL: ${{ env.SIGNALY_LOGIN_WEBHOOK_URL }}
           TARGET_DIR: ${{ env.TARGET_DIR }}
           APP_PORT: ${{ env.PORT }}
         with:
@@ -196,7 +199,7 @@ jobs:
           username: ${{ env.USERNAME }}
           key: ${{ env.SSH_PRIVATE_KEY }}
           port: ${{ env.SSH_PORT }}
-          envs: NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,ALLOWED_EMAILS,UPTIMEROBOT_READ_ONLY_KEY,UPTIMEKUMA_BASE_URL,UPTIMEKUMA_DASHBOARD_SLUG,SYSTEM_STATS_DISK_PATH,TARGET_DIR,APP_PORT
+          envs: NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,ALLOWED_EMAILS,UPTIMEROBOT_READ_ONLY_KEY,UPTIMEKUMA_BASE_URL,UPTIMEKUMA_DASHBOARD_SLUG,SYSTEM_STATS_DISK_PATH,SIGNALY_LOGIN_WEBHOOK_URL,TARGET_DIR,APP_PORT
           script: |
             set -euo pipefail
             cd "${TARGET_DIR}"
@@ -204,7 +207,7 @@ jobs:
             PORT="${APP_PORT:-3110}"
 
             echo "Cleaning up old release files..."
-            rm -rf .next package.json package-lock.json deploy scripts next.config.ts
+            rm -rf .next package.json package-lock.json public deploy scripts next.config.ts
 
             echo "Extracting archive..."
             tar -xzf deploy.tar.gz
@@ -224,6 +227,7 @@ jobs:
             update_env UPTIMEKUMA_BASE_URL "$UPTIMEKUMA_BASE_URL"
             update_env UPTIMEKUMA_DASHBOARD_SLUG "$UPTIMEKUMA_DASHBOARD_SLUG"
             update_env SYSTEM_STATS_DISK_PATH "$SYSTEM_STATS_DISK_PATH"
+            update_env SIGNALY_LOGIN_WEBHOOK_URL "$SIGNALY_LOGIN_WEBHOOK_URL"
 
             echo "Installing production dependencies..."
             npm install --omit=dev --no-audit --prefer-offline
