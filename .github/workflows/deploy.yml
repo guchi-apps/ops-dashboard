@@ -124,6 +124,7 @@ jobs:
           tar -czf deploy.tar.gz \
             package.json \
             package-lock.json \
+            public \
             .next \
             deploy \
             scripts \
@@ -204,7 +205,7 @@ jobs:
             PORT="${APP_PORT:-3110}"
 
             echo "Cleaning up old release files..."
-            rm -rf .next package.json package-lock.json deploy scripts next.config.ts
+            rm -rf .next package.json package-lock.json public deploy scripts next.config.ts
 
             echo "Extracting archive..."
             tar -xzf deploy.tar.gz
