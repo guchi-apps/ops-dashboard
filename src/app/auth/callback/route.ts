@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isEmailAllowed } from "@/lib/allowed-emails";
 import { sanitizeReturnTo } from "@/lib/return-to";
 import { getRequestOrigin } from "@/lib/request-origin";
+import { notifySignalyLogin } from "@/lib/signaly";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,11 @@ export async function GET(request: Request) {
     await supabase.auth.signOut();
     return NextResponse.redirect(`${origin}/login?error=forbidden`);
   }
+
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip");
+  await notifySignalyLogin(ip);
 
   return NextResponse.redirect(`${origin}${returnTo}`);
 }
