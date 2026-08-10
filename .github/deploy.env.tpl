@@ -27,7 +27,3 @@ SIGNALY_LOGIN_WEBHOOK_URL=op://apps/ops-dashboard/login-webhook-url
 ANTHROPIC_OAUTH_REFRESH_TOKEN=op://apps/ops-dashboard/anthropic-oauth-refresh-token
 OPENAI_CHATGPT_REFRESH_TOKEN=op://apps/ops-dashboard/openai-chatgpt-refresh-token
 OPENAI_CHATGPT_ACCOUNT_ID=op://apps/ops-dashboard/openai-chatgpt-account-id
-
-# 課金プランの表示名（APIから取得できないため手動設定）
-CLAUDE_PLAN_NAME=op://apps/ops-dashboard/claude-plan-name
-CHATGPT_PLAN_NAME=op://apps/ops-dashboard/chatgpt-plan-name

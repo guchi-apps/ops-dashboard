@@ -8,6 +8,9 @@ import type { AiProviderBilling, AiProviderUsage, AiUsageWindow } from "@/types/
  */
 const USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 
+/** 契約プランは使用状況のレスポンスに含まれないため、プロフィールから取得する */
+const PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
+
 /** トークンエンドポイントは console.anthropic.com から platform.claude.com へ移行済み。念のため両方試す */
 const TOKEN_URLS = [
     "https://platform.claude.com/v1/oauth/token",
@@ -40,6 +43,18 @@ interface OauthUsageResponse {
         enabled?: boolean | null
         used?: SpendAmount | null
         limit?: SpendAmount | null
+    } | null
+}
+
+interface ProfileResponse {
+    account?: {
+        has_claude_max?: boolean | null
+        has_claude_pro?: boolean | null
+    } | null
+    organization?: {
+        organization_type?: string | null
+        /** 例: "default_claude_max_5x" */
+        rate_limit_tier?: string | null
     } | null
 }
 
@@ -148,6 +163,26 @@ function toBilling(data: OauthUsageResponse): AiProviderBilling | undefined {
     }
 }
 
+/** プロフィールのレスポンスからプランの表示名を組み立てる */
+export function parseClaudePlan(profile: ProfileResponse): string | null {
+    const tier = profile.organization?.rate_limit_tier ?? ""
+
+    // "default_claude_max_5x" のように倍率が入っていればそれを表示に使う
+    const maxTier = tier.match(/claude_max_(\d+)x/)
+    if (maxTier) return `Max ${maxTier[1]}x`
+    if (tier.includes("claude_max")) return "Max"
+    if (tier.includes("claude_pro")) return "Pro"
+
+    const orgType = profile.organization?.organization_type ?? ""
+    if (orgType === "claude_max") return "Max"
+    if (orgType === "claude_pro") return "Pro"
+
+    if (profile.account?.has_claude_max) return "Max"
+    if (profile.account?.has_claude_pro) return "Pro"
+
+    return null
+}
+
 /** レスポンスから表示に使う制限枠と課金状況を取り出す */
 export function parseClaudeUsageResponse(data: OauthUsageResponse): {
     windows: AiUsageWindow[]
@@ -163,11 +198,34 @@ export function parseClaudeUsageResponse(data: OauthUsageResponse): {
     return { windows, billing: toBilling(data) }
 }
 
+/** プランの取得に失敗しても使用状況の表示は続けたいので、失敗時は null を返す */
+async function fetchPlan(accessToken: string): Promise<string | null> {
+    try {
+        const res = await fetchWithTimeout(PROFILE_URL, {
+            headers: {
+                Authorization: `Bearer ${accessToken}`,
+                "anthropic-beta": "oauth-2025-04-20",
+                "User-Agent": userAgent(),
+                Accept: "application/json",
+            },
+        })
+        if (!res.ok) {
+            console.error("Claude profile API error:", res.status, await readErrorBody(res))
+            return null
+        }
+
+        return parseClaudePlan((await res.json()) as ProfileResponse)
+    } catch (error) {
+        console.error("Claude profile: 取得に失敗", error)
+        return null
+    }
+}
+
 export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
     const base: Omit<AiProviderUsage, "status"> = {
         id: "claude",
         name: "Claude",
-        plan: process.env.CLAUDE_PLAN_NAME || null,
+        plan: null,
         windows: [],
     }
 
@@ -188,14 +246,20 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
     }
 
     try {
-        const res = await fetchWithTimeout(USAGE_URL, {
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "anthropic-beta": "oauth-2025-04-20",
-                "User-Agent": userAgent(),
-                Accept: "application/json",
-            },
-        })
+        const [res, detectedPlan] = await Promise.all([
+            fetchWithTimeout(USAGE_URL, {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "anthropic-beta": "oauth-2025-04-20",
+                    "User-Agent": userAgent(),
+                    Accept: "application/json",
+                },
+            }),
+            fetchPlan(accessToken),
+        ])
+
+        // 環境変数を設定した場合はそちらを表示名として優先する
+        base.plan = process.env.CLAUDE_PLAN_NAME || detectedPlan
 
         if (!res.ok) {
             console.error("Claude usage API error:", res.status, await readErrorBody(res))
