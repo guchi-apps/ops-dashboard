@@ -13,7 +13,7 @@ async function UptimeRobotSection() {
     const monitors = await fetchUptimeRobotMonitorsServer()
 
     return (
-        <section className="space-y-4">
+        <section className="space-y-3 sm:space-y-4">
             <SectionHeading title="UptimeRobot" />
             {monitors.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
@@ -47,7 +47,7 @@ async function UptimeKumaSection() {
     if (monitors.length === 0) return null
 
     return (
-        <section className="space-y-4">
+        <section className="space-y-3 sm:space-y-4">
             <SectionHeading title="Uptime Kuma" />
             <MonitorCardGrid count={monitors.length}>
                 {monitors.map((monitor) => (
@@ -63,7 +63,7 @@ export default async function Home() {
 
     return (
         <div className="min-h-screen p-4 md:p-8">
-            <div className="max-w-4xl mx-auto space-y-6">
+            <div className="max-w-4xl mx-auto space-y-5 sm:space-y-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <h1 className="text-2xl font-bold shrink-0">ダッシュボード</h1>
                     <div className="flex flex-wrap items-center gap-2">
