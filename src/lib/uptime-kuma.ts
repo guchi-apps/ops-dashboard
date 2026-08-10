@@ -92,3 +92,11 @@ async function fetchMonitorsForSlug(slug: string | undefined): Promise<UptimeKum
 export async function fetchUptimeKumaDashboardMonitors(): Promise<UptimeKumaMonitor[]> {
     return fetchMonitorsForSlug(process.env.UPTIMEKUMA_DASHBOARD_SLUG)
 }
+
+/** Uptime Kuma のモニター追加画面のURL。ベースURL未設定なら null。 */
+export function getUptimeKumaAddMonitorUrl(): string | null {
+    const baseUrl = process.env.UPTIMEKUMA_BASE_URL
+    if (!baseUrl) return null
+
+    return `${baseUrl.replace(/\/+$/, "")}/add`
+}

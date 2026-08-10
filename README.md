@@ -45,6 +45,67 @@ WSL2はNAT構成のため、Windowsホスト側でWSLへのポートフォワー
 1. Supabaseダッシュボードの Authentication → URL Configuration → Redirect URLs に `http://<WindowsのLAN IP>.sslip.io:3000/auth/callback` を追加登録する（**完全一致のURLのみ登録すること**。`http://<WindowsのLAN IP>.sslip.io:*/**` のようなポート部分をワイルドカードにしたパターンを混ぜると、Redirect URLs許可リスト全体の反映が壊れ、完全一致の行も含めて効かなくなる現象を確認済み）
 2. スマホからは `http://<WindowsのLAN IP>:3000` ではなく `http://<WindowsのLAN IP>.sslip.io:3000` でアクセスする
 
+## AI使用状況の表示
+
+Claude / ChatGPT のトークン使用状況と課金プランをダッシュボードに表示する。
+
+いずれの提供元も「サブスクリプション（Max / Plus 等）の残枠」を返す公開APIを用意していないため、
+各CLIが内部的に使っている非公開のエンドポイントを、VPS側に保管したOAuthトークンで叩いている。
+**公式に文書化されたAPIではないため、提供元の仕様変更で取得できなくなる可能性がある**点に注意する。
+
+| 提供元 | 取得元 | 表示できるもの |
+| --- | --- | --- |
+| Claude | `GET https://api.anthropic.com/api/oauth/usage` と `/api/oauth/profile`（Claude Code の `/usage` と同じ） | 5時間・週間の使用率とリセット時刻、追加利用クレジットの課金額、プラン名（`rate_limit_tier` から判定） |
+| ChatGPT | `GET https://chatgpt.com/backend-api/wham/usage`（Codex CLI の `/status` と同じ） | 5時間・週間の使用率とリセット時刻、プラン名（APIが返す `plan_type`） |
+
+プラン名はどちらもAPIから自動取得するため設定不要。`CLAUDE_PLAN_NAME` / `CHATGPT_PLAN_NAME` を設定した場合のみ、表示名の上書きとして使われる。
+
+Gemini（Antigravity）は使用状況の確認手段がインタラクティブなTUI（`/usage`）だけで、
+非対話の出力もHTTP APIも公開されておらず取得できないため、表示対象に含めていない。
+
+### 認証情報の取得方法
+
+OAuthのリフレッシュトークンは使うたびにローテーションするため、**日常的に使っているCLIのログイン情報を
+そのまま流用してはいけない**。ダッシュボードが更新するたびにCLI側の値が古くなり、ログアウトさせられる。
+どちらもダッシュボード専用のログインを別途作り、そのトークンだけを渡す。
+
+- **Claude**: 設定ディレクトリを分けてログインすると、普段のログインに影響しない独立したトークンが得られる。
+
+  ```bash
+  CLAUDE_CONFIG_DIR=~/.claude-ops-dashboard claude auth login
+  python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.claude-ops-dashboard/.credentials.json')))['claudeAiOauth']['refreshToken'])"
+  ```
+
+  出力を `ANTHROPIC_OAUTH_REFRESH_TOKEN` に設定する。以降このディレクトリで `claude` を**実行しない**こと
+  （トークンがローテーションし、ダッシュボード側の値が古くなるため）。
+
+  なお `claude setup-token` で発行した長期トークン（`sk-ant-oat01-...`）は**使えない**。発行時に `user:inference`
+  スコープしか要求されず、このエンドポイントが必要とする `user:profile` が付かないため 403 になる
+  （[claude-code#22450](https://github.com/anthropics/claude-code/issues/22450)）。
+
+- **ChatGPT**: 同様に `CODEX_HOME` で設定ディレクトリを分けてログインする（`CODEX_HOME` は
+  **存在するディレクトリを指していないとエラーになる**ため、先に作成しておくこと）。
+
+  ```bash
+  mkdir -p ~/.codex-ops-dashboard
+  CODEX_HOME=~/.codex-ops-dashboard codex login --device-auth
+  python3 -c "import json,os;t=json.load(open(os.path.expanduser('~/.codex-ops-dashboard/auth.json')))['tokens'];print(t['refresh_token']);print(t['account_id'])"
+  ```
+
+  1行目を `OPENAI_CHATGPT_REFRESH_TOKEN`、2行目を `OPENAI_CHATGPT_ACCOUNT_ID` に設定する。
+  Claude と同様、以降このディレクトリで `codex` を実行しないこと。
+
+  ただし **snap 版の codex は `CODEX_HOME` を無視し**、常に `~/snap/codex/<リビジョン>/auth.json` を使う
+  （`snap run` が環境変数を落とすため）。この開発マシンでは普段使いの Codex が `~/.codex` を使っているので、
+  snap 版でログインしたものをそのままダッシュボード専用の認証情報として使っている。
+
+リフレッシュトークンは使うたびにローテーションするため、更新後の値を `.data/ai-usage-tokens.json`
+（`AI_USAGE_STATE_PATH` で変更可）に保存して引き継ぐ。このディレクトリはデプロイ時の削除対象外のため、
+デプロイをまたいでも失効しない。環境変数側のトークンを差し替えた場合は、保存済みの値を破棄して再取得する。
+
+各提供元のエンドポイントはレート制限が厳しい（Anthropic側は180秒以上の間隔が推奨）ため、
+取得結果はサーバー側で既定5分間キャッシュする（`AI_USAGE_CACHE_SECONDS` で変更可）。
+
 ## テスト
 
 ```bash
@@ -58,6 +119,6 @@ npm run build
 
 - **CI**: `.github/workflows/ci.yml`。`develop`へのpushと`main`/`develop`へのPRでlint・型チェック・buildを実行
 - **デプロイ**: `.github/workflows/deploy.yml`。`main`へのpushで、`package.json`のversionからGitタグ・GitHub Releaseを作成し、ビルド成果物をVPSへ配置してPM2で再起動する（`deploy/ecosystem.config.js`）
-- **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する
+- **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する。AI使用状況の表示を有効にするには、`apps/ops-dashboard`アイテムに`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id`のフィールドを追加しておく（未作成のままだとデプロイのシークレット読み込みが失敗する）
 - **Apache**: リバースプロキシ設定は`vps`リポジトリ（`apache/sites-available/admin.gucchii.com.conf`）が一次情報源。`deploy/apache-vhost.example.conf`は参考用の雛形
 - **Supabase**: Authentication → URL Configuration の Redirect URLs に `https://admin.gucchii.com/auth/callback` を追加登録すること

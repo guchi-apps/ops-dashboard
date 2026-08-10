@@ -54,23 +54,23 @@ export function MonitorCard({
         <MonitorCardLink href={href} label={label}>
             <DashboardCard
                 className={cn(
-                    "h-full flex flex-col justify-center items-center text-center gap-1",
+                    "h-full flex flex-col justify-center items-center text-center gap-1 px-3 py-4 sm:p-6",
                     href && "cursor-pointer"
                 )}
             >
                 {href ? (
-                    <BoldLinkLabel label={label} className="text-sm px-2" />
+                    <BoldLinkLabel label={label} className="text-xs sm:text-sm" />
                 ) : (
                     <span
-                        className="text-xs opacity-70 uppercase tracking-widest truncate w-full px-2"
+                        className="text-[10px] sm:text-xs opacity-70 uppercase tracking-widest truncate w-full"
                         title={label}
                     >
                         {label}
                     </span>
                 )}
-                <div className={`text-2xl font-bold font-mono ${statusColor}`}>{statusText}</div>
+                <div className={`text-xl sm:text-2xl font-bold font-mono ${statusColor}`}>{statusText}</div>
                 {uptimeLabel && (
-                    <div className="text-sm font-medium text-primary-foreground/70 dark:text-muted-foreground">
+                    <div className="text-xs sm:text-sm font-medium text-primary-foreground/70 dark:text-muted-foreground">
                         {uptimeLabel}
                     </div>
                 )}
@@ -84,10 +84,10 @@ export function MonitorCardGrid({ children, count }: { children: React.ReactNode
         count === 1
             ? "grid-cols-1"
             : count === 2
-              ? "md:grid-cols-2"
+              ? "grid-cols-2"
               : count === 3
-                ? "md:grid-cols-3"
-                : "md:grid-cols-2 lg:grid-cols-4"
+                ? "grid-cols-2 md:grid-cols-3"
+                : "grid-cols-2 lg:grid-cols-4"
 
-    return <div className={`grid grid-cols-1 ${gridCols} gap-4 h-full`}>{children}</div>
+    return <div className={`grid ${gridCols} gap-3 sm:gap-4 h-full`}>{children}</div>
 }

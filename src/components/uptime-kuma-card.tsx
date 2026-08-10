@@ -17,7 +17,7 @@ function StatusBadge({ status }: { status: UptimeKumaStatus }) {
     return (
         <span
             className={cn(
-                "inline-flex shrink-0 items-center rounded-full px-3 py-1 text-xs font-semibold text-white",
+                "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] sm:px-3 sm:py-1 sm:text-xs font-semibold text-white",
                 style.className
             )}
         >
@@ -28,11 +28,14 @@ function StatusBadge({ status }: { status: UptimeKumaStatus }) {
 
 function HeartbeatBar({ statuses }: { statuses: UptimeKumaStatus[] }) {
     return (
-        <div className="flex items-end gap-0.5">
+        <div className="flex w-full items-end gap-0.5">
             {statuses.map((status, index) => (
                 <span
                     key={index}
-                    className={cn("h-6 w-1.5 rounded-sm", STATUS_STYLES[status].className)}
+                    className={cn(
+                        "h-5 sm:h-6 min-w-px flex-1 max-w-[6px] rounded-sm",
+                        STATUS_STYLES[status].className
+                    )}
                 />
             ))}
         </div>
@@ -57,16 +60,16 @@ function MonitorUrl({ url }: { url?: string }) {
 
 export function UptimeKumaDashboardCard({ monitor }: { monitor: UptimeKumaMonitor }) {
     return (
-        <DashboardCard className="h-full flex flex-col gap-3 px-4 py-4">
+        <DashboardCard className="h-full flex flex-col gap-2 px-3 py-3 sm:gap-3 sm:px-4 sm:py-4">
             <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 truncate text-sm font-bold" title={monitor.name}>
+                <span className="min-w-0 truncate text-xs sm:text-sm font-bold" title={monitor.name}>
                     {monitor.name}
                 </span>
                 <StatusBadge status={monitor.status} />
             </div>
             <MonitorUrl url={monitor.url} />
             <HeartbeatBar statuses={monitor.recentStatuses} />
-            <div className="flex items-center justify-between text-xs text-primary-foreground/70 dark:text-muted-foreground">
+            <div className="flex items-center justify-between text-[11px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
                 <span>現在: {monitor.currentPing !== null ? `${monitor.currentPing}ms` : "-"}</span>
                 <span>平均: {monitor.avgPing !== null ? `${monitor.avgPing}ms` : "-"}</span>
             </div>

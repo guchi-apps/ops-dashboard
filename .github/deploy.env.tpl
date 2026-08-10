@@ -22,3 +22,8 @@ SIGNALY_WEBHOOK_URL=op://apps/ops-dashboard/ci-webhook-url
 
 # ログイン通知
 SIGNALY_LOGIN_WEBHOOK_URL=op://apps/ops-dashboard/login-webhook-url
+
+# AI使用状況（それぞれ各CLIのログイン情報にあるリフレッシュトークン）
+ANTHROPIC_OAUTH_REFRESH_TOKEN=op://apps/ops-dashboard/anthropic-oauth-refresh-token
+OPENAI_CHATGPT_REFRESH_TOKEN=op://apps/ops-dashboard/openai-chatgpt-refresh-token
+OPENAI_CHATGPT_ACCOUNT_ID=op://apps/ops-dashboard/openai-chatgpt-account-id
