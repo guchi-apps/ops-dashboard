@@ -3,10 +3,11 @@ import { AiUsage } from "@/components/ai-usage"
 import { MonitorCard, MonitorCardGrid } from "@/components/monitor-card"
 import { SectionHeading } from "@/components/section-heading"
 import { ServerStats } from "@/components/server-stats"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { UptimeKumaDashboardCard } from "@/components/uptime-kuma-card"
+import { Plus } from "lucide-react"
 import { fetchUptimeRobotMonitorsServer, getUptimeRobotStatusInfo } from "@/lib/uptimerobot"
-import { fetchUptimeKumaDashboardMonitors } from "@/lib/uptime-kuma"
+import { fetchUptimeKumaDashboardMonitors, getUptimeKumaAddMonitorUrl } from "@/lib/uptime-kuma"
 
 export const dynamic = "force-dynamic"
 
@@ -47,9 +48,26 @@ async function UptimeKumaSection() {
     const monitors = await fetchUptimeKumaDashboardMonitors()
     if (monitors.length === 0) return null
 
+    const addMonitorUrl = getUptimeKumaAddMonitorUrl()
+
     return (
         <section className="space-y-3 sm:space-y-4">
-            <SectionHeading title="Uptime Kuma" />
+            <SectionHeading
+                title="Uptime Kuma"
+                trailing={
+                    addMonitorUrl && (
+                        <a
+                            href={addMonitorUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={buttonVariants({ variant: "outline", size: "sm" })}
+                        >
+                            <Plus aria-hidden />
+                            モニター追加
+                        </a>
+                    )
+                }
+            />
             <MonitorCardGrid count={monitors.length}>
                 {monitors.map((monitor) => (
                     <UptimeKumaDashboardCard key={monitor.id} monitor={monitor} />
