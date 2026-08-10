@@ -18,6 +18,22 @@ function getUsageBarColor(percent: number): string {
     return "bg-emerald-400"
 }
 
+/**
+ * 制限枠のうち何割の時間が過ぎたかを返す。
+ * リセット時刻と枠の長さが両方分からないと出せないため、その場合は null を返す。
+ */
+function getElapsedPercent(usageWindow: AiUsageWindow, now: number): number | null {
+    if (!usageWindow.resetsAt || !usageWindow.windowSeconds) return null
+
+    const resetsAtMs = new Date(usageWindow.resetsAt).getTime()
+    if (Number.isNaN(resetsAtMs)) return null
+
+    const totalMs = usageWindow.windowSeconds * 1000
+    const elapsedMs = totalMs - (resetsAtMs - now)
+
+    return Math.min(100, Math.max(0, Math.round((elapsedMs / totalMs) * 100)))
+}
+
 function formatRemaining(resetsAt: string, now: number): string | null {
     const remainingMs = new Date(resetsAt).getTime() - now
     if (Number.isNaN(remainingMs)) return null
@@ -34,6 +50,7 @@ function formatRemaining(resetsAt: string, now: number): string | null {
 
 function UsageWindowRow({ window: usageWindow, now }: { window: AiUsageWindow; now: number }) {
     const remaining = usageWindow.resetsAt ? formatRemaining(usageWindow.resetsAt, now) : null
+    const elapsedPercent = getElapsedPercent(usageWindow, now)
 
     return (
         <div className="space-y-1">
@@ -49,22 +66,41 @@ function UsageWindowRow({ window: usageWindow, now }: { window: AiUsageWindow; n
                 </span>
             </div>
 
-            <div
-                className="h-2 w-full overflow-hidden rounded-full bg-primary-foreground/20 dark:bg-muted"
-                role="progressbar"
-                aria-label={`${usageWindow.label}の使用率`}
-                aria-valuenow={Math.round(usageWindow.usedPercent)}
-                aria-valuemin={0}
-                aria-valuemax={100}
-            >
+            <div className="relative">
                 <div
-                    className={cn("h-full rounded-full transition-all", getUsageBarColor(usageWindow.usedPercent))}
-                    style={{ width: `${usageWindow.usedPercent}%` }}
-                />
+                    className="h-2 w-full overflow-hidden rounded-full bg-primary-foreground/20 dark:bg-muted"
+                    role="progressbar"
+                    aria-label={`${usageWindow.label}の使用率`}
+                    aria-valuenow={Math.round(usageWindow.usedPercent)}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuetext={
+                        elapsedPercent === null
+                            ? undefined
+                            : `使用 ${usageWindow.usedPercent}%、経過 ${elapsedPercent}%`
+                    }
+                >
+                    <div
+                        className={cn("h-full rounded-full transition-all", getUsageBarColor(usageWindow.usedPercent))}
+                        style={{ width: `${usageWindow.usedPercent}%` }}
+                    />
+                </div>
+
+                {/* 時間の進み方との比較用。バーの塗りがこの線を越えていれば使うペースが速い */}
+                {elapsedPercent !== null && (
+                    <span
+                        aria-hidden
+                        className="pointer-events-none absolute inset-y-0 -my-0.5 w-0.5 -translate-x-1/2 rounded-full bg-foreground/80"
+                        style={{ left: `${elapsedPercent}%` }}
+                    />
+                )}
             </div>
 
-            <div className="flex items-center justify-between gap-2 text-[10px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
-                <span>使用 {usageWindow.usedPercent}%</span>
+            <div className="flex flex-wrap items-center justify-between gap-x-2 text-[10px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
+                <span>
+                    使用 {usageWindow.usedPercent}%
+                    {elapsedPercent !== null && <span className="ml-1.5">経過 {elapsedPercent}%</span>}
+                </span>
                 {remaining && <span>{remaining}</span>}
             </div>
         </div>

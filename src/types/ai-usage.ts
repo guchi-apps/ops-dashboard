@@ -14,6 +14,8 @@ export interface AiUsageWindow {
     usedPercent: number
     /** 制限枠がリセットされる時刻（ISO 8601）。不明なら null */
     resetsAt: string | null
+    /** 制限枠の長さ（秒）。不明なら null。resetsAt と組み合わせて経過時間を出すのに使う */
+    windowSeconds: number | null
     /** 補足表示（例: "Opus"） */
     note?: string
 }

@@ -1,4 +1,4 @@
-import { clampPercent, fetchWithTimeout, readErrorBody } from "@/lib/ai-usage/common"
+import { clampPercent, fetchWithTimeout, formatWindowLabel, readErrorBody } from "@/lib/ai-usage/common"
 import { getAccessToken, type RefreshResult } from "@/lib/ai-usage/token-store"
 import type { AiProviderBilling, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
@@ -122,17 +122,21 @@ async function resolveAccessToken(): Promise<string | null> {
     return getAccessToken("claude", refreshToken, refreshAccessToken)
 }
 
+const FIVE_HOUR_SECONDS = 5 * 60 * 60
+const SEVEN_DAY_SECONDS = 7 * 24 * 60 * 60
+
 function toWindow(
-    label: string,
+    windowSeconds: number,
     source: UsageWindowResponse | null | undefined,
     note?: string
 ): AiUsageWindow | null {
     if (!source || typeof source.utilization !== "number") return null
 
     return {
-        label,
+        label: formatWindowLabel(windowSeconds),
         usedPercent: clampPercent(source.utilization),
         resetsAt: source.resets_at ?? null,
+        windowSeconds,
         note,
     }
 }
@@ -189,10 +193,10 @@ export function parseClaudeUsageResponse(data: OauthUsageResponse): {
     billing?: AiProviderBilling
 } {
     const windows = [
-        toWindow("5時間", data.five_hour),
-        toWindow("週間", data.seven_day),
-        toWindow("週間", data.seven_day_opus, "Opus"),
-        toWindow("週間", data.seven_day_sonnet, "Sonnet"),
+        toWindow(FIVE_HOUR_SECONDS, data.five_hour),
+        toWindow(SEVEN_DAY_SECONDS, data.seven_day),
+        toWindow(SEVEN_DAY_SECONDS, data.seven_day_opus, "Opus"),
+        toWindow(SEVEN_DAY_SECONDS, data.seven_day_sonnet, "Sonnet"),
     ].filter((window): window is AiUsageWindow => window !== null)
 
     return { windows, billing: toBilling(data) }

@@ -105,10 +105,16 @@ function toWindow(source: RateLimitWindow | null | undefined): AiUsageWindow | n
               ? new Date(Date.now() + source.reset_after_seconds * 1000).toISOString()
               : null
 
+    const windowSeconds =
+        typeof source.limit_window_seconds === "number" && source.limit_window_seconds > 0
+            ? source.limit_window_seconds
+            : null
+
     return {
-        label: formatWindowLabel(source.limit_window_seconds ?? 0),
+        label: formatWindowLabel(windowSeconds ?? 0),
         usedPercent: clampPercent(source.used_percent),
         resetsAt,
+        windowSeconds,
     }
 }
 
