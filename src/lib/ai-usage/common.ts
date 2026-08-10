@@ -28,6 +28,12 @@ export function formatWindowLabel(seconds: number): string {
     return `${days}日間`
 }
 
+/** 例外の内容を画面に出せる長さへ縮める */
+export function describeError(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error)
+    return message.replace(/\s+/g, " ").trim().slice(0, 120)
+}
+
 export async function readErrorBody(res: Response): Promise<string> {
     try {
         const text = await res.text()
