@@ -7,7 +7,7 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
-        version: "0.3.0",
+        version: "0.3.1",
         date: "2026-08-10",
         changes: [
             "Claude と ChatGPT の利用状況を表示するようになりました。制限ごとの残量・リセットまでの時間・契約プランを確認できます。",

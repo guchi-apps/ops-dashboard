@@ -7,7 +7,7 @@ TARGET_DIR=op://apps/ops-dashboard/target-dir
 PORT=op://apps/ops-dashboard/port
 
 # Auth（Supabaseは複数アプリ共通プロジェクトのため Vault は共有アイテムを参照）
-NEXT_PUBLIC_SUPABASE_URL=op://apps/Supabase/url
+NEXT_PUBLIC_SUPABASE_URL=op://apps/Supabase/project-url
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=op://apps/Supabase/publishable-key
 ALLOWED_EMAILS=op://apps/ops-dashboard/allowed-emails
 
