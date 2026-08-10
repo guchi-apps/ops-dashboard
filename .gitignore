@@ -44,3 +44,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AIトークン使用状況のOAuthトークン永続化先（デプロイをまたいで残す運用データ）
+/.data/

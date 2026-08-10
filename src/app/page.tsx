@@ -1,4 +1,5 @@
 import { requireSessionForPage } from "@/lib/session"
+import { AiUsage } from "@/components/ai-usage"
 import { MonitorCard, MonitorCardGrid } from "@/components/monitor-card"
 import { SectionHeading } from "@/components/section-heading"
 import { ServerStats } from "@/components/server-stats"
@@ -79,6 +80,7 @@ export default async function Home() {
                 </div>
 
                 <ServerStats />
+                <AiUsage />
                 <UptimeKumaSection />
                 <UptimeRobotSection />
             </div>
