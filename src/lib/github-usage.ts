@@ -13,6 +13,13 @@ const DEFAULT_ALLOWANCE_MINUTES = 2000
 
 const DEFAULT_CACHE_SECONDS = 300
 
+/**
+ * 取得に失敗したスナップショットは通常より短くしか持たない。
+ * 一時的な失敗を通常のキャッシュ期間ぶん抱えると、復旧しているのに
+ * エラー表示が数分間残り続けてしまうため。
+ */
+const ERROR_CACHE_SECONDS = 30
+
 /** private リポジトリ一覧の取得ページ数の上限（1ページ100件） */
 const MAX_REPO_PAGES = 5
 
@@ -50,7 +57,11 @@ function getRunnerMultiplier(sku: string): number {
     return 1
 }
 
-async function githubFetch<T>(path: string, token: string): Promise<T> {
+/**
+ * `label` は失敗時に画面へ出す表示名。パスをそのまま出すと、組織名の設定を
+ * 誤ってトークンを入れてしまった場合にそれが画面へ露出するため、パスは含めない。
+ */
+async function githubFetch<T>(path: string, token: string, label: string): Promise<T> {
     let res: Response
     try {
         res = await fetchWithTimeout(`${API_BASE}${path}`, {
@@ -61,12 +72,11 @@ async function githubFetch<T>(path: string, token: string): Promise<T> {
             },
         })
     } catch (error) {
-        // どのエンドポイントで失敗したのかが画面から分かるように、経路名を添えて投げ直す
-        throw new Error(`GET ${path} に到達できませんでした: ${describeError(error)}`)
+        throw new Error(`${label}に到達できませんでした: ${describeError(error)}`)
     }
 
     if (!res.ok) {
-        throw new Error(`GET ${path} が失敗しました (${res.status}): ${await readErrorBody(res)}`)
+        throw new Error(`${label}の取得に失敗しました (${res.status}): ${await readErrorBody(res)}`)
     }
 
     return (await res.json()) as T
@@ -82,7 +92,8 @@ async function fetchPrivateRepositoryNames(org: string, token: string): Promise<
     for (let page = 1; page <= MAX_REPO_PAGES; page++) {
         const repos = await githubFetch<OrgRepository[]>(
             `/orgs/${encodeURIComponent(org)}/repos?type=private&per_page=100&page=${page}`,
-            token
+            token,
+            "非公開リポジトリ一覧"
         )
 
         for (const repo of repos) names.add(repo.name)
@@ -106,7 +117,7 @@ function roundTo(value: number, digits: number): number {
 }
 
 function getAllowanceLimitMinutes(): number {
-    const configured = Number.parseInt(process.env.GITHUB_ACTIONS_MINUTES_LIMIT ?? "", 10)
+    const configured = Number.parseInt(process.env.GH_ACTIONS_MINUTES_LIMIT ?? "", 10)
     return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_ALLOWANCE_MINUTES
 }
 
@@ -123,7 +134,8 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
     const [report, privateNames] = await Promise.all([
         githubFetch<UsageReportResponse>(
             `/organizations/${encodeURIComponent(org)}/settings/billing/usage?year=${year}&month=${month}`,
-            token
+            token,
+            "課金レポート"
         ),
         fetchPrivateRepositoryNames(org, token),
     ])
@@ -181,7 +193,7 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
 }
 
 async function fetchRateLimit(token: string): Promise<GitHubRateLimit> {
-    const data = await githubFetch<RateLimitResponse>("/rate_limit", token)
+    const data = await githubFetch<RateLimitResponse>("/rate_limit", token, "APIレート制限")
     const core = data.resources?.core
 
     if (!core || typeof core.limit !== "number" || typeof core.remaining !== "number") {
@@ -203,7 +215,7 @@ async function fetchRateLimit(token: string): Promise<GitHubRateLimit> {
 let cache: { snapshot: GitHubUsageSnapshot; expiresAt: number } | null = null
 
 function getCacheTtlMs(): number {
-    const configured = Number.parseInt(process.env.GITHUB_USAGE_CACHE_SECONDS ?? "", 10)
+    const configured = Number.parseInt(process.env.GH_USAGE_CACHE_SECONDS ?? "", 10)
     const seconds = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_CACHE_SECONDS
     return seconds * 1000
 }
@@ -213,11 +225,12 @@ export async function getGitHubUsageSnapshot(): Promise<GitHubUsageSnapshot> {
         return cache.snapshot
     }
 
-    const token = process.env.GITHUB_USAGE_TOKEN
-    const org = process.env.GITHUB_USAGE_ORG
+    const token = process.env.GH_USAGE_TOKEN
+    const org = process.env.GH_USAGE_ORG
 
     const snapshot = await buildSnapshot(token, org)
-    cache = { snapshot, expiresAt: Date.now() + getCacheTtlMs() }
+    const ttlMs = snapshot.status === "ok" ? getCacheTtlMs() : ERROR_CACHE_SECONDS * 1000
+    cache = { snapshot, expiresAt: Date.now() + ttlMs }
     return snapshot
 }
 
@@ -230,7 +243,7 @@ async function buildSnapshot(
     if (!token || !org) {
         return {
             status: "unconfigured",
-            message: "GITHUB_USAGE_TOKEN と GITHUB_USAGE_ORG が未設定です",
+            message: "GH_USAGE_TOKEN と GH_USAGE_ORG が未設定です",
             org: org ?? null,
             actions: null,
             rateLimit: null,

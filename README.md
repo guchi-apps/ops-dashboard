@@ -142,11 +142,11 @@ Actionsのストレージ消費は課金レポートがGB時間で返す一方�
 
 課金レポートのエンドポイントはfine-grained PATに非対応のため、**classic PAT**を使う。
 必要なスコープは `read:org` と、privateリポジトリの一覧取得に使う `repo`。
-発行した値を `GITHUB_USAGE_TOKEN`、対象の組織名を `GITHUB_USAGE_ORG` に設定する。
+発行した値を `GH_USAGE_TOKEN`、対象の組織名を `GH_USAGE_ORG` に設定する。
 どちらか未設定の場合はGitHubセクションを表示しない。
 
-取得結果はサーバー側で既定5分間キャッシュする（`GITHUB_USAGE_CACHE_SECONDS` で変更可）。
-無料枠の上限は `GITHUB_ACTIONS_MINUTES_LIMIT` で上書きできる（未設定時は2,000分）。
+取得結果はサーバー側で既定5分間キャッシュする（`GH_USAGE_CACHE_SECONDS` で変更可）。
+無料枠の上限は `GH_ACTIONS_MINUTES_LIMIT` で上書きできる（未設定時は2,000分）。
 
 ### Notionを表示対象に含めていない理由
 

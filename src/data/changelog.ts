@@ -7,6 +7,13 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.4.1",
+        date: "2026-08-11",
+        changes: [
+            "GitHub の利用状況が表示されない不具合を修正しました。",
+        ],
+    },
+    {
         version: "0.4.0",
         date: "2026-08-11",
         changes: [
