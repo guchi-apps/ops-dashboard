@@ -110,6 +110,51 @@ OAuthのリフレッシュトークンは使うたびにローテーションす
 各提供元のエンドポイントはレート制限が厳しい（Anthropic側は180秒以上の間隔が推奨）ため、
 取得結果はサーバー側で既定5分間キャッシュする（`AI_USAGE_CACHE_SECONDS` で変更可）。
 
+## GitHubの制限の表示
+
+`guchi-apps` organization のGitHub Actions無料枠の消費量と、REST APIのレート制限をダッシュボードに表示する。
+
+| 表示 | 取得元 |
+| --- | --- |
+| Actions無料枠の消費量・今月の総実行時間・リポジトリ別の内訳・課金額 | `GET /organizations/{org}/settings/billing/usage` |
+| APIレート制限（5,000 req/時）の残量とリセット時刻 | `GET /rate_limit` |
+| 無料枠を消費するリポジトリの判定 | `GET /orgs/{org}/repos?type=private` |
+
+**publicリポジトリのActionsは無制限に無料**のため、無料枠（Freeプランは2,000分/月）を消費するのは
+privateリポジトリの分だけである。課金レポートはpublicリポジトリの実行時間も含めて返すので、
+合計をそのまま無料枠と比べると実際よりはるかに消費しているように見えてしまう。
+このため無料枠のゲージはprivateリポジトリ分のみで計算し、総実行時間は別項目として表示している
+（無料枠の消費は実行環境ごとの倍率も加味する。Windowsは2倍、macOSは10倍）。
+
+Actionsのストレージ消費は課金レポートがGB時間で返す一方、無料枠は容量（500MB）で決まっているため
+割合を出せない。実績値のみを表示している。
+
+### 実装上の注意
+
+- **課金レポートは `year` / `month` を必ず指定する**。省略すると全リポジトリの合計が単一のリポジトリ名に
+  束ねられた状態で返るため、リポジトリ別の内訳が出せない
+- 旧エンドポイント `GET /orgs/{org}/settings/billing/actions`（`included_minutes` などを返していた）は
+  410で廃止済み。現在は無料枠の残量を直接返すAPIが存在しないため、上記の方法で自前に算出している
+- `GET /repos/{owner}/{repo}/actions/runs/{run_id}/timing` は、public・privateいずれのリポジトリでも
+  `billable` が常に0を返す状態で、実行時間の取得には使えない
+
+### 認証情報の取得方法
+
+課金レポートのエンドポイントはfine-grained PATに非対応のため、**classic PAT**を使う。
+必要なスコープは `read:org` と、privateリポジトリの一覧取得に使う `repo`。
+発行した値を `GITHUB_USAGE_TOKEN`、対象の組織名を `GITHUB_USAGE_ORG` に設定する。
+どちらか未設定の場合はGitHubセクションを表示しない。
+
+取得結果はサーバー側で既定5分間キャッシュする（`GITHUB_USAGE_CACHE_SECONDS` で変更可）。
+無料枠の上限は `GITHUB_ACTIONS_MINUTES_LIMIT` で上書きできる（未設定時は2,000分）。
+
+### Notionを表示対象に含めていない理由
+
+Notionは使用量・プラン枠を返すAPIを公開しておらず、レート制限（平均3 req/秒）も残量ヘッダを返さず
+429と `Retry-After` のみで通知される仕様のため、「残り何%」に相当する値が取得できない。
+1クエリ10,000件のページング上限やペイロード上限（1,000ブロック / 500KB）も時間でリセットされる枠ではなく、
+ダッシュボードの残量表示には載らないため対象外としている（Geminiと同じ扱い）。
+
 ## テスト
 
 ```bash
@@ -123,6 +168,6 @@ npm run build
 
 - **CI**: `.github/workflows/ci.yml`。`develop`へのpushと`main`/`develop`へのPRでlint・型チェック・buildを実行
 - **デプロイ**: `.github/workflows/deploy.yml`。`main`へのpushで、`package.json`のversionからGitタグ・GitHub Releaseを作成し、ビルド成果物をVPSへ配置してPM2で再起動する（`deploy/ecosystem.config.js`）
-- **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する。AI使用状況の表示を有効にするには、`apps/ops-dashboard`アイテムに`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id`のフィールドを追加しておく（未作成のままだとデプロイのシークレット読み込みが失敗する）
+- **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する。AI使用状況の表示を有効にするには、`apps/ops-dashboard`アイテムに`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id`のフィールドを追加しておく。GitHubの制限の表示には`github-usage-token` / `github-usage-org`のフィールドを追加しておく（いずれも未作成のままだとデプロイのシークレット読み込みが失敗する）
 - **Apache**: リバースプロキシ設定は`vps`リポジトリ（`apache/sites-available/admin.gucchii.com.conf`）が一次情報源。`deploy/apache-vhost.example.conf`は参考用の雛形
 - **Supabase**: Authentication → URL Configuration の Redirect URLs に `https://admin.gucchii.com/auth/callback` を追加登録すること

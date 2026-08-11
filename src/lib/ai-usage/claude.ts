@@ -2,9 +2,9 @@ import {
     clampPercent,
     describeError,
     fetchWithTimeout,
-    formatWindowLabel,
     readErrorBody,
-} from "@/lib/ai-usage/common"
+} from "@/lib/upstream"
+import { formatWindowLabel } from "@/lib/ai-usage/common"
 import { getAccessToken, type RefreshResult } from "@/lib/ai-usage/token-store"
 import type { AiProviderBilling, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 

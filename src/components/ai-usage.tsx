@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
-import { cn } from "@/lib/utils"
+import { UsageBar } from "@/components/usage-bar"
+import { formatRemaining, getElapsedPercent } from "@/lib/usage-format"
 import type { AiProviderUsage, AiUsageSnapshot, AiUsageWindow } from "@/types/ai-usage"
 
 /** サーバー側のキャッシュ（既定5分）に合わせた取得間隔 */
@@ -12,98 +13,25 @@ const REFRESH_INTERVAL_MS = 300_000
 /** リセットまでの残り時間表示を進めるための再描画間隔 */
 const TICK_INTERVAL_MS = 30_000
 
-function getUsageBarColor(percent: number): string {
-    if (percent >= 90) return "bg-red-400"
-    if (percent >= 75) return "bg-amber-400"
-    return "bg-emerald-400"
-}
-
-/**
- * 制限枠のうち何割の時間が過ぎたかを返す。
- * リセット時刻と枠の長さが両方分からないと出せないため、その場合は null を返す。
- */
-function getElapsedPercent(usageWindow: AiUsageWindow, now: number): number | null {
+/** 制限枠の長さとリセット時刻から、枠のうち何割の時間が過ぎたかを出す */
+function getWindowElapsedPercent(usageWindow: AiUsageWindow, now: number): number | null {
     if (!usageWindow.resetsAt || !usageWindow.windowSeconds) return null
 
     const resetsAtMs = new Date(usageWindow.resetsAt).getTime()
     if (Number.isNaN(resetsAtMs)) return null
 
-    const totalMs = usageWindow.windowSeconds * 1000
-    const elapsedMs = totalMs - (resetsAtMs - now)
-
-    return Math.min(100, Math.max(0, Math.round((elapsedMs / totalMs) * 100)))
-}
-
-function formatRemaining(resetsAt: string, now: number): string | null {
-    const remainingMs = new Date(resetsAt).getTime() - now
-    if (Number.isNaN(remainingMs)) return null
-    if (remainingMs <= 0) return "まもなくリセット"
-
-    const minutes = Math.floor(remainingMs / 60_000)
-    const hours = Math.floor(minutes / 60)
-    const days = Math.floor(hours / 24)
-
-    if (days >= 1) return `あと${days}日${hours % 24}時間でリセット`
-    if (hours >= 1) return `あと${hours}時間${minutes % 60}分でリセット`
-    return `あと${minutes}分でリセット`
+    return getElapsedPercent(resetsAtMs - usageWindow.windowSeconds * 1000, resetsAtMs, now)
 }
 
 function UsageWindowRow({ window: usageWindow, now }: { window: AiUsageWindow; now: number }) {
-    const remaining = usageWindow.resetsAt ? formatRemaining(usageWindow.resetsAt, now) : null
-    const elapsedPercent = getElapsedPercent(usageWindow, now)
-
     return (
-        <div className="space-y-1">
-            <div className="flex items-baseline justify-between gap-2">
-                <span className="text-xs sm:text-sm font-medium">
-                    {usageWindow.label}
-                    {usageWindow.note && (
-                        <span className="ml-1 text-[10px] sm:text-xs opacity-70">{usageWindow.note}</span>
-                    )}
-                </span>
-                <span className="font-mono text-sm sm:text-base font-bold">
-                    残り {Math.round(100 - usageWindow.usedPercent)}%
-                </span>
-            </div>
-
-            <div className="relative">
-                <div
-                    className="h-2 w-full overflow-hidden rounded-full bg-primary-foreground/20 dark:bg-muted"
-                    role="progressbar"
-                    aria-label={`${usageWindow.label}の使用率`}
-                    aria-valuenow={Math.round(usageWindow.usedPercent)}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuetext={
-                        elapsedPercent === null
-                            ? undefined
-                            : `使用 ${usageWindow.usedPercent}%、経過 ${elapsedPercent}%`
-                    }
-                >
-                    <div
-                        className={cn("h-full rounded-full transition-all", getUsageBarColor(usageWindow.usedPercent))}
-                        style={{ width: `${usageWindow.usedPercent}%` }}
-                    />
-                </div>
-
-                {/* 時間の進み方との比較用。バーの塗りがこの線を越えていれば使うペースが速い */}
-                {elapsedPercent !== null && (
-                    <span
-                        aria-hidden
-                        className="pointer-events-none absolute inset-y-0 -my-0.5 w-0.5 -translate-x-1/2 rounded-full bg-foreground/80"
-                        style={{ left: `${elapsedPercent}%` }}
-                    />
-                )}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-x-2 text-[10px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
-                <span>
-                    使用 {usageWindow.usedPercent}%
-                    {elapsedPercent !== null && <span className="ml-1.5">経過 {elapsedPercent}%</span>}
-                </span>
-                {remaining && <span>{remaining}</span>}
-            </div>
-        </div>
+        <UsageBar
+            label={usageWindow.label}
+            note={usageWindow.note}
+            usedPercent={usageWindow.usedPercent}
+            elapsedPercent={getWindowElapsedPercent(usageWindow, now)}
+            remainingText={usageWindow.resetsAt ? formatRemaining(usageWindow.resetsAt, now) : null}
+        />
     )
 }
 
