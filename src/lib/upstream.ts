@@ -6,11 +6,15 @@
 const DEFAULT_TIMEOUT_MS = 10_000
 
 /** 相手のAPIが応答しないときにダッシュボード全体を待たせないためのタイムアウト付き fetch */
-export async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+export async function fetchWithTimeout(
+    url: string,
+    init: RequestInit = {},
+    timeoutMs: number = DEFAULT_TIMEOUT_MS
+): Promise<Response> {
     return fetch(url, {
         ...init,
         cache: "no-store",
-        signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
     })
 }
 

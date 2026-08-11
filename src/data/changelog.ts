@@ -7,6 +7,13 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.5.0",
+        date: "2026-08-12",
+        changes: [
+            "iPhone のロック画面ウィジェットから、Claude の利用枠の残量とリセットまでの時間を確認できるようになりました。",
+        ],
+    },
+    {
         version: "0.4.1",
         date: "2026-08-11",
         changes: [

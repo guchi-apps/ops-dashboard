@@ -32,3 +32,6 @@ OPENAI_CHATGPT_ACCOUNT_ID=op://apps/ops-dashboard/openai-chatgpt-account-id
 # 変数名を GITHUB_ で始めてはいけない（Actions の予約プレフィックスで、値が渡らない）
 GH_USAGE_TOKEN=op://apps/ops-dashboard/github-usage-token
 GH_USAGE_ORG=op://apps/ops-dashboard/github-usage-org
+
+# iPhoneウィジェット（Scriptable）用の固定トークン
+WIDGET_TOKEN=op://apps/ops-dashboard/widget-token

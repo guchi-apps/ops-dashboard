@@ -110,6 +110,48 @@ OAuthのリフレッシュトークンは使うたびにローテーションす
 各提供元のエンドポイントはレート制限が厳しい（Anthropic側は180秒以上の間隔が推奨）ため、
 取得結果はサーバー側で既定5分間キャッシュする（`AI_USAGE_CACHE_SECONDS` で変更可）。
 
+## iPhoneウィジェット向けのClaude利用枠API
+
+iPhoneのロック画面ウィジェット（Scriptable）からClaudeの利用枠の残量を参照するための中継API。
+ダッシュボードには表示せず、このエンドポイントだけを提供する。
+
+```
+GET /api/claude-usage
+Authorization: Bearer <WIDGET_TOKEN>
+```
+
+上流（`https://api.anthropic.com/api/oauth/usage`）のJSONに `collected_at`（取得時刻）と
+`stale`（古いキャッシュを返しているか）を足して返す。キー構成は提供元の都合で変わりうるため、
+サーバー側では解釈し直さずそのまま素通しし、ウィジェット側が知っているキーだけを読む。
+
+```json
+{
+  "five_hour": { "utilization": 0.42, "resets_at": "2026-08-12T17:00:00Z" },
+  "seven_day": { "utilization": 0.61, "resets_at": "2026-08-14T03:00:00Z" },
+  "collected_at": "2026-08-12T14:05:00Z",
+  "stale": false
+}
+```
+
+| コード | 条件 |
+| --- | --- |
+| 200 | 取得成功、またはキャッシュあり（失敗時は `stale: true` と `error` が付く） |
+| 401 | `Authorization` が一致しない、または `WIDGET_TOKEN` 未設定 |
+| 503 | 上流の取得に失敗し、キャッシュも無い |
+
+- **認証**: Scriptableはログイン画面を通れないため、Supabase Authではなく `WIDGET_TOKEN` との完全一致で認証する。
+  このパスは `src/proxy.ts` の認証対象から除外している。`WIDGET_TOKEN` が未設定なら常に401を返す
+- **認証情報**: AI使用状況の表示と同じ `ANTHROPIC_OAUTH_REFRESH_TOKEN` を使う。
+  issueの当初案は同一VPS上の `~/.claude/.credentials.json` を直接読む方式だったが、
+  このファイルは 600 でpm2の実行ユーザーを揃える必要があるうえ、アクセストークンの更新を
+  そのマシンのClaude Codeの実行に依存してしまうため、既存の仕組み（リフレッシュトークン + トークンストア）に寄せている
+- **キャッシュ**: プロセス内メモリに10分保持する（永続化しない）。上流の取得に失敗しても、
+  キャッシュがあれば `stale: true` を付けて200で返し、ウィジェットが空になることを避ける
+- **タイムアウト**: ウィジェット側のタイムアウトが8秒のため、上流の呼び出しは8秒で打ち切る
+
+`anthropic-beta` ヘッダーのバージョン文字列が変わると**無言で401になる**。値は
+`src/lib/ai-usage/claude.ts` の `OAUTH_BETA_VERSION` にまとめてあるので、そこを書き換えれば復旧できる。
+
 ## GitHubの制限の表示
 
 `guchi-apps` organization のGitHub Actions無料枠の消費量と、REST APIのレート制限をダッシュボードに表示する。
@@ -168,6 +210,6 @@ npm run build
 
 - **CI**: `.github/workflows/ci.yml`。`develop`へのpushと`main`/`develop`へのPRでlint・型チェック・buildを実行
 - **デプロイ**: `.github/workflows/deploy.yml`。`main`へのpushで、`package.json`のversionからGitタグ・GitHub Releaseを作成し、ビルド成果物をVPSへ配置してPM2で再起動する（`deploy/ecosystem.config.js`）
-- **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する。AI使用状況の表示を有効にするには、`apps/ops-dashboard`アイテムに`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id`のフィールドを追加しておく。GitHubの制限の表示には`github-usage-token` / `github-usage-org`のフィールドを追加しておく（いずれも未作成のままだとデプロイのシークレット読み込みが失敗する）
+- **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する。AI使用状況の表示を有効にするには、`apps/ops-dashboard`アイテムに`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id`のフィールドを追加しておく。GitHubの制限の表示には`github-usage-token` / `github-usage-org`のフィールドを追加しておく。iPhoneウィジェット向けAPIには`widget-token`のフィールド（32文字以上のランダム文字列）を追加しておく（いずれも未作成のままだとデプロイのシークレット読み込みが失敗する）
 - **Apache**: リバースプロキシ設定は`vps`リポジトリ（`apache/sites-available/admin.gucchii.com.conf`）が一次情報源。`deploy/apache-vhost.example.conf`は参考用の雛形
 - **Supabase**: Authentication → URL Configuration の Redirect URLs に `https://admin.gucchii.com/auth/callback` を追加登録すること
