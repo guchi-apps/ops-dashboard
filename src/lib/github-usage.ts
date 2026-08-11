@@ -13,6 +13,13 @@ const DEFAULT_ALLOWANCE_MINUTES = 2000
 
 const DEFAULT_CACHE_SECONDS = 300
 
+/**
+ * 取得に失敗したスナップショットは通常より短くしか持たない。
+ * 一時的な失敗を通常のキャッシュ期間ぶん抱えると、復旧しているのに
+ * エラー表示が数分間残り続けてしまうため。
+ */
+const ERROR_CACHE_SECONDS = 30
+
 /** private リポジトリ一覧の取得ページ数の上限（1ページ100件） */
 const MAX_REPO_PAGES = 5
 
@@ -106,7 +113,7 @@ function roundTo(value: number, digits: number): number {
 }
 
 function getAllowanceLimitMinutes(): number {
-    const configured = Number.parseInt(process.env.GITHUB_ACTIONS_MINUTES_LIMIT ?? "", 10)
+    const configured = Number.parseInt(process.env.GH_ACTIONS_MINUTES_LIMIT ?? "", 10)
     return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_ALLOWANCE_MINUTES
 }
 
@@ -203,7 +210,7 @@ async function fetchRateLimit(token: string): Promise<GitHubRateLimit> {
 let cache: { snapshot: GitHubUsageSnapshot; expiresAt: number } | null = null
 
 function getCacheTtlMs(): number {
-    const configured = Number.parseInt(process.env.GITHUB_USAGE_CACHE_SECONDS ?? "", 10)
+    const configured = Number.parseInt(process.env.GH_USAGE_CACHE_SECONDS ?? "", 10)
     const seconds = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_CACHE_SECONDS
     return seconds * 1000
 }
@@ -213,11 +220,12 @@ export async function getGitHubUsageSnapshot(): Promise<GitHubUsageSnapshot> {
         return cache.snapshot
     }
 
-    const token = process.env.GITHUB_USAGE_TOKEN
-    const org = process.env.GITHUB_USAGE_ORG
+    const token = process.env.GH_USAGE_TOKEN
+    const org = process.env.GH_USAGE_ORG
 
     const snapshot = await buildSnapshot(token, org)
-    cache = { snapshot, expiresAt: Date.now() + getCacheTtlMs() }
+    const ttlMs = snapshot.status === "ok" ? getCacheTtlMs() : ERROR_CACHE_SECONDS * 1000
+    cache = { snapshot, expiresAt: Date.now() + ttlMs }
     return snapshot
 }
 
@@ -230,7 +238,7 @@ async function buildSnapshot(
     if (!token || !org) {
         return {
             status: "unconfigured",
-            message: "GITHUB_USAGE_TOKEN と GITHUB_USAGE_ORG が未設定です",
+            message: "GH_USAGE_TOKEN と GH_USAGE_ORG が未設定です",
             org: org ?? null,
             actions: null,
             rateLimit: null,
