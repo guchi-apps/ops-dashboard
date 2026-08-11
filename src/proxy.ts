@@ -3,7 +3,9 @@ import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 // /auth 配下（callback・signout）は未ログイン状態で叩かれても安全なため素通りさせる。
-const PUBLIC_PATH_PREFIXES = ["/login", "/auth"];
+// /api/claude-usage はScriptableのウィジェットから叩く中継APIで、ログイン画面を通れないため
+// ここでは素通りさせ、ルート側で WIDGET_TOKEN による認証を行う。
+const PUBLIC_PATH_PREFIXES = ["/login", "/auth", "/api/claude-usage"];
 
 /**
  * リクエストごとに Supabase のアクセストークンをリフレッシュし、更新後のCookieを

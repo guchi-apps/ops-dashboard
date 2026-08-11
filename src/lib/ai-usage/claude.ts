@@ -12,7 +12,7 @@ import type { AiProviderBilling, AiProviderUsage, AiUsageWindow } from "@/types/
  * Claude Code の `/usage` が参照しているのと同じOAuthエンドポイントを叩く。
  * 公式に文書化されたAPIではないため、仕様変更で壊れうる前提で扱う。
  */
-const USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+export const CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 
 /** 契約プランは使用状況のレスポンスに含まれないため、プロフィールから取得する */
 const PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
@@ -24,6 +24,12 @@ const TOKEN_URLS = [
 ]
 
 const OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+
+/**
+ * このヘッダーが無いと 401 が返る。バージョン文字列が変わると無言で 401 になるため、
+ * 復旧をこの1箇所の書き換えで済ませられるよう定数にまとめている。
+ */
+const OAUTH_BETA_VERSION = "oauth-2025-04-20"
 
 /** claude-code を名乗らないと極端に厳しいレート制限バケットに入り 429 が返り続ける */
 const DEFAULT_USER_AGENT = "claude-code/2.0.14"
@@ -74,6 +80,16 @@ function userAgent(): string {
     return process.env.ANTHROPIC_CLIENT_USER_AGENT || DEFAULT_USER_AGENT
 }
 
+/** OAuthトークンで Anthropic の非公開エンドポイントを叩くときの共通ヘッダー */
+export function claudeApiHeaders(accessToken: string): Record<string, string> {
+    return {
+        Authorization: `Bearer ${accessToken}`,
+        "anthropic-beta": OAUTH_BETA_VERSION,
+        "User-Agent": userAgent(),
+        Accept: "application/json",
+    }
+}
+
 async function refreshAccessToken(refreshToken: string): Promise<RefreshResult> {
     let lastError = ""
 
@@ -121,7 +137,7 @@ async function refreshAccessToken(refreshToken: string): Promise<RefreshResult> 
  * user:profile が付かないため 403 になる。user:profile が付くのは
  * `claude login` のフルOAuthで発行されるトークンだけなので、そのリフレッシュトークンを使う。
  */
-async function resolveAccessToken(): Promise<string | null> {
+export async function resolveClaudeAccessToken(): Promise<string | null> {
     const refreshToken = process.env.ANTHROPIC_OAUTH_REFRESH_TOKEN
     if (!refreshToken) return null
 
@@ -211,14 +227,7 @@ export function parseClaudeUsageResponse(data: OauthUsageResponse): {
 /** プランの取得に失敗しても使用状況の表示は続けたいので、失敗時は null を返す */
 async function fetchPlan(accessToken: string): Promise<string | null> {
     try {
-        const res = await fetchWithTimeout(PROFILE_URL, {
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "anthropic-beta": "oauth-2025-04-20",
-                "User-Agent": userAgent(),
-                Accept: "application/json",
-            },
-        })
+        const res = await fetchWithTimeout(PROFILE_URL, { headers: claudeApiHeaders(accessToken) })
         if (!res.ok) {
             console.error("Claude profile API error:", res.status, await readErrorBody(res))
             return null
@@ -241,7 +250,7 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
 
     let accessToken: string | null
     try {
-        accessToken = await resolveAccessToken()
+        accessToken = await resolveClaudeAccessToken()
     } catch (error) {
         console.error("Claude usage: トークン更新に失敗", error)
         return {
@@ -261,14 +270,7 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
 
     try {
         const [res, detectedPlan] = await Promise.all([
-            fetchWithTimeout(USAGE_URL, {
-                headers: {
-                    Authorization: `Bearer ${accessToken}`,
-                    "anthropic-beta": "oauth-2025-04-20",
-                    "User-Agent": userAgent(),
-                    Accept: "application/json",
-                },
-            }),
+            fetchWithTimeout(CLAUDE_USAGE_URL, { headers: claudeApiHeaders(accessToken) }),
             fetchPlan(accessToken),
         ])
 
