@@ -57,7 +57,11 @@ function getRunnerMultiplier(sku: string): number {
     return 1
 }
 
-async function githubFetch<T>(path: string, token: string): Promise<T> {
+/**
+ * `label` は失敗時に画面へ出す表示名。パスをそのまま出すと、組織名の設定を
+ * 誤ってトークンを入れてしまった場合にそれが画面へ露出するため、パスは含めない。
+ */
+async function githubFetch<T>(path: string, token: string, label: string): Promise<T> {
     let res: Response
     try {
         res = await fetchWithTimeout(`${API_BASE}${path}`, {
@@ -68,12 +72,11 @@ async function githubFetch<T>(path: string, token: string): Promise<T> {
             },
         })
     } catch (error) {
-        // どのエンドポイントで失敗したのかが画面から分かるように、経路名を添えて投げ直す
-        throw new Error(`GET ${path} に到達できませんでした: ${describeError(error)}`)
+        throw new Error(`${label}に到達できませんでした: ${describeError(error)}`)
     }
 
     if (!res.ok) {
-        throw new Error(`GET ${path} が失敗しました (${res.status}): ${await readErrorBody(res)}`)
+        throw new Error(`${label}の取得に失敗しました (${res.status}): ${await readErrorBody(res)}`)
     }
 
     return (await res.json()) as T
@@ -89,7 +92,8 @@ async function fetchPrivateRepositoryNames(org: string, token: string): Promise<
     for (let page = 1; page <= MAX_REPO_PAGES; page++) {
         const repos = await githubFetch<OrgRepository[]>(
             `/orgs/${encodeURIComponent(org)}/repos?type=private&per_page=100&page=${page}`,
-            token
+            token,
+            "非公開リポジトリ一覧"
         )
 
         for (const repo of repos) names.add(repo.name)
@@ -130,7 +134,8 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
     const [report, privateNames] = await Promise.all([
         githubFetch<UsageReportResponse>(
             `/organizations/${encodeURIComponent(org)}/settings/billing/usage?year=${year}&month=${month}`,
-            token
+            token,
+            "課金レポート"
         ),
         fetchPrivateRepositoryNames(org, token),
     ])
@@ -188,7 +193,7 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
 }
 
 async function fetchRateLimit(token: string): Promise<GitHubRateLimit> {
-    const data = await githubFetch<RateLimitResponse>("/rate_limit", token)
+    const data = await githubFetch<RateLimitResponse>("/rate_limit", token, "APIレート制限")
     const core = data.resources?.core
 
     if (!core || typeof core.limit !== "number" || typeof core.remaining !== "number") {
