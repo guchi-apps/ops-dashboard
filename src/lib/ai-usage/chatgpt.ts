@@ -1,4 +1,10 @@
-import { clampPercent, fetchWithTimeout, formatWindowLabel, readErrorBody } from "@/lib/ai-usage/common"
+import {
+    clampPercent,
+    describeError,
+    fetchWithTimeout,
+    readErrorBody,
+} from "@/lib/upstream"
+import { formatWindowLabel } from "@/lib/ai-usage/common"
 import { getAccessToken, type RefreshResult } from "@/lib/ai-usage/token-store"
 import type { AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
@@ -142,7 +148,11 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
         accessToken = await getAccessToken("chatgpt", refreshToken, refreshAccessToken)
     } catch (error) {
         console.error("ChatGPT usage: トークン更新に失敗", error)
-        return { ...base, status: "error", message: "認証トークンを更新できませんでした" }
+        return {
+            ...base,
+            status: "error",
+            message: `認証トークンを更新できませんでした: ${describeError(error)}`,
+        }
     }
 
     try {

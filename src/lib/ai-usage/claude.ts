@@ -1,4 +1,10 @@
-import { clampPercent, fetchWithTimeout, formatWindowLabel, readErrorBody } from "@/lib/ai-usage/common"
+import {
+    clampPercent,
+    describeError,
+    fetchWithTimeout,
+    readErrorBody,
+} from "@/lib/upstream"
+import { formatWindowLabel } from "@/lib/ai-usage/common"
 import { getAccessToken, type RefreshResult } from "@/lib/ai-usage/token-store"
 import type { AiProviderBilling, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
@@ -238,7 +244,11 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
         accessToken = await resolveAccessToken()
     } catch (error) {
         console.error("Claude usage: トークン更新に失敗", error)
-        return { ...base, status: "error", message: "認証トークンを更新できませんでした" }
+        return {
+            ...base,
+            status: "error",
+            message: `認証トークンを更新できませんでした: ${describeError(error)}`,
+        }
     }
 
     if (!accessToken) {

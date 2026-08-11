@@ -7,6 +7,15 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.4.0",
+        date: "2026-08-11",
+        changes: [
+            "GitHub Actions の無料枠の消費量と、今月の実行時間をリポジトリごとに確認できるようになりました。",
+            "GitHub の API 制限の残量とリセットまでの時間も表示されます。",
+            "利用状況の取得に使うログイン情報の更新に失敗したとき、原因が画面に表示されるようになりました。",
+        ],
+    },
+    {
         version: "0.3.1",
         date: "2026-08-10",
         changes: [
