@@ -109,23 +109,31 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 
 `scripts/host-stats/` の3ファイルを配置する。エージェントはbashとcurlだけで動き、常駐しない（1分ごとに起動して終了する短命プロセス）。VPS・サブPCとも手順は同じで、設定ファイルの中身だけが違う。
 
+**VPSでは管理者アカウントで作業すること。** デプロイ先（`~/apps/admin`）の所有者である `github-user` は
+sudo が `apply.sh` のみに制限されており、`/opt` や `/etc` への配置ができない。
+ファイルの読み取りは root で行われるため、配置元にデプロイ先のパスをそのまま指定してよい。
+
 ```bash
+# VPSの場合。デプロイ先から配る（サブPCではリポジトリをcloneした場所を指す）
+SRC=/home/github-user/apps/admin/scripts/host-stats
+
 # 1. エージェントを配置する
 sudo mkdir -p /opt/ops-dashboard-host-stats
-sudo cp scripts/host-stats/agent.sh /opt/ops-dashboard-host-stats/
+sudo cp "$SRC/agent.sh" /opt/ops-dashboard-host-stats/
 sudo chmod 755 /opt/ops-dashboard-host-stats/agent.sh
 
 # 2. 設定ファイルを新規に作る（トークンを含むため 600 / root 所有にする）
 #    VPS なら host-stats.vps.env.example、サブPC なら host-stats.subpc.env.example を使う
-sudo cp scripts/host-stats/host-stats.vps.env.example /etc/ops-dashboard-host-stats.env
+sudo cp "$SRC/host-stats.vps.env.example" /etc/ops-dashboard-host-stats.env
 sudo chmod 600 /etc/ops-dashboard-host-stats.env
 sudo vi /etc/ops-dashboard-host-stats.env   # HOST_STATS_TOKEN を記入（他の項目は雛形のままでよい）
 
 # 3. 送信されるJSONを確認する（送信はしない）
-sudo env $(grep -v '^#' /etc/ops-dashboard-host-stats.env | xargs) /opt/ops-dashboard-host-stats/agent.sh --print
+#    設定ファイルは600/root所有のため、読み込みごとrootで行う
+sudo bash -c 'set -a; . /etc/ops-dashboard-host-stats.env; set +a; /opt/ops-dashboard-host-stats/agent.sh --print'
 
 # 4. systemd timer を有効化する
-sudo cp scripts/host-stats/ops-dashboard-host-stats.{service,timer} /etc/systemd/system/
+sudo cp "$SRC"/ops-dashboard-host-stats.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now ops-dashboard-host-stats.timer
 
