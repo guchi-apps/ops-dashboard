@@ -15,7 +15,8 @@ ALLOWED_EMAILS=op://apps/ops-dashboard/allowed-emails
 UPTIMEROBOT_READ_ONLY_KEY=op://apps/ops-dashboard/uptimerobot-read-only-key
 UPTIMEKUMA_BASE_URL=op://apps/ops-dashboard/uptimekuma-base-url
 UPTIMEKUMA_DASHBOARD_SLUG=op://apps/ops-dashboard/uptimekuma-dashboard-slug
-SYSTEM_STATS_DISK_PATH=op://apps/ops-dashboard/system-stats-disk-path
+# 各ホスト（VPS・サブPC）のメトリクス受信用の固定トークン。各ホストの agent.sh と共有する
+HOST_STATS_TOKEN=op://apps/ops-dashboard/host-stats-token
 
 # CI / デプロイ通知
 SIGNALY_WEBHOOK_URL=op://apps/ops-dashboard/ci-webhook-url
@@ -35,6 +36,3 @@ GH_USAGE_ORG=op://apps/ops-dashboard/github-usage-org
 
 # iPhoneウィジェット（Scriptable）用の固定トークン
 WIDGET_TOKEN=op://apps/ops-dashboard/widget-token
-
-# サブPCのメトリクス受信用の固定トークン（サブPC側の agent.sh と共有する）
-HOST_STATS_TOKEN=op://apps/ops-dashboard/host-stats-token

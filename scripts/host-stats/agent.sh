@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 #
-# サブPCのメトリクスを収集し、ops-dashboard の /api/host-stats へPOSTする。
+# このホストのメトリクスを収集し、ops-dashboard の /api/host-stats へPOSTする。
 #
-# ダッシュボードはVPS上で動いており、自宅LAN内のサブPCへポーリングできないため、
-# サブPC側から定期的に送る（push型）。systemd timer から1分間隔で起動する想定。
+# VPS・サブPCとも同じこのスクリプトを使う（push型に一本化）。サブPCは自宅LAN内（NAT配下）に
+# いてダッシュボードからポーリングできないため、ホスト側から送る形にしている。
+# VPS上ではダッシュボード自身が同じマシンで動いているため、送信先は localhost でよい。
 #
 # 設定は環境変数で渡す（systemd の EnvironmentFile を使う。README を参照）:
-#   OPS_DASHBOARD_URL       必須。例: https://admin.gucchii.com
+#   OPS_DASHBOARD_URL       必須。例: https://admin.gucchii.com（VPS上なら http://localhost:3110）
 #   HOST_STATS_TOKEN        必須。ダッシュボード側の HOST_STATS_TOKEN と同じ値
+#   HOST_STATS_ID           任意。保存先を分ける識別子。英小文字・数字・-・_（既定: ホスト名から生成）
+#   HOST_STATS_LABEL        任意。画面の見出しに使う表示名（既定: ホスト名）
 #   HOST_STATS_DISK_PATHS   任意。監視するマウントポイントをカンマ区切りで（既定: /）
 #   HOST_STATS_SERVICES     任意。死活を見る systemd サービスをカンマ区切りで
 #   HOST_STATS_TIMEOUT      任意。送信のタイムアウト秒（既定: 15）
@@ -18,11 +21,19 @@ set -euo pipefail
 
 PAYLOAD_VERSION=1
 
+# CPU・ネットワーク・ディスクI/Oは「1秒あけて2回読んだ差分」から求める。
+# 前回値をファイルに残さずに済ませるため、この1秒を3種類で共有する。
+SAMPLE_SECONDS=1
+
 : "${OPS_DASHBOARD_URL:?OPS_DASHBOARD_URL が未設定です}"
 : "${HOST_STATS_TOKEN:?HOST_STATS_TOKEN が未設定です}"
 DISK_PATHS="${HOST_STATS_DISK_PATHS:-/}"
 SERVICES="${HOST_STATS_SERVICES:-}"
 TIMEOUT="${HOST_STATS_TIMEOUT:-15}"
+
+HOSTNAME_VALUE="$(hostname)"
+HOST_ID="${HOST_STATS_ID:-$(printf '%s' "$HOSTNAME_VALUE" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | sed 's/-*$//')}"
+HOST_LABEL="${HOST_STATS_LABEL:-$HOSTNAME_VALUE}"
 
 # JSONの文字列に埋め込めない文字を潰す（ホスト名・ディストリ名程度なのでこれで足りる）
 json_escape() {
@@ -43,19 +54,67 @@ read_cpu_sample() {
     awk '/^cpu / { idle = $5 + $6; total = 0; for (i = 2; i <= NF; i++) total += $i; print idle, total; exit }' /proc/stat
 }
 
-collect_cpu_percent() {
-    local first second
-    first="$(read_cpu_sample)"
-    sleep 1
-    second="$(read_cpu_sample)"
+# 物理NICの受信・送信バイト数の累積。lo と仮想NIC（docker・veth・br など）は除く。
+# 行頭が空白で始まりインタフェース名の直後がコロンのため、区切りを自前で分解する
+read_network_sample() {
+    awk '
+        NR > 2 {
+            line = $0
+            sub(/^[ \t]+/, "", line)
+            split(line, field, /[: \t]+/)
+            if (field[1] ~ /^(lo|docker|veth|br-|virbr|tun|tap|wg)/) next
+            rx += field[2]
+            tx += field[10]
+        }
+        END { printf "%d %d", rx, tx }
+    ' /proc/net/dev
+}
 
-    awk -v first="$first" -v second="$second" 'BEGIN {
-        split(first, a, " ")
-        split(second, b, " ")
+# 物理ブロックデバイスの読み書きセクタ数の累積。パーティションやループバックは除く
+read_diskio_sample() {
+    awk '
+        $3 ~ /^(sd[a-z]+|nvme[0-9]+n[0-9]+|vd[a-z]+|mmcblk[0-9]+|xvd[a-z]+)$/ {
+            read_sectors += $6
+            write_sectors += $10
+        }
+        END { printf "%d %d", read_sectors * 512, write_sectors * 512 }
+    ' /proc/diskstats
+}
+
+# 1秒あけて2回読んだ差分から「%」と「バイト/秒」を求める
+collect_samples() {
+    local cpu_first net_first io_first cpu_second net_second io_second
+    cpu_first="$(read_cpu_sample)"
+    net_first="$(read_network_sample)"
+    io_first="$(read_diskio_sample)"
+
+    sleep "$SAMPLE_SECONDS"
+
+    cpu_second="$(read_cpu_sample)"
+    net_second="$(read_network_sample)"
+    io_second="$(read_diskio_sample)"
+
+    CPU_PERCENT="$(awk -v first="$cpu_first" -v second="$cpu_second" 'BEGIN {
+        split(first, a, " "); split(second, b, " ")
         idle_delta = b[1] - a[1]
         total_delta = b[2] - a[2]
         if (total_delta <= 0) { print "0.0"; exit }
         printf "%.1f", (total_delta - idle_delta) / total_delta * 100
+    }')"
+
+    NETWORK_JSON="$(rate_json "$net_first" "$net_second")"
+    DISK_IO_JSON="$(rate_json "$io_first" "$io_second")"
+}
+
+# 累積値の差分を秒あたりに直す。カウンタが巻き戻った（再起動等）ときは0にする
+rate_json() {
+    awk -v first="$1" -v second="$2" -v seconds="$SAMPLE_SECONDS" 'BEGIN {
+        split(first, a, " "); split(second, b, " ")
+        in_rate = (b[1] - a[1]) / seconds
+        out_rate = (b[2] - a[2]) / seconds
+        if (in_rate < 0) in_rate = 0
+        if (out_rate < 0) out_rate = 0
+        printf "{\"inBytesPerSecond\":%d,\"outBytesPerSecond\":%d}", in_rate, out_rate
     }'
 }
 
@@ -112,6 +171,63 @@ collect_services() {
     printf ']'
 }
 
+# CPUを食っている上位3プロセス。カーネルスレッドは見ても仕方ないので除く。
+# comm はスレッド名（MainThread など）になることがあるため、コマンドラインの実行ファイル名を使う
+collect_top_processes() {
+    ps -eo pcpu=,args= --sort=-pcpu 2>/dev/null |
+        awk 'NF >= 2 && $1 > 0 {
+            command = $2
+            if (command ~ /^\[/) next
+            sub(/.*\//, "", command)
+            gsub(/[\\"]/, "", command)
+            printf "%s{\"name\":\"%s\",\"cpuPercent\":%.1f}", (count++ ? "," : "["), command, $1
+            if (count >= 3) exit
+        }
+        END { printf "%s", (count ? "]" : "[]") }'
+}
+
+# 再起動待ちと未適用の更新。いずれもファイルを見るだけで、apt を毎分叩いたりはしない
+collect_maintenance() {
+    local reboot="false" updates="" security=""
+
+    [ -f /var/run/reboot-required ] && reboot="true"
+
+    # update-notifier-common が定期的に書き出すファイルを読むだけにする。
+    # apt-check を毎分呼ぶとCPUを1.5秒ほど使うが、この値は1日に数回しか変わらないため割に合わない。
+    # ESM（有償のサポート延長）の行は、契約していなければ適用できない件数なので数えない
+    if [ -r /var/lib/update-notifier/updates-available ]; then
+        read -r updates security <<< "$(awk '
+            /ESM/ { next }
+            !updates && /^[0-9]+/ { updates = $1 }
+            !security && /security|セキュリティ/ {
+                match($0, /[0-9]+/)
+                if (RSTART) security = substr($0, RSTART, RLENGTH)
+            }
+            END { printf "%d %d", updates, security }
+        ' /var/lib/update-notifier/updates-available)"
+    fi
+
+    printf '{"rebootRequired":%s' "$reboot"
+    [ -z "$updates" ] || printf ',"updatesAvailable":%d' "$updates"
+    [ -z "$security" ] || printf ',"securityUpdatesAvailable":%d' "$security"
+    printf '}'
+}
+
+collect_sessions() {
+    local count users first=1 user
+    count="$(who 2>/dev/null | wc -l)"
+    users="$(who 2>/dev/null | awk '{ print $1 }' | sort -u)"
+
+    printf '{"count":%d,"users":[' "$count"
+    while IFS= read -r user; do
+        [ -n "$user" ] || continue
+        [ "$first" -eq 1 ] || printf ','
+        first=0
+        printf '"%s"' "$(json_escape "$user")"
+    done <<< "$users"
+    printf ']}'
+}
+
 # CPU温度。センサーの構成はマシンによって違うため、パッケージ温度らしいゾーンを優先して1つだけ拾う
 collect_temperature() {
     local zone type milli preferred=""
@@ -145,22 +261,30 @@ os_name() {
 
 build_payload() {
     local swap temperature
+    collect_samples
     swap="$(collect_swap)"
     temperature="$(collect_temperature)"
 
     printf '{'
     printf '"version":%d,' "$PAYLOAD_VERSION"
-    printf '"hostname":"%s",' "$(json_escape "$(hostname)")"
+    printf '"id":"%s",' "$(json_escape "$HOST_ID")"
+    printf '"label":"%s",' "$(json_escape "$HOST_LABEL")"
+    printf '"hostname":"%s",' "$(json_escape "$HOSTNAME_VALUE")"
     printf '"os":"%s",' "$(json_escape "$(os_name)")"
     printf '"kernel":"%s",' "$(json_escape "$(uname -r)")"
     printf '"collectedAt":"%s",' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    printf '"cpuPercent":%s,' "$(collect_cpu_percent)"
+    printf '"cpuPercent":%s,' "$CPU_PERCENT"
     printf '"memory":%s,' "$(collect_memory)"
     [ -z "$swap" ] || printf '"swap":%s,' "$swap"
     printf '"disks":%s,' "$(collect_disks)"
     printf '"loadAverage":[%s],' "$(awk '{ printf "%s,%s,%s", $1, $2, $3 }' /proc/loadavg)"
     printf '"uptimeSeconds":%d,' "$(awk '{ printf "%d", $1 }' /proc/uptime)"
     [ -z "$temperature" ] || printf '"temperatureCelsius":%s,' "$temperature"
+    printf '"network":%s,' "$NETWORK_JSON"
+    printf '"diskIo":%s,' "$DISK_IO_JSON"
+    printf '"topProcesses":%s,' "$(collect_top_processes)"
+    printf '"maintenance":%s,' "$(collect_maintenance)"
+    printf '"sessions":%s,' "$(collect_sessions)"
     printf '"services":%s' "$(collect_services)"
     printf '}'
 }

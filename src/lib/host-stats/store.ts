@@ -2,34 +2,39 @@ import fs from "fs/promises"
 import path from "path"
 import type {
     HostStatsHistoryPoint,
+    HostStatsHostView,
     HostStatsReport,
     HostStatsSnapshot,
     HostStatsView,
 } from "@/types/host-stats"
 
 /**
- * サブPCから受け取ったメトリクスの保管。
+ * 各ホストから受け取ったメトリクスの保管。
  *
- * 保存先は deploy.yml の削除対象に含まれない `.data/` を既定とし、デプロイをまたいで
+ * 保存先は deploy.yml の削除対象に含まれない `.data/` 配下を既定とし、デプロイをまたいで
  * 履歴が消えないようにする（AI使用状況のトークン保管と同じ考え方）。
+ * ホストごとにディレクトリを分けるため、VPS・サブPCが増えてもコードは変わらない。
  */
 
 const DEFAULT_OFFLINE_AFTER_SECONDS = 300
 const DEFAULT_HISTORY_HOURS = 24
-const DEFAULT_LABEL = "サブPC"
 
 /** グラフに載せる点の上限。1分間隔・24時間の1440点をそのまま返すとレスポンスが太るため間引く */
 const MAX_VIEW_POINTS = 180
 
 /** 履歴ファイルの1行あたりの見積もり。これを超えて膨らんだら期限切れの行を掃除する */
-const HISTORY_LINE_BYTES = 120
+const HISTORY_LINE_BYTES = 160
 
-function getSnapshotPath(): string {
-    return process.env.HOST_STATS_STATE_PATH || path.join(process.cwd(), ".data", "host-stats-latest.json")
+function getDataDir(): string {
+    return process.env.HOST_STATS_DATA_DIR || path.join(process.cwd(), ".data", "host-stats")
 }
 
-function getHistoryPath(): string {
-    return process.env.HOST_STATS_HISTORY_PATH || path.join(process.cwd(), ".data", "host-stats-history.jsonl")
+function getSnapshotPath(id: string): string {
+    return path.join(getDataDir(), id, "latest.json")
+}
+
+function getHistoryPath(id: string): string {
+    return path.join(getDataDir(), id, "history.jsonl")
 }
 
 function readPositiveInt(name: string, fallback: number): number {
@@ -45,8 +50,12 @@ export function getHistoryHours(): number {
     return readPositiveInt("HOST_STATS_HISTORY_HOURS", DEFAULT_HISTORY_HOURS)
 }
 
-function getLabel(): string {
-    return process.env.HOST_STATS_LABEL || DEFAULT_LABEL
+/** 画面に並べる順番。指定が無いホストは後ろへ回し、その中では識別子順にする */
+function getDisplayOrder(): string[] {
+    return (process.env.HOST_STATS_ORDER ?? "")
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
 }
 
 /**
@@ -84,6 +93,10 @@ function toHistoryPoint(snapshot: HostStatsSnapshot): HostStatsHistoryPoint {
         load: snapshot.loadAverage[0],
         swap: snapshot.swap?.usedPercent,
         temp: snapshot.temperatureCelsius,
+        rx: snapshot.network?.inBytesPerSecond,
+        tx: snapshot.network?.outBytesPerSecond,
+        ior: snapshot.diskIo?.inBytesPerSecond,
+        iow: snapshot.diskIo?.outBytesPerSecond,
     }
 }
 
@@ -103,16 +116,16 @@ function parseHistoryLines(raw: string, cutoffSeconds: number): HostStatsHistory
     return points
 }
 
-async function readHistoryFile(cutoffSeconds: number): Promise<HostStatsHistoryPoint[]> {
+async function readHistoryFile(id: string, cutoffSeconds: number): Promise<HostStatsHistoryPoint[]> {
     try {
-        return parseHistoryLines(await fs.readFile(getHistoryPath(), "utf8"), cutoffSeconds)
+        return parseHistoryLines(await fs.readFile(getHistoryPath(id), "utf8"), cutoffSeconds)
     } catch {
         return []
     }
 }
 
-async function appendHistory(point: HostStatsHistoryPoint): Promise<void> {
-    const file = getHistoryPath()
+async function appendHistory(id: string, point: HostStatsHistoryPoint): Promise<void> {
+    const file = getHistoryPath(id)
     await fs.mkdir(path.dirname(file), { recursive: true })
     await fs.appendFile(file, `${JSON.stringify(point)}\n`)
 
@@ -122,25 +135,27 @@ async function appendHistory(point: HostStatsHistoryPoint): Promise<void> {
     if (size <= maxBytes) return
 
     const cutoffSeconds = Math.floor(Date.now() / 1000) - getHistoryHours() * 3600
-    const kept = await readHistoryFile(cutoffSeconds)
+    const kept = await readHistoryFile(id, cutoffSeconds)
     await writeFileAtomic(file, kept.map((entry) => `${JSON.stringify(entry)}\n`).join(""))
 }
 
 /** 受信したレポートを最新スナップショットとして保存し、履歴に1点追加する */
-export async function saveHostStatsReport(report: HostStatsReport): Promise<HostStatsSnapshot> {
+export async function saveHostStatsReport(
+    report: HostStatsReport & { id: string }
+): Promise<HostStatsSnapshot> {
     const snapshot: HostStatsSnapshot = { ...report, receivedAt: new Date().toISOString() }
 
     await serialize(async () => {
-        await writeFileAtomic(getSnapshotPath(), `${JSON.stringify(snapshot, null, 2)}\n`)
-        await appendHistory(toHistoryPoint(snapshot))
+        await writeFileAtomic(getSnapshotPath(report.id), `${JSON.stringify(snapshot, null, 2)}\n`)
+        await appendHistory(report.id, toHistoryPoint(snapshot))
     })
 
     return snapshot
 }
 
-async function readSnapshot(): Promise<HostStatsSnapshot | null> {
+async function readSnapshot(id: string): Promise<HostStatsSnapshot | null> {
     try {
-        const raw = await fs.readFile(getSnapshotPath(), "utf8")
+        const raw = await fs.readFile(getSnapshotPath(id), "utf8")
         const parsed: unknown = JSON.parse(raw)
         if (!parsed || typeof parsed !== "object") return null
         return parsed as HostStatsSnapshot
@@ -149,8 +164,27 @@ async function readSnapshot(): Promise<HostStatsSnapshot | null> {
     }
 }
 
+async function listHostIds(): Promise<string[]> {
+    try {
+        const entries = await fs.readdir(getDataDir(), { withFileTypes: true })
+        return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)
+    } catch {
+        return []
+    }
+}
+
 function average(values: number[]): number {
     return Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10
+}
+
+function averageOf(
+    bucket: HostStatsHistoryPoint[],
+    key: keyof HostStatsHistoryPoint
+): number | undefined {
+    const values = bucket
+        .map((point) => point[key])
+        .filter((value): value is number => typeof value === "number")
+    return values.length > 0 ? average(values) : undefined
 }
 
 /** 点が多いときは等間隔のバケットに束ねて平均を取る（形が保たれればよいので単純平均でよい） */
@@ -162,8 +196,6 @@ function downsample(points: HostStatsHistoryPoint[]): HostStatsHistoryPoint[] {
 
     for (let index = 0; index < points.length; index += bucketSize) {
         const bucket = points.slice(index, index + bucketSize)
-        const swap = bucket.map((point) => point.swap).filter((value) => value !== undefined)
-        const temp = bucket.map((point) => point.temp).filter((value) => value !== undefined)
 
         result.push({
             t: bucket[bucket.length - 1].t,
@@ -171,33 +203,61 @@ function downsample(points: HostStatsHistoryPoint[]): HostStatsHistoryPoint[] {
             mem: average(bucket.map((point) => point.mem)),
             disk: average(bucket.map((point) => point.disk)),
             load: average(bucket.map((point) => point.load)),
-            swap: swap.length > 0 ? average(swap) : undefined,
-            temp: temp.length > 0 ? average(temp) : undefined,
+            swap: averageOf(bucket, "swap"),
+            temp: averageOf(bucket, "temp"),
+            rx: averageOf(bucket, "rx"),
+            tx: averageOf(bucket, "tx"),
+            ior: averageOf(bucket, "ior"),
+            iow: averageOf(bucket, "iow"),
         })
     }
 
     return result
 }
 
-/** ダッシュボード表示用に、最新スナップショットと間引いた履歴をまとめて返す */
+async function readHostView(
+    id: string,
+    cutoffSeconds: number,
+    offlineAfterSeconds: number
+): Promise<HostStatsHostView | null> {
+    const [latest, history] = await Promise.all([readSnapshot(id), readHistoryFile(id, cutoffSeconds)])
+    if (!latest) return null
+
+    const ageSeconds = Math.max(
+        0,
+        Math.round((Date.now() - new Date(latest.receivedAt).getTime()) / 1000)
+    )
+
+    return {
+        id,
+        label: latest.label || latest.hostname,
+        latest,
+        ageSeconds,
+        online: ageSeconds <= offlineAfterSeconds,
+        history: downsample(history),
+    }
+}
+
+/** ダッシュボード表示用に、全ホストの最新スナップショットと間引いた履歴をまとめて返す */
 export async function getHostStatsView(): Promise<HostStatsView> {
     const historyHours = getHistoryHours()
     const offlineAfterSeconds = getOfflineAfterSeconds()
     const cutoffSeconds = Math.floor(Date.now() / 1000) - historyHours * 3600
 
-    const [latest, history] = await Promise.all([readSnapshot(), readHistoryFile(cutoffSeconds)])
+    const ids = await listHostIds()
+    const views = await Promise.all(
+        ids.map((id) => readHostView(id, cutoffSeconds, offlineAfterSeconds))
+    )
 
-    const ageSeconds = latest
-        ? Math.max(0, Math.round((Date.now() - new Date(latest.receivedAt).getTime()) / 1000))
-        : null
-
-    return {
-        latest,
-        label: getLabel(),
-        ageSeconds,
-        online: ageSeconds !== null && ageSeconds <= offlineAfterSeconds,
-        offlineAfterSeconds,
-        historyHours,
-        history: downsample(history),
+    const order = getDisplayOrder()
+    const rank = (id: string) => {
+        const index = order.indexOf(id)
+        return index === -1 ? order.length : index
     }
+
+    const hosts = views
+        .filter((view): view is HostStatsHostView => view !== null)
+        .sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id))
+
+    return { hosts, offlineAfterSeconds, historyHours }
 }

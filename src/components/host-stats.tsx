@@ -4,11 +4,11 @@ import { useEffect, useState } from "react"
 import { MetricCard, getUsageColor } from "@/components/metric-card"
 import { SectionHeading } from "@/components/section-heading"
 import { Sparkline } from "@/components/sparkline"
-import { formatBytes, formatUptime } from "@/lib/system-stats-format"
+import { formatBytes, formatUptime } from "@/lib/host-stats/format"
 import { cn } from "@/lib/utils"
-import type { HostStatsHistoryPoint, HostStatsService, HostStatsView } from "@/types/host-stats"
+import type { HostStatsHistoryPoint, HostStatsHostView, HostStatsView } from "@/types/host-stats"
 
-/** VPS Status と同じ取得間隔。エージェントの送信間隔（既定1分）より短くても害はない */
+/** エージェントの送信間隔（既定1分）より短くても害はないため、他セクションと同じ間隔にする */
 const REFRESH_INTERVAL_MS = 30_000
 
 /** 温度グラフの縦軸の最小の幅（℃）。変動が小さいときに波形が暴れて見えないようにする */
@@ -28,16 +28,67 @@ function formatAge(seconds: number): string {
     return `${Math.floor(seconds / 86400)}日前`
 }
 
-function pick(
-    history: HostStatsHistoryPoint[],
-    key: keyof HostStatsHistoryPoint
-): number[] {
+function formatRate(bytesPerSecond: number): string {
+    return `${formatBytes(bytesPerSecond)}/s`
+}
+
+function pick(history: HostStatsHistoryPoint[], key: keyof HostStatsHistoryPoint): number[] {
     return history
         .map((point) => point[key])
         .filter((value): value is number => typeof value === "number")
 }
 
-function OfflineBanner({ ageSeconds, offlineAfterSeconds }: { ageSeconds: number; offlineAfterSeconds: number }) {
+/** 受信・送信のように対になる系列を合計する（グラフ1本にまとめて出すため） */
+function sumSeries(a: number[], b: number[]): number[] {
+    if (a.length !== b.length) return a
+    return a.map((value, index) => value + b[index])
+}
+
+type BadgeTone = "ok" | "warn" | "danger" | "neutral"
+
+const BADGE_TONES: Record<BadgeTone, string> = {
+    ok: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    warn: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+    danger: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+    neutral: "border-border bg-muted/50 text-muted-foreground",
+}
+
+const DOT_TONES: Record<BadgeTone, string> = {
+    ok: "bg-emerald-500",
+    warn: "bg-amber-500",
+    danger: "bg-red-500",
+    neutral: "bg-muted-foreground",
+}
+
+function StatusBadge({
+    tone,
+    children,
+    withDot,
+}: {
+    tone: BadgeTone
+    children: React.ReactNode
+    withDot?: boolean
+}) {
+    return (
+        <span
+            className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-mono",
+                BADGE_TONES[tone]
+            )}
+        >
+            {withDot && <span className={cn("size-1.5 rounded-full", DOT_TONES[tone])} aria-hidden />}
+            {children}
+        </span>
+    )
+}
+
+function OfflineBanner({
+    ageSeconds,
+    offlineAfterSeconds,
+}: {
+    ageSeconds: number
+    offlineAfterSeconds: number
+}) {
     return (
         <div
             className="rounded-lg border border-dashed border-red-500/50 bg-red-500/10 px-4 py-3 text-sm text-red-950 dark:text-red-100"
@@ -52,71 +103,24 @@ function OfflineBanner({ ageSeconds, offlineAfterSeconds }: { ageSeconds: number
     )
 }
 
-function ServiceBadges({ services }: { services: HostStatsService[] }) {
-    return (
-        <div className="flex flex-wrap gap-2">
-            {services.map((service) => (
-                <span
-                    key={service.name}
-                    className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-mono",
-                        service.active
-                            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                            : "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
-                    )}
-                >
-                    <span
-                        className={cn(
-                            "size-1.5 rounded-full",
-                            service.active ? "bg-emerald-500" : "bg-red-500"
-                        )}
-                        aria-hidden
-                    />
-                    {service.name}
-                    <span className="opacity-70">{service.state}</span>
-                </span>
-            ))}
-        </div>
-    )
-}
-
-export function HostStats() {
-    const [view, setView] = useState<HostStatsView | null>(null)
-
-    useEffect(() => {
-        let cancelled = false
-
-        const load = async () => {
-            try {
-                const res = await fetch("/api/host-stats", { cache: "no-store" })
-                if (!res.ok) throw new Error("Failed to fetch host stats")
-
-                const data = (await res.json()) as HostStatsView
-                if (!cancelled) setView(data)
-            } catch (error) {
-                console.error("Failed to fetch host stats:", error)
-            }
-        }
-
-        void load()
-        const intervalId = setInterval(() => void load(), REFRESH_INTERVAL_MS)
-
-        return () => {
-            cancelled = true
-            clearInterval(intervalId)
-        }
-    }, [])
-
-    // 一度も受信していない（エージェント未設置）ならセクションごと出さない
-    if (!view?.latest) return null
-
-    const { latest, history, online } = view
+function HostSection({
+    host,
+    offlineAfterSeconds,
+    historyHours,
+}: {
+    host: HostStatsHostView
+    offlineAfterSeconds: number
+    historyHours: number
+}) {
+    const { latest, history, online } = host
 
     // 保存済みファイルが古い形式・壊れている場合に、画面全体を巻き込んで落とさないための保険
     if (!latest.disks?.length || !latest.loadAverage) return null
 
     const services = latest.services ?? []
     const dimmed = !online
+    const chartClass = "h-6 w-full"
+    const historyLabelSuffix = `直近${historyHours}時間の推移`
 
     // 履歴に残しているのは最も使用率が高いディスク1件。カードもそれに合わせる
     const worstDisk = latest.disks.reduce((worst, disk) =>
@@ -130,13 +134,15 @@ export function HostStats() {
     const temperatureMax = temperatures.length > 0 ? Math.max(...temperatures) : 0
     const temperatureSpan = Math.max(MIN_TEMPERATURE_SPAN, temperatureMax - temperatureMin)
 
-    const chartClass = "h-6 w-full"
-    const historyLabelSuffix = `直近${view.historyHours}時間の推移`
+    const networkSeries = sumSeries(pick(history, "rx"), pick(history, "tx"))
+    const diskIoSeries = sumSeries(pick(history, "ior"), pick(history, "iow"))
+
+    const { maintenance, sessions, topProcesses } = latest
 
     return (
         <section className="space-y-3 sm:space-y-4">
             <SectionHeading
-                title={`${view.label} Status`}
+                title={`${host.label} Status`}
                 trailing={
                     <>
                         {!online && (
@@ -151,8 +157,8 @@ export function HostStats() {
                 }
             />
 
-            {!online && view.ageSeconds !== null && (
-                <OfflineBanner ageSeconds={view.ageSeconds} offlineAfterSeconds={view.offlineAfterSeconds} />
+            {!online && (
+                <OfflineBanner ageSeconds={host.ageSeconds} offlineAfterSeconds={offlineAfterSeconds} />
             )}
 
             <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
@@ -227,6 +233,38 @@ export function HostStats() {
                         />
                     }
                 />
+                {latest.network && (
+                    <MetricCard
+                        label="Network"
+                        value={`↓ ${formatRate(latest.network.inBytesPerSecond)}`}
+                        detail={`↑ ${formatRate(latest.network.outBytesPerSecond)}`}
+                        dimmed={dimmed}
+                        chart={
+                            <Sparkline
+                                values={networkSeries}
+                                max={Math.max(...networkSeries, 1)}
+                                className={cn(chartClass, "text-violet-400")}
+                                label={`ネットワーク転送量の${historyLabelSuffix}`}
+                            />
+                        }
+                    />
+                )}
+                {latest.diskIo && (
+                    <MetricCard
+                        label="Disk I/O"
+                        value={`R ${formatRate(latest.diskIo.inBytesPerSecond)}`}
+                        detail={`W ${formatRate(latest.diskIo.outBytesPerSecond)}`}
+                        dimmed={dimmed}
+                        chart={
+                            <Sparkline
+                                values={diskIoSeries}
+                                max={Math.max(...diskIoSeries, 1)}
+                                className={cn(chartClass, "text-teal-400")}
+                                label={`ディスクI/Oの${historyLabelSuffix}`}
+                            />
+                        }
+                    />
+                )}
                 <MetricCard
                     label="Uptime"
                     value={formatUptime(latest.uptimeSeconds)}
@@ -252,19 +290,89 @@ export function HostStats() {
                 )}
             </div>
 
-            {services.length > 0 && <ServiceBadges services={services} />}
+            <div className="flex flex-wrap gap-2">
+                {services.map((service) => (
+                    <StatusBadge key={service.name} tone={service.active ? "ok" : "danger"} withDot>
+                        {service.name}
+                        <span className="opacity-70">{service.state}</span>
+                    </StatusBadge>
+                ))}
+                {maintenance?.rebootRequired && <StatusBadge tone="danger">再起動待ち</StatusBadge>}
+                {maintenance?.updatesAvailable !== undefined && maintenance.updatesAvailable > 0 && (
+                    <StatusBadge tone={maintenance.securityUpdatesAvailable ? "danger" : "warn"}>
+                        更新 {maintenance.updatesAvailable}件
+                        {maintenance.securityUpdatesAvailable
+                            ? `（セキュリティ ${maintenance.securityUpdatesAvailable}件）`
+                            : ""}
+                    </StatusBadge>
+                )}
+                {sessions && sessions.count > 0 && (
+                    <StatusBadge tone="neutral">
+                        ログイン {sessions.count}
+                        {sessions.users.length > 0 && `（${sessions.users.join(", ")}）`}
+                    </StatusBadge>
+                )}
+            </div>
 
             <p className="text-xs text-muted-foreground">
-                最終受信: {view.ageSeconds !== null ? formatAge(view.ageSeconds) : "—"}
+                最終受信: {formatAge(host.ageSeconds)}
+                {topProcesses && topProcesses.length > 0 && (
+                    <>
+                        {" / 上位プロセス: "}
+                        {topProcesses.map((process) => `${process.name} ${process.cpuPercent}%`).join(" · ")}
+                    </>
+                )}
                 {otherDisks.length > 0 && (
                     <>
                         {" / その他のディスク: "}
-                        {otherDisks
-                            .map((disk) => `${disk.path} ${disk.usedPercent}%`)
-                            .join(" · ")}
+                        {otherDisks.map((disk) => `${disk.path} ${disk.usedPercent}%`).join(" · ")}
                     </>
                 )}
             </p>
         </section>
+    )
+}
+
+export function HostStats() {
+    const [view, setView] = useState<HostStatsView | null>(null)
+
+    useEffect(() => {
+        let cancelled = false
+
+        const load = async () => {
+            try {
+                const res = await fetch("/api/host-stats", { cache: "no-store" })
+                if (!res.ok) throw new Error("Failed to fetch host stats")
+
+                const data = (await res.json()) as HostStatsView
+                if (!cancelled) setView(data)
+            } catch (error) {
+                console.error("Failed to fetch host stats:", error)
+            }
+        }
+
+        void load()
+        const intervalId = setInterval(() => void load(), REFRESH_INTERVAL_MS)
+
+        return () => {
+            cancelled = true
+            clearInterval(intervalId)
+        }
+    }, [])
+
+    // 一度も受信していない（エージェント未設置）ならセクションごと出さない
+    if (!view?.hosts.length) return null
+
+    return (
+        <>
+            {view.hosts.map((host) => (
+                <HostSection
+                    key={host.id}
+                    host={host}
+                    offlineAfterSeconds={view.offlineAfterSeconds}
+                    historyHours={view.historyHours}
+                />
+            ))}
+        </>
     )
 }

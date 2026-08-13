@@ -13,8 +13,6 @@ interface MetricCardProps {
     value: string
     detail?: string
     valueClassName?: string
-    /** モックデータであることを示す枠線を付ける */
-    isMock?: boolean
     /** 値の下に敷く推移グラフなど */
     chart?: React.ReactNode
     /** 値を薄く表示する（サブPCがオフラインで、表示値が過去のものになっている場合） */
@@ -26,7 +24,6 @@ export function MetricCard({
     value,
     detail,
     valueClassName,
-    isMock,
     chart,
     dimmed,
 }: MetricCardProps) {
@@ -34,7 +31,6 @@ export function MetricCard({
         <DashboardCard
             className={cn(
                 "h-full flex flex-col justify-center items-center text-center px-3 py-4 sm:px-4 sm:py-5",
-                isMock && "ring-1 ring-dashed ring-amber-500/40",
                 dimmed && "opacity-60"
             )}
         >
