@@ -35,3 +35,6 @@ GH_USAGE_ORG=op://apps/ops-dashboard/github-usage-org
 
 # iPhoneウィジェット（Scriptable）用の固定トークン
 WIDGET_TOKEN=op://apps/ops-dashboard/widget-token
+
+# サブPCのメトリクス受信用の固定トークン（サブPC側の agent.sh と共有する）
+HOST_STATS_TOKEN=op://apps/ops-dashboard/host-stats-token

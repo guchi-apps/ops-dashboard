@@ -1,0 +1,15 @@
+[Unit]
+Description=ops-dashboard へサブPCのメトリクスを送信する
+Documentation=https://github.com/m-guchi/ops-dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# トークンを含むため 600 / root 所有にしておく（EnvironmentFile は systemd が root で読む）
+EnvironmentFile=/etc/ops-dashboard-host-stats.env
+ExecStart=/opt/ops-dashboard-host-stats/agent.sh
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict

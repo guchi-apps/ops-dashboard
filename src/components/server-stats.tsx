@@ -1,19 +1,12 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { DashboardCard } from "@/components/dashboard-card"
+import { MetricCard, getUsageColor } from "@/components/metric-card"
 import { SectionHeading } from "@/components/section-heading"
 import { formatBytes, formatUptime } from "@/lib/system-stats-format"
 import type { SystemStats } from "@/types/system-stats"
-import { cn } from "@/lib/utils"
 
 const REFRESH_INTERVAL_MS = 30_000
-
-function getUsageColor(percent: number): string {
-    if (percent >= 90) return "text-red-400"
-    if (percent >= 75) return "text-amber-400"
-    return "text-emerald-400"
-}
 
 function MockDataBanner() {
     return (
@@ -26,41 +19,6 @@ function MockDataBanner() {
                 本番 VPS 以外の環境では実際のメトリクスを取得できないため、サンプル値を表示しています。
             </p>
         </div>
-    )
-}
-
-function MetricCard({
-    label,
-    value,
-    detail,
-    valueClassName,
-    isMock,
-}: {
-    label: string
-    value: string
-    detail?: string
-    valueClassName?: string
-    isMock?: boolean
-}) {
-    return (
-        <DashboardCard
-            className={cn(
-                "h-full flex flex-col justify-center items-center text-center px-3 py-4 sm:px-4 sm:py-5",
-                isMock && "ring-1 ring-dashed ring-amber-500/40"
-            )}
-        >
-            <span className="text-[10px] sm:text-xs opacity-70 uppercase tracking-widest mb-1.5 sm:mb-2">
-                {label}
-            </span>
-            <div className={cn("text-xl sm:text-2xl font-bold font-mono break-all", valueClassName)}>
-                {value}
-            </div>
-            {detail && (
-                <div className="text-xs sm:text-sm font-medium text-primary-foreground/70 dark:text-muted-foreground mt-1.5 sm:mt-2 break-words">
-                    {detail}
-                </div>
-            )}
-        </DashboardCard>
     )
 }
 

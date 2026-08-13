@@ -45,6 +45,101 @@ WSL2はNAT構成のため、Windowsホスト側でWSLへのポートフォワー
 1. Supabaseダッシュボードの Authentication → URL Configuration → Redirect URLs に `http://<WindowsのLAN IP>.sslip.io:3000/auth/callback` を追加登録する（**完全一致のURLのみ登録すること**。`http://<WindowsのLAN IP>.sslip.io:*/**` のようなポート部分をワイルドカードにしたパターンを混ぜると、Redirect URLs許可リスト全体の反映が壊れ、完全一致の行も含めて効かなくなる現象を確認済み）
 2. スマホからは `http://<WindowsのLAN IP>:3000` ではなく `http://<WindowsのLAN IP>.sslip.io:3000` でアクセスする
 
+## サブPCのステータス表示
+
+自宅LAN内で常時稼働しているサブPCのCPU・メモリ・ディスク等を、VPSと同じカードUIで表示する（[issue #34](https://github.com/m-guchi/ops-dashboard/issues/34)）。
+
+「VPS Status」はダッシュボード自身が動いているホストの `/proc` を直接読んでいるため、別マシンには使えない。
+またサブPCは自宅LAN内（NAT配下）にいてVPSからポーリングできないため、**サブPC側から定期的にPOSTする push 型**にしている。
+
+```
+サブPC（常時稼働Linux）                        VPS（admin.gucchii.com）
+  systemd timer（1分ごと）
+    └─ scripts/host-stats/agent.sh
+         /proc・df・systemctl から収集
+         → POST /api/host-stats（Bearer HOST_STATS_TOKEN）
+                                                 └─ .data/host-stats-latest.json（最新値）
+                                                    .data/host-stats-history.jsonl（24時間分）
+                                                    → ダッシュボードがGETして表示
+```
+
+Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている（[deploy/ecosystem.config.js](deploy/ecosystem.config.js) 参照）現状では常駐分だけで数百MBを要して載せられないため採用していない。
+履歴はJSONL 1行=1サンプル（1分間隔・24時間で約1,400行）で持ち、グラフはインラインSVGのスパークラインとして描いている（チャートライブラリは追加していない）。
+
+### 表示する項目
+
+| 項目 | 取得元 | 備考 |
+| --- | --- | --- |
+| CPU使用率 | `/proc/stat` を1秒あけて2回読む | VPS Status と同じ算出 |
+| メモリ使用率 | `/proc/meminfo`（MemTotal - MemAvailable） | |
+| Swap使用率 | `/proc/meminfo` | SwapTotal が0なら送らず、カードも出ない |
+| ディスク使用率 | `df -B1 -P <パス>` | 複数パス指定可。カードとグラフは最も使用率が高い1件、残りは下に一覧で出す |
+| Load Average | `/proc/loadavg` | |
+| 稼働時間 | `/proc/uptime` | |
+| CPU温度 | `/sys/class/thermal/thermal_zone*` | 取れないマシンではカードごと省かれる |
+| サービス死活 | `systemctl is-active <名前>` | 指定したサービスをバッジで表示 |
+| オフライン判定 | 最終受信からの経過時間 | 既定5分で OFFLINE 表示（値は最後に受信したものを残す） |
+
+グラフに残す履歴はCPU・メモリ・ディスク・Load・Swap・温度の6項目で、24時間を超えた行は送信のたびに掃除する。
+1,440点をそのまま返すとレスポンスが太るため、APIは最大180点へ間引いてから返す。
+
+### ダッシュボード側の設定
+
+`HOST_STATS_TOKEN` を設定するだけでよい（未設定の場合、受信は常に401になり、一度も受信していなければセクション自体が表示されない）。
+本番では1Passwordの `apps/ops-dashboard` アイテムに `host-stats-token` フィールドを追加しておく（未作成のままだとデプロイのシークレット読み込みが失敗する）。
+
+見出し名（既定「サブPC」）・オフライン判定のしきい値・履歴の長さは `HOST_STATS_LABEL` / `HOST_STATS_OFFLINE_AFTER_SECONDS` / `HOST_STATS_HISTORY_HOURS` で変えられる。
+
+### サブPC側の設置
+
+`scripts/host-stats/` の3ファイルを配置する。エージェントはbashとcurlだけで動き、常駐しない（1分ごとに起動して終了する短命プロセス）。
+
+```bash
+# 1. エージェントを配置する
+sudo mkdir -p /opt/ops-dashboard-host-stats
+sudo cp scripts/host-stats/agent.sh /opt/ops-dashboard-host-stats/
+sudo chmod 755 /opt/ops-dashboard-host-stats/agent.sh
+
+# 2. 設定ファイルを作る（トークンを含むため 600 / root 所有にする）
+sudo cp scripts/host-stats/host-stats.env.example /etc/ops-dashboard-host-stats.env
+sudo chmod 600 /etc/ops-dashboard-host-stats.env
+sudo vi /etc/ops-dashboard-host-stats.env   # URL・トークン・監視するディスクとサービスを記入
+
+# 3. 送信されるJSONを確認する（送信はしない）
+sudo env $(grep -v '^#' /etc/ops-dashboard-host-stats.env | xargs) /opt/ops-dashboard-host-stats/agent.sh --print
+
+# 4. systemd timer を有効化する
+sudo cp scripts/host-stats/ops-dashboard-host-stats.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ops-dashboard-host-stats.timer
+
+# 5. 1回手動で走らせて結果を見る
+sudo systemctl start ops-dashboard-host-stats.service
+systemctl status ops-dashboard-host-stats.service
+```
+
+送信間隔を変えるときは `ops-dashboard-host-stats.timer` の `OnUnitActiveSec` を変更する。
+間隔を `HOST_STATS_OFFLINE_AFTER_SECONDS`（既定300秒）より長くすると常時OFFLINE表示になるため、合わせて調整すること。
+
+### 受信APIの仕様
+
+```
+POST /api/host-stats
+Authorization: Bearer <HOST_STATS_TOKEN>
+Content-Type: application/json
+```
+
+| コード | 条件 |
+| --- | --- |
+| 200 | 受信・保存に成功（`{"ok":true,"receivedAt":"..."}` を返す） |
+| 400 | JSONとして読めない、または必須項目が欠けている・`version` が非対応 |
+| 401 | `Authorization` が一致しない、または `HOST_STATS_TOKEN` 未設定 |
+| 413 | ペイロードが32KBを超えている |
+
+ペイロードの形式は `src/types/host-stats.ts` の `HostStatsReport`。`version` で世代を管理しており、
+エージェント側を非互換に変える場合は `HOST_STATS_PAYLOAD_VERSION`（`src/lib/host-stats/report.ts`）を上げる。
+ダッシュボードからの取得（GET）は通常どおりログインセッションで認証する。
+
 ## AI使用状況の表示
 
 Claude / ChatGPT のトークン使用状況と課金プランをダッシュボードに表示する。
