@@ -7,6 +7,13 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.6.1",
+        date: "2026-08-14",
+        changes: [
+            "CPU を多く使っているプロセスの一覧に、集計処理そのものが混ざってしまう不具合を修正しました。",
+        ],
+    },
+    {
         version: "0.6.0",
         date: "2026-08-14",
         changes: [
