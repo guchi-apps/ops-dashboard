@@ -1,5 +1,5 @@
 [Unit]
-Description=ops-dashboard へサブPCのメトリクスを送信する
+Description=ops-dashboard へこのホストのメトリクスを送信する
 Documentation=https://github.com/m-guchi/ops-dashboard
 After=network-online.target
 Wants=network-online.target

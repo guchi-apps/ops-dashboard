@@ -126,6 +126,8 @@ sudo chmod 755 /opt/ops-dashboard-host-stats/agent.sh
 #    VPS なら host-stats.vps.env.example、サブPC なら host-stats.subpc.env.example を使う
 sudo cp "$SRC/host-stats.vps.env.example" /etc/ops-dashboard-host-stats.env
 sudo chmod 600 /etc/ops-dashboard-host-stats.env
+# エディタを開く行なので、ここまでをまとめて貼り付けないこと
+# （後続の行が vi への入力として流し込まれ、設定ファイルが壊れる）
 sudo vi /etc/ops-dashboard-host-stats.env   # HOST_STATS_TOKEN を記入（他の項目は雛形のままでよい）
 
 # 3. 送信されるJSONを確認する（送信はしない）

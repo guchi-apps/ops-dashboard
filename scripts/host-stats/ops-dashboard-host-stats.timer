@@ -1,5 +1,5 @@
 [Unit]
-Description=ops-dashboard へサブPCのメトリクスを1分ごとに送信する
+Description=ops-dashboard へこのホストのメトリクスを1分ごとに送信する
 
 [Timer]
 OnBootSec=1min
