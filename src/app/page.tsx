@@ -1,9 +1,9 @@
 import { requireSessionForPage } from "@/lib/session"
 import { AiUsage } from "@/components/ai-usage"
 import { GitHubUsage } from "@/components/github-usage"
+import { HostStats } from "@/components/host-stats"
 import { MonitorCard, MonitorCardGrid } from "@/components/monitor-card"
 import { SectionHeading } from "@/components/section-heading"
-import { ServerStats } from "@/components/server-stats"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { UptimeKumaDashboardCard } from "@/components/uptime-kuma-card"
 import { Plus } from "lucide-react"
@@ -98,7 +98,7 @@ export default async function Home() {
                     </div>
                 </div>
 
-                <ServerStats />
+                <HostStats />
                 <AiUsage />
                 <GitHubUsage />
                 <UptimeKumaSection />

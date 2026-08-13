@@ -45,6 +45,141 @@ WSL2はNAT構成のため、Windowsホスト側でWSLへのポートフォワー
 1. Supabaseダッシュボードの Authentication → URL Configuration → Redirect URLs に `http://<WindowsのLAN IP>.sslip.io:3000/auth/callback` を追加登録する（**完全一致のURLのみ登録すること**。`http://<WindowsのLAN IP>.sslip.io:*/**` のようなポート部分をワイルドカードにしたパターンを混ぜると、Redirect URLs許可リスト全体の反映が壊れ、完全一致の行も含めて効かなくなる現象を確認済み）
 2. スマホからは `http://<WindowsのLAN IP>:3000` ではなく `http://<WindowsのLAN IP>.sslip.io:3000` でアクセスする
 
+## ホスト（VPS・サブPC）のステータス表示
+
+VPSと自宅LAN内のサブPCについて、CPU・メモリ・ディスク等の現在値と直近24時間の推移をホストごとに表示する（[issue #34](https://github.com/m-guchi/ops-dashboard/issues/34)）。
+
+収集は**すべて push 型に一本化**している。サブPCは自宅LAN内（NAT配下）にいてVPSからポーリングできないため、ホスト側から定期的にPOSTしてもらう必要があり、VPSだけ別方式にすると同じ表示を二重に実装することになるためである。
+VPS上ではダッシュボード自身が同じマシンで動いているので、送信先は `http://localhost:3110`（外部を経由しない）。
+
+```
+各ホスト（VPS・サブPC）                        ダッシュボード（admin.gucchii.com）
+  systemd timer（1分ごと）
+    └─ scripts/host-stats/agent.sh
+         /proc・df・systemctl から収集
+         → POST /api/host-stats（Bearer HOST_STATS_TOKEN）
+                                                 └─ .data/host-stats/<識別子>/latest.json
+                                                    .data/host-stats/<識別子>/history.jsonl
+                                                    → ダッシュボードがGETしてホストごとに描画
+```
+
+ホストは `HOST_STATS_ID` で識別し、保存先はその単位で分かれる。台数が増えてもダッシュボード側の変更は不要で、
+エージェントを設置してPOSTが届いた時点でセクションが増える（一度も受信していないホストは表示されない）。
+
+Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている（[deploy/ecosystem.config.js](deploy/ecosystem.config.js) 参照）現状では常駐分だけで数百MBを要して載せられないため採用していない。
+履歴はJSONL 1行=1サンプル（1分間隔・24時間で約1,400行）で持ち、グラフはインラインSVGのスパークラインとして描いている（チャートライブラリは追加していない）。
+
+**トレードオフ**: 表示値は最大で送信間隔（既定1分）ぶん古い。またエージェントが止まると値の更新も止まるが、これは OFFLINE 表示で判別できる。
+
+### 表示する項目
+
+| 項目 | 取得元 | 備考 |
+| --- | --- | --- |
+| CPU使用率 | `/proc/stat` を1秒あけて2回読む | |
+| メモリ使用率 | `/proc/meminfo`（MemTotal - MemAvailable） | |
+| Swap使用率 | `/proc/meminfo` | SwapTotal が0なら送らず、カードも出ない |
+| ディスク使用率 | `df -B1 -P <パス>` | 複数パス指定可。カードとグラフは最も使用率が高い1件、残りは下に一覧で出す |
+| Load Average | `/proc/loadavg` | |
+| ネットワーク転送量 | `/proc/net/dev` の差分 | `lo` と仮想NIC（docker・veth 等）は除いた合計 |
+| ディスクI/O | `/proc/diskstats` の差分 | パーティション・ループバックを除く物理デバイスの合計 |
+| 稼働時間 | `/proc/uptime` | |
+| CPU温度 | `/sys/class/thermal/thermal_zone*` | 取れないマシンではカードごと省かれる |
+| CPU上位プロセス | `ps -eo pcpu=,args=` | 上位3件。カーネルスレッドは除く |
+| サービス死活 | `systemctl is-active <名前>` | 指定したサービスをバッジで表示 |
+| 再起動待ち | `/var/run/reboot-required` の有無 | Debian系のみ |
+| 未適用の更新 | `/var/lib/update-notifier/updates-available` | `update-notifier-common` が入っていれば表示される。ESM（有償の延長サポート）分は数えない |
+| ログイン中のセッション | `who` | セッション数とユーザー名 |
+| オフライン判定 | 最終受信からの経過時間 | 既定5分で OFFLINE 表示（値は最後に受信したものを残す） |
+
+差分から求める3項目（CPU・ネットワーク・ディスクI/O）は、前回値をファイルに残さずに済ませるため、1回の実行内で1秒あけて2回読んだ差を使っている。
+
+更新件数は `/usr/lib/update-notifier/apt-check` でも取れるが、1回あたり1.5秒ほどCPUを使う一方で値は1日に数回しか変わらないため、update-notifier が書き出したファイルを読むだけにしている。
+
+グラフに残す履歴はCPU・メモリ・ディスク・Load・Swap・温度・ネットワーク・ディスクI/Oで、24時間を超えた行は送信のたびに掃除する。
+1,440点をそのまま返すとレスポンスが太るため、APIは最大180点へ間引いてから返す。
+
+### ダッシュボード側の設定
+
+`HOST_STATS_TOKEN` を設定するだけでよい（未設定の場合、受信は常に401になる）。
+本番では1Passwordの `apps/ops-dashboard` アイテムに `host-stats-token` フィールドを追加しておく（未作成のままだとデプロイのシークレット読み込みが失敗する）。
+
+並び順は `HOST_STATS_ORDER`（識別子をカンマ区切り、デプロイ時に `vps` を指定している）、オフライン判定のしきい値と履歴の長さは `HOST_STATS_OFFLINE_AFTER_SECONDS` / `HOST_STATS_HISTORY_HOURS` で変えられる。
+
+### 各ホストへのエージェント設置
+
+`scripts/host-stats/` の3ファイルを配置する。エージェントはbashとcurlだけで動き、常駐しない（1分ごとに起動して終了する短命プロセス）。VPS・サブPCとも手順は同じで、設定ファイルの中身だけが違う。
+
+```bash
+# 1. エージェントを配置する
+sudo mkdir -p /opt/ops-dashboard-host-stats
+sudo cp scripts/host-stats/agent.sh /opt/ops-dashboard-host-stats/
+sudo chmod 755 /opt/ops-dashboard-host-stats/agent.sh
+
+# 2. 設定ファイルを新規に作る（トークンを含むため 600 / root 所有にする）
+#    VPS なら host-stats.vps.env.example、サブPC なら host-stats.subpc.env.example を使う
+sudo cp scripts/host-stats/host-stats.vps.env.example /etc/ops-dashboard-host-stats.env
+sudo chmod 600 /etc/ops-dashboard-host-stats.env
+sudo vi /etc/ops-dashboard-host-stats.env   # HOST_STATS_TOKEN を記入（他の項目は雛形のままでよい）
+
+# 3. 送信されるJSONを確認する（送信はしない）
+sudo env $(grep -v '^#' /etc/ops-dashboard-host-stats.env | xargs) /opt/ops-dashboard-host-stats/agent.sh --print
+
+# 4. systemd timer を有効化する
+sudo cp scripts/host-stats/ops-dashboard-host-stats.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ops-dashboard-host-stats.timer
+
+# 5. 1回手動で走らせて結果を見る
+sudo systemctl start ops-dashboard-host-stats.service
+systemctl status ops-dashboard-host-stats.service
+```
+
+`/etc/ops-dashboard-host-stats.env` は各ホストで新規に作るファイルで、Gitでもデプロイでも管理していない。
+アプリ本体の `.env`（デプロイのたびに書き換わり、全シークレットを含む）とは意図的に分けている。
+
+### 監視するサービスの選び方
+
+`HOST_STATS_SERVICES` に書くのは表示用の名前ではなく、そのホストに実在する systemd ユニット名で、
+`systemctl is-active <名前>` にそのまま渡る（存在しない名前を書くと、常に `inactive` の赤バッジが出るだけ）。
+候補は `systemctl list-units --type=service --state=running` で確認する。
+
+**Uptime Kuma の HTTP 監視と重複しないものだけを選ぶ**方針にしている。Uptime Kuma は「外から応答があるか」、
+systemd は「そのホストでプロセスが動いているか」を見るもので、HTTPの口を持たないもの（cron・fail2ban・DB）は
+後者でしか分からない。逆に、各Next.jsアプリや signaly のようにUptime Kumaが直接見ているものを入れても重複にしかならない。
+選定結果は `scripts/host-stats/host-stats.*.env.example` に理由つきで書いてある。
+
+なお次の2つは user systemd（`github-user`）で動いており、rootの `systemctl` からは見えないため、
+エージェントではなく Uptime Kuma 側にHTTPモニターとして追加する。トークン認証で401が返る場合は、
+Kumaの Accepted Status Codes に `401` を足せば「起動していればup・落ちていれば接続不能でdown」を判定できる。
+
+| サービス | エンドポイント |
+| --- | --- |
+| `vps-status-api` | `https://gucchii.com/internal/vps-status` |
+| `uptime-kuma-backup-receiver` | `https://gucchii.com/internal/uptime-kuma-backup` |
+
+送信間隔を変えるときは `ops-dashboard-host-stats.timer` の `OnUnitActiveSec` を変更する。
+間隔を `HOST_STATS_OFFLINE_AFTER_SECONDS`（既定300秒）より長くすると常時OFFLINE表示になるため、合わせて調整すること。
+
+### 受信APIの仕様
+
+```
+POST /api/host-stats
+Authorization: Bearer <HOST_STATS_TOKEN>
+Content-Type: application/json
+```
+
+| コード | 条件 |
+| --- | --- |
+| 200 | 受信・保存に成功（`{"ok":true,"receivedAt":"..."}` を返す） |
+| 400 | JSONとして読めない、必須項目が欠けている、`version` が非対応、`id` が使えない文字を含む |
+| 401 | `Authorization` が一致しない、または `HOST_STATS_TOKEN` 未設定 |
+| 413 | ペイロードが32KBを超えている |
+
+ペイロードの形式は `src/types/host-stats.ts` の `HostStatsReport`。`version` で世代を管理しており、
+エージェント側を非互換に変える場合は `HOST_STATS_PAYLOAD_VERSION`（`src/lib/host-stats/report.ts`）を上げる。
+`id` は保存先のディレクトリ名になるため、英小文字・数字・ハイフン・アンダースコアのみ受け付ける。
+ダッシュボードからの取得（GET）は通常どおりログインセッションで認証する。
+
 ## AI使用状況の表示
 
 Claude / ChatGPT のトークン使用状況と課金プランをダッシュボードに表示する。

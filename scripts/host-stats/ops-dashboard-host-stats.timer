@@ -1,0 +1,11 @@
+[Unit]
+Description=ops-dashboard へサブPCのメトリクスを1分ごとに送信する
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+# 送信間隔がぶれてもグラフの見え方に影響しないため、systemd にまとめて起こさせる
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target
