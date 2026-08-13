@@ -25,6 +25,9 @@ PAYLOAD_VERSION=1
 # 前回値をファイルに残さずに済ませるため、この1秒を3種類で共有する。
 SAMPLE_SECONDS=1
 
+# 上位プロセスの対象にする最低の経過時間（秒）。これ未満の短命プロセスは %CPU が当てにならない
+MIN_PROCESS_AGE_SECONDS=10
+
 : "${OPS_DASHBOARD_URL:?OPS_DASHBOARD_URL が未設定です}"
 : "${HOST_STATS_TOKEN:?HOST_STATS_TOKEN が未設定です}"
 DISK_PATHS="${HOST_STATS_DISK_PATHS:-/}"
@@ -172,15 +175,19 @@ collect_services() {
 }
 
 # CPUを食っている上位3プロセス。カーネルスレッドは見ても仕方ないので除く。
-# comm はスレッド名（MainThread など）になることがあるため、コマンドラインの実行ファイル名を使う
+# comm はスレッド名（MainThread など）になることがあるため、コマンドラインの実行ファイル名を使う。
+#
+# ps の %CPU は「起動してからの平均」であり、起動直後のプロセスほど高く出る。
+# そのままだとエージェント自身が動かした ps が毎回1位に居座るため、
+# 起動から MIN_PROCESS_AGE_SECONDS 経っていないプロセスは対象外にする。
 collect_top_processes() {
-    ps -eo pcpu=,args= --sort=-pcpu 2>/dev/null |
-        awk 'NF >= 2 && $1 > 0 {
-            command = $2
+    ps -eo etimes=,pcpu=,args= --sort=-pcpu 2>/dev/null |
+        awk -v min_age="$MIN_PROCESS_AGE_SECONDS" 'NF >= 3 && $1 >= min_age && $2 > 0 {
+            command = $3
             if (command ~ /^\[/) next
             sub(/.*\//, "", command)
             gsub(/[\\"]/, "", command)
-            printf "%s{\"name\":\"%s\",\"cpuPercent\":%.1f}", (count++ ? "," : "["), command, $1
+            printf "%s{\"name\":\"%s\",\"cpuPercent\":%.1f}", (count++ ? "," : "["), command, $2
             if (count >= 3) exit
         }
         END { printf "%s", (count ? "]" : "[]") }'
