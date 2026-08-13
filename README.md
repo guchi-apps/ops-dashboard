@@ -115,10 +115,11 @@ sudo mkdir -p /opt/ops-dashboard-host-stats
 sudo cp scripts/host-stats/agent.sh /opt/ops-dashboard-host-stats/
 sudo chmod 755 /opt/ops-dashboard-host-stats/agent.sh
 
-# 2. 設定ファイルを作る（トークンを含むため 600 / root 所有にする）
-sudo cp scripts/host-stats/host-stats.env.example /etc/ops-dashboard-host-stats.env
+# 2. 設定ファイルを新規に作る（トークンを含むため 600 / root 所有にする）
+#    VPS なら host-stats.vps.env.example、サブPC なら host-stats.subpc.env.example を使う
+sudo cp scripts/host-stats/host-stats.vps.env.example /etc/ops-dashboard-host-stats.env
 sudo chmod 600 /etc/ops-dashboard-host-stats.env
-sudo vi /etc/ops-dashboard-host-stats.env   # URL・トークン・識別子・監視するディスクとサービスを記入
+sudo vi /etc/ops-dashboard-host-stats.env   # HOST_STATS_TOKEN を記入（他の項目は雛形のままでよい）
 
 # 3. 送信されるJSONを確認する（送信はしない）
 sudo env $(grep -v '^#' /etc/ops-dashboard-host-stats.env | xargs) /opt/ops-dashboard-host-stats/agent.sh --print
@@ -133,14 +134,28 @@ sudo systemctl start ops-dashboard-host-stats.service
 systemctl status ops-dashboard-host-stats.service
 ```
 
-VPS上に置く場合は、設定ファイルを次のようにする（ダッシュボード自身が同じマシンにいるため外部を経由しない）。
+`/etc/ops-dashboard-host-stats.env` は各ホストで新規に作るファイルで、Gitでもデプロイでも管理していない。
+アプリ本体の `.env`（デプロイのたびに書き換わり、全シークレットを含む）とは意図的に分けている。
 
-```bash
-OPS_DASHBOARD_URL=http://localhost:3110
-HOST_STATS_ID=vps
-HOST_STATS_LABEL=VPS
-HOST_STATS_DISK_PATHS=/
-```
+### 監視するサービスの選び方
+
+`HOST_STATS_SERVICES` に書くのは表示用の名前ではなく、そのホストに実在する systemd ユニット名で、
+`systemctl is-active <名前>` にそのまま渡る（存在しない名前を書くと、常に `inactive` の赤バッジが出るだけ）。
+候補は `systemctl list-units --type=service --state=running` で確認する。
+
+**Uptime Kuma の HTTP 監視と重複しないものだけを選ぶ**方針にしている。Uptime Kuma は「外から応答があるか」、
+systemd は「そのホストでプロセスが動いているか」を見るもので、HTTPの口を持たないもの（cron・fail2ban・DB）は
+後者でしか分からない。逆に、各Next.jsアプリや signaly のようにUptime Kumaが直接見ているものを入れても重複にしかならない。
+選定結果は `scripts/host-stats/host-stats.*.env.example` に理由つきで書いてある。
+
+なお次の2つは user systemd（`github-user`）で動いており、rootの `systemctl` からは見えないため、
+エージェントではなく Uptime Kuma 側にHTTPモニターとして追加する。トークン認証で401が返る場合は、
+Kumaの Accepted Status Codes に `401` を足せば「起動していればup・落ちていれば接続不能でdown」を判定できる。
+
+| サービス | エンドポイント |
+| --- | --- |
+| `vps-status-api` | `https://gucchii.com/internal/vps-status` |
+| `uptime-kuma-backup-receiver` | `https://gucchii.com/internal/uptime-kuma-backup` |
 
 送信間隔を変えるときは `ops-dashboard-host-stats.timer` の `OnUnitActiveSec` を変更する。
 間隔を `HOST_STATS_OFFLINE_AFTER_SECONDS`（既定300秒）より長くすると常時OFFLINE表示になるため、合わせて調整すること。
