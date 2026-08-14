@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react"
 import type { AiUsageSnapshot } from "@/types/ai-usage"
 import type { GitHubUsageSnapshot } from "@/types/github-usage"
 import type { HostStatsView } from "@/types/host-stats"
+import type { OnePasswordUsageSnapshot } from "@/types/onepassword-usage"
 import type { UptimeKumaMonitor } from "@/lib/uptime-kuma"
 import type { UptimeRobotMonitor } from "@/lib/uptimerobot"
 
@@ -13,7 +14,7 @@ const HOST_STATS_INTERVAL_MS = 30_000
 /** 監視サービス。障害に気づくのが遅れない程度の間隔にする */
 const MONITOR_INTERVAL_MS = 60_000
 
-/** AI・GitHubの使用状況。サーバー側のキャッシュ（既定5分）に合わせる */
+/** AI・GitHub・1Passwordの使用状況。サーバー側のキャッシュ（既定5分）に合わせる */
 const USAGE_INTERVAL_MS = 300_000
 
 /** リセットまでの残り時間や経過時間の表示を進めるための再描画間隔 */
@@ -29,6 +30,7 @@ interface DashboardData extends DashboardInitialData {
     hostStats: HostStatsView | null
     aiUsage: AiUsageSnapshot | null
     githubUsage: GitHubUsageSnapshot | null
+    onepasswordUsage: OnePasswordUsageSnapshot | null
     /** 残り時間の計算に使う現在時刻。各コンポーネントが個別にタイマーを持たなくて済むよう配る */
     now: number
     /** いずれかのデータを最後に受け取った時刻（epoch ミリ秒）。未受信なら null */
@@ -68,6 +70,12 @@ export function DashboardDataProvider({
         selectAsIs,
         null
     )
+    const onepasswordUsage = usePolledJson<OnePasswordUsageSnapshot | null>(
+        "/api/onepassword-usage",
+        USAGE_INTERVAL_MS,
+        selectAsIs,
+        null
+    )
     const uptimeKuma = usePolledJson<UptimeKumaMonitor[]>(
         "/api/uptime-kuma",
         MONITOR_INTERVAL_MS,
@@ -88,6 +96,7 @@ export function DashboardDataProvider({
             hostStats: hostStats.value,
             aiUsage: aiUsage.value,
             githubUsage: githubUsage.value,
+            onepasswordUsage: onepasswordUsage.value,
             uptimeKuma: uptimeKuma.value,
             uptimeRobot: uptimeRobot.value,
             now,
@@ -95,11 +104,12 @@ export function DashboardDataProvider({
                 hostStats.updatedAt,
                 aiUsage.updatedAt,
                 githubUsage.updatedAt,
+                onepasswordUsage.updatedAt,
                 uptimeKuma.updatedAt,
                 uptimeRobot.updatedAt,
             ]),
         }),
-        [hostStats, aiUsage, githubUsage, uptimeKuma, uptimeRobot, now]
+        [hostStats, aiUsage, githubUsage, onepasswordUsage, uptimeKuma, uptimeRobot, now]
     )
 
     return <DashboardDataContext.Provider value={value}>{children}</DashboardDataContext.Provider>

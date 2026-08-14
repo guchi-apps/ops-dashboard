@@ -86,17 +86,37 @@ jobs:
     runs-on: ubuntu-latest
     needs: tag
 
+    # GitHub側の値をここで明示的に渡す。以前は実行のたびに1Passwordから読んでいたが、
+    # サービスアカウントの日次レート制限を使い切ってフリート全体のデプロイが止まった
+    # （guchi-apps/issue-deck#1302）。SERVER_*・SUPABASE_* はorganizationの共通値。
+    #
+    # このブロックは scripts/generate-workflow-env-block.sh で生成する（#51）。
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+      HOST: ${{ secrets.SERVER_HOST }}
+      USERNAME: ${{ secrets.SERVER_USERNAME }}
+      SSH_PORT: ${{ secrets.SERVER_SSH_PORT }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.SUPABASE_PROJECT_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+      TARGET_DIR: ${{ secrets.TARGET_DIR }}
+      ALLOWED_EMAILS: ${{ secrets.ALLOWED_EMAILS }}
+      ANTHROPIC_OAUTH_REFRESH_TOKEN: ${{ secrets.ANTHROPIC_OAUTH_REFRESH_TOKEN }}
+      OPENAI_CHATGPT_REFRESH_TOKEN: ${{ secrets.OPENAI_CHATGPT_REFRESH_TOKEN }}
+      OPENAI_CHATGPT_ACCOUNT_ID: ${{ secrets.OPENAI_CHATGPT_ACCOUNT_ID }}
+      GH_USAGE_TOKEN: ${{ secrets.GH_USAGE_TOKEN }}
+      HOST_STATS_TOKEN: ${{ secrets.HOST_STATS_TOKEN }}
+      UPTIMEROBOT_READ_ONLY_KEY: ${{ secrets.UPTIMEROBOT_READ_ONLY_KEY }}
+      WIDGET_TOKEN: ${{ secrets.WIDGET_TOKEN }}
+      SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
+      SIGNALY_LOGIN_WEBHOOK_URL: ${{ secrets.SIGNALY_LOGIN_WEBHOOK_URL }}
+      PORT: ${{ vars.PORT }}
+      GH_USAGE_ORG: ${{ vars.GH_USAGE_ORG }}
+      UPTIMEKUMA_BASE_URL: ${{ vars.UPTIMEKUMA_BASE_URL }}
+      UPTIMEKUMA_DASHBOARD_SLUG: ${{ vars.UPTIMEKUMA_DASHBOARD_SLUG }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v4
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_ENV_FILE: .github/deploy.env.tpl
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -141,6 +161,34 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
 
+    # GitHub側の値をここで明示的に渡す。以前は実行のたびに1Passwordから読んでいたが、
+    # サービスアカウントの日次レート制限を使い切ってフリート全体のデプロイが止まった
+    # （guchi-apps/issue-deck#1302）。SERVER_*・SUPABASE_* はorganizationの共通値。
+    #
+    # このブロックは scripts/generate-workflow-env-block.sh で生成する（#51）。
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+      HOST: ${{ secrets.SERVER_HOST }}
+      USERNAME: ${{ secrets.SERVER_USERNAME }}
+      SSH_PORT: ${{ secrets.SERVER_SSH_PORT }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.SUPABASE_PROJECT_URL }}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+      TARGET_DIR: ${{ secrets.TARGET_DIR }}
+      ALLOWED_EMAILS: ${{ secrets.ALLOWED_EMAILS }}
+      ANTHROPIC_OAUTH_REFRESH_TOKEN: ${{ secrets.ANTHROPIC_OAUTH_REFRESH_TOKEN }}
+      OPENAI_CHATGPT_REFRESH_TOKEN: ${{ secrets.OPENAI_CHATGPT_REFRESH_TOKEN }}
+      OPENAI_CHATGPT_ACCOUNT_ID: ${{ secrets.OPENAI_CHATGPT_ACCOUNT_ID }}
+      GH_USAGE_TOKEN: ${{ secrets.GH_USAGE_TOKEN }}
+      HOST_STATS_TOKEN: ${{ secrets.HOST_STATS_TOKEN }}
+      UPTIMEROBOT_READ_ONLY_KEY: ${{ secrets.UPTIMEROBOT_READ_ONLY_KEY }}
+      WIDGET_TOKEN: ${{ secrets.WIDGET_TOKEN }}
+      SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
+      SIGNALY_LOGIN_WEBHOOK_URL: ${{ secrets.SIGNALY_LOGIN_WEBHOOK_URL }}
+      PORT: ${{ vars.PORT }}
+      GH_USAGE_ORG: ${{ vars.GH_USAGE_ORG }}
+      UPTIMEKUMA_BASE_URL: ${{ vars.UPTIMEKUMA_BASE_URL }}
+      UPTIMEKUMA_DASHBOARD_SLUG: ${{ vars.UPTIMEKUMA_DASHBOARD_SLUG }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -150,14 +198,6 @@ jobs:
         with:
           name: build-artifact
           path: ./
-
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v4
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_ENV_FILE: .github/deploy.env.tpl
 
       - name: Install SSH key
         uses: shimataro/ssh-key-action@v2
@@ -195,6 +235,8 @@ jobs:
           OPENAI_CHATGPT_ACCOUNT_ID: ${{ env.OPENAI_CHATGPT_ACCOUNT_ID }}
           GH_USAGE_TOKEN: ${{ env.GH_USAGE_TOKEN }}
           GH_USAGE_ORG: ${{ env.GH_USAGE_ORG }}
+          # 1Passwordのレート制限を表示するために、デプロイで使うものと同じトークンをそのまま渡す
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           WIDGET_TOKEN: ${{ env.WIDGET_TOKEN }}
           TARGET_DIR: ${{ env.TARGET_DIR }}
           APP_PORT: ${{ env.PORT }}
@@ -203,7 +245,7 @@ jobs:
           username: ${{ env.USERNAME }}
           key: ${{ env.SSH_PRIVATE_KEY }}
           port: ${{ env.SSH_PORT }}
-          envs: NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,ALLOWED_EMAILS,UPTIMEROBOT_READ_ONLY_KEY,UPTIMEKUMA_BASE_URL,UPTIMEKUMA_DASHBOARD_SLUG,HOST_STATS_TOKEN,SIGNALY_LOGIN_WEBHOOK_URL,ANTHROPIC_OAUTH_REFRESH_TOKEN,OPENAI_CHATGPT_REFRESH_TOKEN,OPENAI_CHATGPT_ACCOUNT_ID,GH_USAGE_TOKEN,GH_USAGE_ORG,WIDGET_TOKEN,TARGET_DIR,APP_PORT
+          envs: NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,ALLOWED_EMAILS,UPTIMEROBOT_READ_ONLY_KEY,UPTIMEKUMA_BASE_URL,UPTIMEKUMA_DASHBOARD_SLUG,HOST_STATS_TOKEN,SIGNALY_LOGIN_WEBHOOK_URL,ANTHROPIC_OAUTH_REFRESH_TOKEN,OPENAI_CHATGPT_REFRESH_TOKEN,OPENAI_CHATGPT_ACCOUNT_ID,GH_USAGE_TOKEN,GH_USAGE_ORG,OP_SERVICE_ACCOUNT_TOKEN,WIDGET_TOKEN,TARGET_DIR,APP_PORT
           script: |
             set -euo pipefail
             cd "${TARGET_DIR}"
@@ -239,6 +281,7 @@ jobs:
             update_env OPENAI_CHATGPT_ACCOUNT_ID "$OPENAI_CHATGPT_ACCOUNT_ID"
             update_env GH_USAGE_TOKEN "$GH_USAGE_TOKEN"
             update_env GH_USAGE_ORG "$GH_USAGE_ORG"
+            update_env OP_SERVICE_ACCOUNT_TOKEN "$OP_SERVICE_ACCOUNT_TOKEN"
             update_env WIDGET_TOKEN "$WIDGET_TOKEN"
 
             echo "Installing production dependencies..."
@@ -264,6 +307,14 @@ jobs:
     needs: [tag, build, deploy]
     if: always()
 
+    # GitHub側の値をここで明示的に渡す。以前は実行のたびに1Passwordから読んでいたが、
+    # サービスアカウントの日次レート制限を使い切ってフリート全体のデプロイが止まった
+    # （guchi-apps/issue-deck#1302）。SERVER_*・SUPABASE_* はorganizationの共通値。
+    #
+    # このブロックは scripts/generate-workflow-env-block.sh で生成する（#51）。
+    env:
+      SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -283,15 +334,10 @@ jobs:
           fi
           echo "result=$result" >> "$GITHUB_OUTPUT"
 
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v4
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_ENV_FILE: .github/deploy.env.tpl
-
       - name: Signaly に通知
+        # 通知はCIやデプロイの合否そのものではない。ここが失敗してもrun全体を落とさない
+        # （guchi-apps/issue-deck#1302）。
+        continue-on-error: true
         env:
           SIGNALY_WEBHOOK_URL: ${{ env.SIGNALY_WEBHOOK_URL }}
           NOTIFY_APP: ops-dashboard
@@ -304,19 +350,22 @@ jobs:
     needs: [tag, deploy, release]
     if: always() && needs.release.result != 'skipped'
 
+    # GitHub側の値をここで明示的に渡す。以前は実行のたびに1Passwordから読んでいたが、
+    # サービスアカウントの日次レート制限を使い切ってフリート全体のデプロイが止まった
+    # （guchi-apps/issue-deck#1302）。SERVER_*・SUPABASE_* はorganizationの共通値。
+    #
+    # このブロックは scripts/generate-workflow-env-block.sh で生成する（#51）。
+    env:
+      SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v4
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_ENV_FILE: .github/deploy.env.tpl
-
       - name: Signaly に通知
+        # 通知はCIやデプロイの合否そのものではない。ここが失敗してもrun全体を落とさない
+        # （guchi-apps/issue-deck#1302）。
+        continue-on-error: true
         env:
           SIGNALY_WEBHOOK_URL: ${{ env.SIGNALY_WEBHOOK_URL }}
           NOTIFY_STATUS: ${{ needs.release.result }}
