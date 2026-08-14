@@ -62,6 +62,12 @@ function nonNegative(value: number): number {
     return Math.max(0, value)
 }
 
+/** 任意の件数・バイト数。送ってこない世代のエージェントがあるため undefined を通す */
+function asOptionalCount(value: unknown, field: string): number | undefined {
+    if (value === undefined || value === null) return undefined
+    return Math.round(nonNegative(asNumber(value, field)))
+}
+
 function parseUsage(value: unknown, field: string): HostStatsUsage {
     const record = asRecord(value, field)
     return {
@@ -113,15 +119,17 @@ function parseRate(value: unknown, field: string): HostStatsRate | undefined {
     }
 }
 
-function parseProcesses(value: unknown): HostStatsProcess[] | undefined {
+/** CPU順・メモリ順のどちらも同じ形なので、項目名だけ変えて使い回す */
+function parseProcesses(value: unknown, field: string): HostStatsProcess[] | undefined {
     if (value === undefined || value === null) return undefined
-    if (!Array.isArray(value)) fail("topProcesses が配列ではありません")
+    if (!Array.isArray(value)) fail(`${field} が配列ではありません`)
 
     return value.slice(0, MAX_PROCESSES).map((entry, index) => {
-        const record = asRecord(entry, `topProcesses[${index}]`)
+        const record = asRecord(entry, `${field}[${index}]`)
         return {
-            name: asText(record.name, `topProcesses[${index}].name`),
-            cpuPercent: clampPercent(asNumber(record.cpuPercent, `topProcesses[${index}].cpuPercent`)),
+            name: asText(record.name, `${field}[${index}].name`),
+            cpuPercent: clampPercent(asNumber(record.cpuPercent, `${field}[${index}].cpuPercent`)),
+            memoryBytes: asOptionalCount(record.memoryBytes, `${field}[${index}].memoryBytes`),
         }
     })
 }
@@ -130,15 +138,13 @@ function parseMaintenance(value: unknown): HostStatsMaintenance | undefined {
     if (value === undefined || value === null) return undefined
     const record = asRecord(value, "maintenance")
 
-    const count = (key: string): number | undefined =>
-        record[key] === undefined || record[key] === null
-            ? undefined
-            : Math.round(nonNegative(asNumber(record[key], `maintenance.${key}`)))
-
     return {
         rebootRequired: record.rebootRequired === true,
-        updatesAvailable: count("updatesAvailable"),
-        securityUpdatesAvailable: count("securityUpdatesAvailable"),
+        updatesAvailable: asOptionalCount(record.updatesAvailable, "maintenance.updatesAvailable"),
+        securityUpdatesAvailable: asOptionalCount(
+            record.securityUpdatesAvailable,
+            "maintenance.securityUpdatesAvailable"
+        ),
     }
 }
 
@@ -237,10 +243,12 @@ export function parseHostStatsReport(input: unknown): HostStatsReport & { id: st
         temperatureCelsius: temperature,
         network: parseRate(record.network, "network"),
         diskIo: parseRate(record.diskIo, "diskIo"),
-        topProcesses: parseProcesses(record.topProcesses),
+        topProcesses: parseProcesses(record.topProcesses, "topProcesses"),
+        topMemoryProcesses: parseProcesses(record.topMemoryProcesses, "topMemoryProcesses"),
         maintenance: parseMaintenance(record.maintenance),
         sessions: parseSessions(record.sessions),
         tmuxSessions: parseTmuxSessions(record.tmuxSessions),
+        tmuxSessionTotal: asOptionalCount(record.tmuxSessionTotal, "tmuxSessionTotal"),
         services: parseServices(record.services),
     }
 }

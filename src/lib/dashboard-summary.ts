@@ -74,12 +74,17 @@ function tmuxChip(view: HostStatsView | null, sessions: TmuxSessionView[]): Summ
     const summary = summarizeTmux(view?.hosts ?? [], sessions)
     if (!summary.available) return null
 
+    // 一覧に載らなかった分がある＝いま見えているものが全てではない。放置の件数より先に知らせる
+    const notes: string[] = []
+    if (summary.untracked > 0) notes.push(`送信上限で ${summary.untracked}件 未取得`)
+    if (summary.stale > 0) notes.push(`24時間以上 放置 ${summary.stale}件`)
+
     return {
         key: "tmux",
         label: "tmux",
         value: `稼働 ${summary.running} · 待機 ${summary.idle + summary.stale}`,
-        note: summary.stale > 0 ? `24時間以上 放置 ${summary.stale}件` : "放置なし",
-        tone: summary.stale > 0 ? "warn" : "neutral",
+        note: notes.length > 0 ? notes.join(" · ") : "放置なし",
+        tone: notes.length > 0 ? "warn" : "neutral",
     }
 }
 

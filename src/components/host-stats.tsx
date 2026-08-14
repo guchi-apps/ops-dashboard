@@ -98,11 +98,17 @@ function HostSection({
     const networkSeries = sumSeries(pick(history, "rx"), pick(history, "tx"))
     const diskIoSeries = sumSeries(pick(history, "ior"), pick(history, "iow"))
 
-    const { maintenance, sessions, topProcesses } = latest
+    const { maintenance, sessions, topProcesses, topMemoryProcesses } = latest
 
     // tmux が入っていないホストは undefined で届く。0件のときは行ごと出さない
     const tmuxSessions = latest.tmuxSessions ?? []
     const tmuxUserCount = new Set(tmuxSessions.map((session) => session.user).filter(Boolean)).size
+
+    // エージェントが送信上限で切り捨てた分。並んでいるバッジが全てだと思わせないよう件数を出す
+    const tmuxUntracked = Math.max(
+        0,
+        (latest.tmuxSessionTotal ?? tmuxSessions.length) - tmuxSessions.length
+    )
 
     return (
         <section className="space-y-3 sm:space-y-4">
@@ -292,6 +298,11 @@ function HostSection({
                             <span className="opacity-70">{formatTmuxDetail(session, tmuxUserCount > 1)}</span>
                         </StatusBadge>
                     ))}
+                    {tmuxUntracked > 0 && (
+                        <StatusBadge tone="warn">
+                            送信上限のため 他 {tmuxUntracked}件（全 {latest.tmuxSessionTotal}件）
+                        </StatusBadge>
+                    )}
                 </div>
             )}
 
@@ -299,8 +310,20 @@ function HostSection({
                 最終受信: {formatAge(host.ageSeconds)}
                 {topProcesses && topProcesses.length > 0 && (
                     <>
-                        {" / 上位プロセス: "}
+                        {" / CPU上位: "}
                         {topProcesses.map((process) => `${process.name} ${process.cpuPercent}%`).join(" · ")}
+                    </>
+                )}
+                {topMemoryProcesses && topMemoryProcesses.length > 0 && (
+                    <>
+                        {" / メモリ上位: "}
+                        {topMemoryProcesses
+                            .map((process) =>
+                                process.memoryBytes === undefined
+                                    ? process.name
+                                    : `${process.name} ${formatBytes(process.memoryBytes)}`
+                            )
+                            .join(" · ")}
                     </>
                 )}
                 {otherDisks.length > 0 && (

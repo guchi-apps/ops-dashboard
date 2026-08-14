@@ -24,7 +24,13 @@ export interface TmuxSummary {
     running: number
     idle: number
     stale: number
+    /** 送信上限で切り捨てられた分を含むセッションの総数 */
     total: number
+    /**
+     * 送信上限で切り捨てられ、一覧に載らなかったセッション数。
+     * 中身が分からないため running / idle / stale の内訳には入らない。
+     */
+    untracked: number
     /** tmux の情報を送ってきているホストが1つでもあるか（無ければ画面に出さない） */
     available: boolean
 }
@@ -98,11 +104,20 @@ export function summarizeTmux(
     const count = (state: TmuxSessionState) =>
         sessions.filter((session) => session.state === state).length
 
+    // エージェントは送るセッション数に上限があり、超えた分は一覧に載らない。
+    // 総数まで一覧の長さで数えると、セッションが積み上がっていること自体が画面から消える
+    const untracked = hosts.reduce((sum, host) => {
+        const { tmuxSessions, tmuxSessionTotal } = host.latest
+        if (tmuxSessions === undefined || tmuxSessionTotal === undefined) return sum
+        return sum + Math.max(0, tmuxSessionTotal - tmuxSessions.length)
+    }, 0)
+
     return {
         running: count("running"),
         idle: count("idle"),
         stale: count("stale"),
-        total: sessions.length,
+        total: sessions.length + untracked,
+        untracked,
         available: hosts.some((host) => host.latest.tmuxSessions !== undefined),
     }
 }
