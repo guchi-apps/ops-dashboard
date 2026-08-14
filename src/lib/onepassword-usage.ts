@@ -30,29 +30,20 @@ interface RateLimitItem {
 }
 
 /**
- * `reset` の型はCLIの出力仕様として文書化されていないため、
- * エポック秒・ミリ秒・ISO文字列のいずれで返ってきても読めるようにしておく。
- * 一度も枠を使っておらず起点が無い場合はゼロ値が入るので、その場合は null にする。
+ * `reset` は時刻ではなくリセットまでの残り秒数で返る。
+ * 枠の起点は最初のリクエストの時刻なので、まだ1回も使っていない枠では 0 になり、
+ * その場合はリセット時刻が定まらないため null にする。
  */
-function toResetIso(value: unknown): string | null {
-    if (typeof value === "number" && value > 0) {
-        const ms = value > 1e11 ? value : value * 1000
-        return new Date(ms).toISOString()
-    }
-
-    if (typeof value === "string") {
-        const ms = Date.parse(value)
-        if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString()
-    }
-
-    return null
+function toResetIso(value: unknown, fetchedAtMs: number): string | null {
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null
+    return new Date(fetchedAtMs + value * 1000).toISOString()
 }
 
 function toCount(value: unknown): number {
     return typeof value === "number" && Number.isFinite(value) ? value : 0
 }
 
-function parseRateLimits(stdout: string): OnePasswordRateLimit[] {
+function parseRateLimits(stdout: string, fetchedAtMs: number): OnePasswordRateLimit[] {
     const parsed: unknown = JSON.parse(stdout)
     if (!Array.isArray(parsed)) throw new Error("レート制限の応答が配列ではありません")
 
@@ -67,14 +58,16 @@ function parseRateLimits(stdout: string): OnePasswordRateLimit[] {
                 action: String(item.action) as OnePasswordLimitAction,
                 limit,
                 used,
-                remaining: toCount(item.remaining) || Math.max(0, limit - used),
-                resetsAt: toResetIso(item.reset),
+                remaining: toCount(item.remaining),
+                resetsAt: toResetIso(item.reset, fetchedAtMs),
             }
         })
 }
 
-async function fetchRateLimits(token: string): Promise<OnePasswordRateLimit[]> {
-    // 環境をそのまま渡すと他サービスの認証情報まで子プロセスに配ることになるため、必要な分だけ渡す
+async function fetchRateLimits(token: string, fetchedAtMs: number): Promise<OnePasswordRateLimit[]> {
+    // 環境をそのまま渡すと他サービスの認証情報まで子プロセスに配ることになるため、必要な分だけ渡す。
+    // XDG_RUNTIME_DIR を渡さないのも意図的で、渡すと op がそこにキャッシュ用デーモンを立てようとし、
+    // 実行ユーザーと所有者が食い違っていると（警告は出るが害のない）失敗ログを毎回吐く
     const { stdout } = await execFileAsync(
         process.env.OP_CLI_PATH ?? DEFAULT_CLI_PATH,
         ["service-account", "ratelimit", "--format=json"],
@@ -89,7 +82,7 @@ async function fetchRateLimits(token: string): Promise<OnePasswordRateLimit[]> {
         }
     )
 
-    return parseRateLimits(stdout)
+    return parseRateLimits(stdout, fetchedAtMs)
 }
 
 let cache: { snapshot: OnePasswordUsageSnapshot; expiresAt: number } | null = null
@@ -112,7 +105,8 @@ export async function getOnePasswordUsageSnapshot(): Promise<OnePasswordUsageSna
 }
 
 async function buildSnapshot(token: string | undefined): Promise<OnePasswordUsageSnapshot> {
-    const fetchedAt = new Date().toISOString()
+    const fetchedAtMs = Date.now()
+    const fetchedAt = new Date(fetchedAtMs).toISOString()
 
     if (!token) {
         return {
@@ -124,7 +118,7 @@ async function buildSnapshot(token: string | undefined): Promise<OnePasswordUsag
     }
 
     try {
-        return { status: "ok", limits: await fetchRateLimits(token), fetchedAt }
+        return { status: "ok", limits: await fetchRateLimits(token, fetchedAtMs), fetchedAt }
     } catch (error) {
         return { status: "error", message: describeError(error), limits: [], fetchedAt }
     }

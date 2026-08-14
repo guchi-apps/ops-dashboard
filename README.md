@@ -416,9 +416,21 @@ Notionは使用量・プラン枠を返すAPIを公開しておらず、レー�
 
 ```bash
 # VPS上で1回だけ実行する（管理者アカウントで作業する）
-curl -sSfL https://downloads.1password.com/linux/tar/stable/x86_64/op.tar.gz | sudo tar -xz -C /usr/local/bin op
+curl -fsSL -o /tmp/1password-cli.deb https://downloads.1password.com/linux/debian/amd64/stable/1password-cli-amd64-latest.deb
+sudo dpkg -i /tmp/1password-cli.deb && rm /tmp/1password-cli.deb
 op --version
 ```
+
+出力の `reset` は**リセット時刻ではなくリセットまでの残り秒数**で、まだ1回も使っていない枠では 0 が入る
+（その場合はリセット時刻が定まらないため、画面には「まだ使っていません」と出す）。
+
+手で確認するときは `OP_SERVICE_ACCOUNT_TOKEN` を渡して叩く。渡さないと、`op` はトークン無しのアカウント認証に
+フォールバックしてサービスアカウント名の指定を求めてくる（`.env` にトークンが入る前は必ずこうなる）。
+`couldn't start daemon` の行が出ることがあるが、これはキャッシュ用デーモンの起動に失敗しただけの警告で、
+取得そのものは成功する（他人が所有する `XDG_RUNTIME_DIR` を引き継いだまま実行した場合に出る）。
+
+**この照会自体は枠を消費しない**（連続して2回叩いても `token` / `read` の `used` が 0 のままであることを確認済み）。
+消費するなら5分ごとの取得だけで1日288回、24時間枠1,000回の3割近くを残量表示のために使うことになるため、ここは確認しておく必要がある。
 
 `op` をPATHの通っていない場所に置いた場合は `OP_CLI_PATH` に実行パスを設定する。
 取得結果はサーバー側で既定5分間キャッシュする（`OP_USAGE_CACHE_SECONDS` で変更可）。
