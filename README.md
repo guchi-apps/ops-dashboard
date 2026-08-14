@@ -101,12 +101,13 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 | ディスクI/O | `/proc/diskstats` の差分 | パーティション・ループバックを除く物理デバイスの合計 |
 | 稼働時間 | `/proc/uptime` | |
 | CPU温度 | `/sys/class/thermal/thermal_zone*` | 取れないマシンではカードごと省かれる |
-| CPU上位プロセス | `ps -eo pcpu=,args=` | 上位3件。カーネルスレッドは除く |
+| CPU上位プロセス | `ps -eo pcpu=,rss=,args= --sort=-pcpu` | 上位5件。カーネルスレッドは除く |
+| メモリ上位プロセス | `ps -eo pcpu=,rss=,args= --sort=-rss` | 上位5件。CPU順の一覧には犯人が出てこないメモリ枯渇を捕まえるために別で送る（[issue #54](https://github.com/guchi-apps/ops-dashboard/issues/54)） |
 | サービス死活 | `systemctl is-active <名前>` | 指定したサービスをバッジで表示 |
 | 再起動待ち | `/var/run/reboot-required` の有無 | Debian系のみ |
 | 未適用の更新 | `/var/lib/update-notifier/updates-available` | `update-notifier-common` が入っていれば表示される。ESM（有償の延長サポート）分は数えない |
 | ログイン中のセッション | `who` | セッション数とユーザー名 |
-| tmuxセッション | `tmux -S <ソケット> list-sessions` | セッション名・ウィンドウ数・作成からの経過時間・アタッチ有無をバッジで表示。tmuxが無いホストでは行ごと出ない |
+| tmuxセッション | `tmux -S <ソケット> list-sessions` | セッション名・ウィンドウ数・作成からの経過時間・アタッチ有無をバッジで表示。送るのは20件までだが、切り捨てた分を含む総数も一緒に送る。tmuxが無いホストでは行ごと出ない |
 | オフライン判定 | 最終受信からの経過時間 | 既定5分で OFFLINE 表示（値は最後に受信したものを残す） |
 
 差分から求める3項目（CPU・ネットワーク・ディスクI/O）は、前回値をファイルに残さずに済ませるため、1回の実行内で1秒あけて2回読んだ差を使っている。
@@ -120,6 +121,10 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 
 サブPCはClaude Codeの作業セッションを常駐させるホストで、リポジトリをまたいだセッションが同じ `tmux ls` に並ぶ（セッション名は issue-deck 側で `<リポジトリ名>-issue-<番号>` に統一している）。
 いま何が動いているかが見えないと二重起動や放置セッションに気づけないため、ホストのメトリクスと一緒に送っている（[issue #38](https://github.com/m-guchi/ops-dashboard/issues/38)）。
+
+送信は20件で打ち切るが、**総数は切り捨てる前の実数を別に送る**（[issue #54](https://github.com/guchi-apps/ops-dashboard/issues/54)）。
+一覧の長さで総数を数えると、上限に張り付いた時点で「セッションが積み上がっている」という兆候そのものが画面から消えるため。
+2026-08-14にサブPCが34セッションまで積み上がってメモリ枯渇で停止した際、画面には20件しか出ておらず、直前まで異常を読み取れなかった。
 
 状態は各ペインの実行コマンドから判定する（[issue #40](https://github.com/guchi-apps/ops-dashboard/issues/40)）。
 デタッチしたまま裏でclaudeが走っているのが普通の使い方で、アタッチの有無では「いま作業が動いているか」を判断できないため。

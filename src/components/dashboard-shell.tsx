@@ -207,6 +207,9 @@ export function DashboardShell({
                                     </StatusBadge>
                                     <span className="ml-auto font-mono text-[10px] text-muted-foreground">
                                         待機 {tmuxSummary.idle + tmuxSummary.stale} · 全{tmuxSummary.total}件
+                                        {/* 上限で届かなかった分は一覧に出せないので、内訳が合わない理由を書いておく */}
+                                        {tmuxSummary.untracked > 0 &&
+                                            `（うち ${tmuxSummary.untracked}件 未取得）`}
                                     </span>
                                 </>
                             }
