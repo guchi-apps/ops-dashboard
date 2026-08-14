@@ -119,10 +119,24 @@ export function HostCard({
             : null,
         latest.topProcesses && latest.topProcesses.length > 0
             ? {
-                  label: "上位",
+                  label: "CPU上位",
                   value: latest.topProcesses
                       .slice(0, 2)
                       .map((process) => `${process.name} ${process.cpuPercent}%`)
+                      .join(" · "),
+              }
+            : null,
+        // メモリ枯渇はCPU上位の一覧に出てこないため、並べて置く
+        latest.topMemoryProcesses && latest.topMemoryProcesses.length > 0
+            ? {
+                  label: "MEM上位",
+                  value: latest.topMemoryProcesses
+                      .slice(0, 2)
+                      .map((process) =>
+                          process.memoryBytes === undefined
+                              ? process.name
+                              : `${process.name} ${formatBytes(process.memoryBytes)}`
+                      )
                       .join(" · "),
               }
             : null,

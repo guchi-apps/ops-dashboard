@@ -30,7 +30,11 @@ SAMPLE_SECONDS=1
 # 上位プロセスの対象にする最低の経過時間（秒）。これ未満の短命プロセスは %CPU が当てにならない
 MIN_PROCESS_AGE_SECONDS=10
 
-# 送るtmuxセッションの上限。ダッシュボード側も同数で切るため、超えた分は表示されない
+# CPU順・メモリ順それぞれで送る上位プロセスの件数。ダッシュボード側の上限と合わせる
+MAX_TOP_PROCESSES=5
+
+# 送るtmuxセッションの上限。ダッシュボード側も同数で切るため、超えた分は表示されない。
+# 切り捨てたことに気づけるよう、実際の総数は tmuxSessionTotal で別に送る
 MAX_TMUX_SESSIONS=20
 
 # 1セッションあたりに送る「実行中コマンド」の数の上限
@@ -186,21 +190,28 @@ collect_services() {
     printf ']'
 }
 
-# CPUを食っている上位3プロセス。カーネルスレッドは見ても仕方ないので除く。
+# 資源を食っている上位プロセス。カーネルスレッドは見ても仕方ないので除く。
 # comm はスレッド名（MainThread など）になることがあるため、コマンドラインの実行ファイル名を使う。
 #
 # ps の %CPU は「起動してからの平均」であり、起動直後のプロセスほど高く出る。
 # そのままだとエージェント自身が動かした ps が毎回1位に居座るため、
 # 起動から MIN_PROCESS_AGE_SECONDS 経っていないプロセスは対象外にする。
-collect_top_processes() {
-    ps -eo etimes=,pcpu=,args= --sort=-pcpu 2>/dev/null |
-        awk -v min_age="$MIN_PROCESS_AGE_SECONDS" 'NF >= 3 && $1 >= min_age && $2 > 0 {
-            command = $3
+#
+# 呼び出し側はCPU順とメモリ順の2本を送る。メモリ枯渇でホストが止まる事故では、犯人が
+# CPU順の一覧に出てこない。1本あたりのCPUは軽くても本数でメモリを食い潰すためで、
+# CPU順だけを見ていると停止の直前まで異常に見えない（#54）。
+#
+# $1: ps の --sort に渡す並び順  $2: 0より大きいことを求める列（2=%CPU・3=RSS）
+top_processes_json() {
+    ps -eo etimes=,pcpu=,rss=,args= --sort="$1" 2>/dev/null |
+        awk -v min_age="$MIN_PROCESS_AGE_SECONDS" -v max="$MAX_TOP_PROCESSES" -v key="$2" 'NF >= 4 && $1 >= min_age && $key > 0 {
+            command = $4
             if (command ~ /^\[/) next
             sub(/.*\//, "", command)
             gsub(/[\\"]/, "", command)
-            printf "%s{\"name\":\"%s\",\"cpuPercent\":%.1f}", (count++ ? "," : "["), command, $2
-            if (count >= 3) exit
+            # RSS は KiB で返るためバイトに直す
+            printf "%s{\"name\":\"%s\",\"cpuPercent\":%.1f,\"memoryBytes\":%d}", (count++ ? "," : "["), command, $2, $3 * 1024
+            if (count >= max) exit
         }
         END { printf "%s", (count ? "]" : "[]") }'
 }
@@ -310,8 +321,10 @@ tmux_sessions_tsv() {
     '
 }
 
+# 出力は2行。1行目がセッションのJSON配列、2行目が上限で切る前の総数。
+# コマンド置換は subshell で走りグローバル変数を持ち帰れないため、総数も標準出力に載せる。
 collect_tmux() {
-    local dir socket uid user home count=0
+    local dir socket uid user home count=0 total=0
     local name windows created attached activity busy commands directory
     local attached_json busy_json first_command pane_command
     local command_list
@@ -335,7 +348,12 @@ collect_tmux() {
             # サーバーが落ちた後のソケットが残っていることがあるため、失敗は無視して次へ
             while IFS=$'\x1f' read -r name windows created attached activity busy commands directory; do
                 [ -n "$name" ] || continue
-                [ "$count" -lt "$MAX_TMUX_SESSIONS" ] || break 3
+
+                # 上限を超えた分は送らないが、総数には数える。
+                # 「20件しか出ていないのは上限のせいなのか、本当に20件なのか」が
+                # 画面から分からないと、セッションが積み上がっていることに気づけない
+                total=$((total + 1))
+                [ "$count" -lt "$MAX_TMUX_SESSIONS" ] || continue
 
                 [ "$count" -eq 0 ] || printf ','
                 count=$((count + 1))
@@ -386,7 +404,7 @@ collect_tmux() {
             done < <(tmux_sessions_tsv "$socket" "$home")
         done
     done
-    printf ']'
+    printf ']\n%d' "$total"
 }
 
 # CPU温度。センサーの構成はマシンによって違うため、パッケージ温度らしいゾーンを優先して1つだけ拾う
@@ -421,11 +439,16 @@ os_name() {
 }
 
 build_payload() {
-    local swap temperature tmux_sessions
+    local swap temperature tmux_output tmux_sessions tmux_total
     collect_samples
     swap="$(collect_swap)"
     temperature="$(collect_temperature)"
-    tmux_sessions="$(collect_tmux)"
+
+    # collect_tmux は「1行目がJSON配列・2行目が総数」を返す。JSONに改行は入らないため行で切れる。
+    # tmuxが入っていないホストでは何も返らず、両方とも空になる
+    tmux_output="$(collect_tmux)"
+    tmux_sessions="${tmux_output%%$'\n'*}"
+    tmux_total="${tmux_output#*$'\n'}"
 
     printf '{'
     printf '"version":%d,' "$PAYLOAD_VERSION"
@@ -444,10 +467,12 @@ build_payload() {
     [ -z "$temperature" ] || printf '"temperatureCelsius":%s,' "$temperature"
     printf '"network":%s,' "$NETWORK_JSON"
     printf '"diskIo":%s,' "$DISK_IO_JSON"
-    printf '"topProcesses":%s,' "$(collect_top_processes)"
+    printf '"topProcesses":%s,' "$(top_processes_json -pcpu 2)"
+    printf '"topMemoryProcesses":%s,' "$(top_processes_json -rss 3)"
     printf '"maintenance":%s,' "$(collect_maintenance)"
     printf '"sessions":%s,' "$(collect_sessions)"
     [ -z "$tmux_sessions" ] || printf '"tmuxSessions":%s,' "$tmux_sessions"
+    [ -z "$tmux_sessions" ] || printf '"tmuxSessionTotal":%d,' "$tmux_total"
     printf '"services":%s' "$(collect_services)"
     printf '}'
 }

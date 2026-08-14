@@ -16,10 +16,12 @@ export interface HostStatsService {
     active: boolean
 }
 
-/** CPUを食っている上位プロセス */
+/** 資源を食っている上位プロセス。CPU順とメモリ順で同じ形のものを別々に持つ */
 export interface HostStatsProcess {
     name: string
     cpuPercent: number
+    /** 常駐セットサイズ（RSS）。これを送らない世代のエージェントでは undefined */
+    memoryBytes?: number
 }
 
 /** 秒あたりの転送量。ネットワークとディスクI/Oで使う */
@@ -105,10 +107,20 @@ export interface HostStatsReport {
     network?: HostStatsRate
     diskIo?: HostStatsRate
     topProcesses?: HostStatsProcess[]
+    /**
+     * メモリ使用量の多い順の上位プロセス。
+     * メモリ枯渇でホストが止まる事故では、犯人がCPU順の一覧に出てこないため別に持つ。
+     */
+    topMemoryProcesses?: HostStatsProcess[]
     maintenance?: HostStatsMaintenance
     sessions?: HostStatsSessions
     /** tmux のセッション一覧。tmux が入っていないホストでは undefined（0件なら空配列） */
     tmuxSessions?: HostStatsTmuxSession[]
+    /**
+     * tmux セッションの総数。tmuxSessions は上限で切られるため、切り捨てた分を含む実数を別に持つ。
+     * これを送らない世代のエージェントでは undefined。
+     */
+    tmuxSessionTotal?: number
     services: HostStatsService[]
 }
 
