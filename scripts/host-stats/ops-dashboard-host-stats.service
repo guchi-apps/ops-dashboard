@@ -14,5 +14,11 @@ NoNewPrivileges=yes
 # PrivateTmp=yes だとサービス専用の空の /tmp になり、セッションを1つも拾えない。
 # ProtectSystem=strict により /tmp は読み取り専用のままなので、書き込みはできない
 PrivateTmp=no
-ProtectHome=yes
+# issue-deck がセッションの状態を置く ~/.local/state/issue-deck/sessions/ を読むため、
+# /home が見える必要がある（#65）。`yes` だと /home・/root・/run/user が空に見え、
+# セッションを畳まない理由を1つも拾えない。
+# **設置手順の `--print` はサンドボックスの外で走るため、手で叩くと読めてしまう。**
+# timer 経由だけ空になるという気づきにくい壊れ方をするので、ここを `yes` に戻さないこと。
+# 読めれば足りるので書き込みは許さない（ProtectSystem=strict も維持）
+ProtectHome=read-only
 ProtectSystem=strict
