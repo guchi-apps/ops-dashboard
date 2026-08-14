@@ -44,6 +44,25 @@ export interface HostStatsSessions {
 }
 
 /**
+ * tmux のセッション1つ分。
+ *
+ * サブPCは Claude Code のセッションを常駐させるホストで、リポジトリをまたいだ作業セッションが
+ * 同じ `tmux ls` に並ぶ。いま何が動いているかが分からないと二重起動や放置に気づけないため、
+ * ホストのメトリクスと一緒に送ってもらう。
+ */
+export interface HostStatsTmuxSession {
+    name: string
+    /** セッション内のウィンドウ数 */
+    windows: number
+    /** クライアントがアタッチしているか（放置セッションの見分けに使う） */
+    attached: boolean
+    /** セッションの作成時刻（ISO 8601） */
+    createdAt?: string
+    /** セッションの持ち主。ソケットの所有者から引く */
+    user?: string
+}
+
+/**
  * 各ホスト上のエージェント（scripts/host-stats/agent.sh）が送ってくる1回分のメトリクス。
  *
  * VPS・サブPCとも同じ経路（push型）に一本化しており、ダッシュボード自身が動いている
@@ -73,6 +92,8 @@ export interface HostStatsReport {
     topProcesses?: HostStatsProcess[]
     maintenance?: HostStatsMaintenance
     sessions?: HostStatsSessions
+    /** tmux のセッション一覧。tmux が入っていないホストでは undefined（0件なら空配列） */
+    tmuxSessions?: HostStatsTmuxSession[]
     services: HostStatsService[]
 }
 

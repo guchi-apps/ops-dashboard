@@ -6,7 +6,12 @@ import { SectionHeading } from "@/components/section-heading"
 import { Sparkline } from "@/components/sparkline"
 import { formatBytes, formatUptime } from "@/lib/host-stats/format"
 import { cn } from "@/lib/utils"
-import type { HostStatsHistoryPoint, HostStatsHostView, HostStatsView } from "@/types/host-stats"
+import type {
+    HostStatsHistoryPoint,
+    HostStatsHostView,
+    HostStatsTmuxSession,
+    HostStatsView,
+} from "@/types/host-stats"
 
 /** エージェントの送信間隔（既定1分）より短くても害はないため、他セクションと同じ間隔にする */
 const REFRESH_INTERVAL_MS = 30_000
@@ -26,6 +31,27 @@ function formatAge(seconds: number): string {
     if (seconds < 3600) return `${Math.floor(seconds / 60)}分前`
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}時間前`
     return `${Math.floor(seconds / 86400)}日前`
+}
+
+/** tmuxセッションの経過時間（秒）。作成時刻が読めないホストでは undefined */
+function tmuxAgeSeconds(createdAt?: string): number | undefined {
+    if (!createdAt) return undefined
+
+    const created = Date.parse(createdAt)
+    if (Number.isNaN(created)) return undefined
+
+    return Math.max(0, Math.floor((Date.now() - created) / 1000))
+}
+
+/** バッジの「2窓 · 3h 10m · guchi」の部分。ユーザー名は複数人のセッションが並ぶときだけ出す */
+function formatTmuxDetail(session: HostStatsTmuxSession, withUser: boolean): string {
+    const parts = [`${session.windows}窓`]
+
+    const age = tmuxAgeSeconds(session.createdAt)
+    if (age !== undefined) parts.push(formatUptime(age))
+    if (withUser && session.user) parts.push(session.user)
+
+    return parts.join(" · ")
 }
 
 function formatRate(bytesPerSecond: number): string {
@@ -138,6 +164,10 @@ function HostSection({
     const diskIoSeries = sumSeries(pick(history, "ior"), pick(history, "iow"))
 
     const { maintenance, sessions, topProcesses } = latest
+
+    // tmux が入っていないホストは undefined で届く。0件のときは行ごと出さない
+    const tmuxSessions = latest.tmuxSessions ?? []
+    const tmuxUserCount = new Set(tmuxSessions.map((session) => session.user).filter(Boolean)).size
 
     return (
         <section className="space-y-3 sm:space-y-4">
@@ -313,6 +343,22 @@ function HostSection({
                     </StatusBadge>
                 )}
             </div>
+
+            {tmuxSessions.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                    {tmuxSessions.map((session, index) => (
+                        <StatusBadge
+                            key={`${session.user ?? ""}/${session.name}/${index}`}
+                            tone={session.attached ? "ok" : "neutral"}
+                            withDot={session.attached}
+                        >
+                            <span className="opacity-50">tmux</span>
+                            {session.name}
+                            <span className="opacity-70">{formatTmuxDetail(session, tmuxUserCount > 1)}</span>
+                        </StatusBadge>
+                    ))}
+                </div>
+            )}
 
             <p className="text-xs text-muted-foreground">
                 最終受信: {formatAge(host.ageSeconds)}

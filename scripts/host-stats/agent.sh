@@ -14,6 +14,8 @@
 #   HOST_STATS_DISK_PATHS   任意。監視するマウントポイントをカンマ区切りで（既定: /）
 #   HOST_STATS_SERVICES     任意。死活を見る systemd サービスをカンマ区切りで
 #   HOST_STATS_TIMEOUT      任意。送信のタイムアウト秒（既定: 15）
+#   HOST_STATS_TMUX_SOCKET_ROOT
+#                           任意。tmuxのソケットを探すディレクトリ（既定: /tmp）
 #
 # `--print` を付けて実行すると、送信せずに組み立てたJSONを表示する（設置時の確認用）。
 
@@ -28,11 +30,15 @@ SAMPLE_SECONDS=1
 # 上位プロセスの対象にする最低の経過時間（秒）。これ未満の短命プロセスは %CPU が当てにならない
 MIN_PROCESS_AGE_SECONDS=10
 
+# 送るtmuxセッションの上限。ダッシュボード側も同数で切るため、超えた分は表示されない
+MAX_TMUX_SESSIONS=20
+
 : "${OPS_DASHBOARD_URL:?OPS_DASHBOARD_URL が未設定です}"
 : "${HOST_STATS_TOKEN:?HOST_STATS_TOKEN が未設定です}"
 DISK_PATHS="${HOST_STATS_DISK_PATHS:-/}"
 SERVICES="${HOST_STATS_SERVICES:-}"
 TIMEOUT="${HOST_STATS_TIMEOUT:-15}"
+TMUX_SOCKET_ROOT="${HOST_STATS_TMUX_SOCKET_ROOT:-/tmp}"
 
 HOSTNAME_VALUE="$(hostname)"
 HOST_ID="${HOST_STATS_ID:-$(printf '%s' "$HOSTNAME_VALUE" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | sed 's/-*$//')}"
@@ -235,6 +241,62 @@ collect_sessions() {
     printf ']}'
 }
 
+# tmuxのセッション一覧。
+#
+# サブPCはClaude Codeの作業セッションを常駐させるホストで、リポジトリをまたいだセッションが
+# 同じ tmux ls に並ぶ。いま何が動いているかが見えないと、二重起動や放置セッションに気づけない。
+#
+# ソケットはユーザーごとに <ソケット置き場>/tmux-<UID>/ にあり、rootで `tmux ls` を叩いても
+# root自身のサーバーしか見えない。そのためソケットを列挙して -S で個別に問い合わせる。
+# ソケットのディレクトリは 0700 でユーザー所有だが、rootはDACを迂回できるため読める。
+# （systemdユニットで PrivateTmp=no にしているのは、ここで実ホストの /tmp を見るため）
+collect_tmux() {
+    local dir socket uid user count=0
+    local name windows created attached attached_json
+    local format
+    format="#{session_name}$(printf '\t')#{session_windows}$(printf '\t')#{session_created}$(printf '\t')#{session_attached}"
+
+    # tmuxが入っていないホストでは項目ごと送らない（0件との区別をダッシュボード側で付けるため）
+    command -v tmux > /dev/null 2>&1 || return 0
+
+    printf '['
+    for dir in "$TMUX_SOCKET_ROOT"/tmux-*; do
+        [ -d "$dir" ] || continue
+
+        uid="${dir##*/tmux-}"
+        case "$uid" in "" | *[!0-9]*) continue ;; esac
+        user="$(getent passwd "$uid" 2> /dev/null | cut -d: -f1)"
+        [ -n "$user" ] || user="uid:$uid"
+
+        for socket in "$dir"/*; do
+            [ -S "$socket" ] || continue
+
+            # サーバーが落ちた後のソケットが残っていることがあるため、失敗は無視して次へ
+            while IFS="$(printf '\t')" read -r name windows created attached; do
+                [ -n "$name" ] || continue
+                [ "$count" -lt "$MAX_TMUX_SESSIONS" ] || break 3
+
+                [ "$count" -eq 0 ] || printf ','
+                count=$((count + 1))
+
+                if [ "${attached:-0}" -gt 0 ] 2> /dev/null; then
+                    attached_json=true
+                else
+                    attached_json=false
+                fi
+
+                printf '{"name":"%s","windows":%d,"attached":%s,"user":"%s"' \
+                    "$(json_escape "$name")" "${windows:-0}" "$attached_json" "$(json_escape "$user")"
+                if [ "${created:-0}" -gt 0 ] 2> /dev/null; then
+                    printf ',"createdAt":"%s"' "$(date -u -d "@$created" +%Y-%m-%dT%H:%M:%SZ)"
+                fi
+                printf '}'
+            done < <(tmux -S "$socket" list-sessions -F "$format" 2> /dev/null || true)
+        done
+    done
+    printf ']'
+}
+
 # CPU温度。センサーの構成はマシンによって違うため、パッケージ温度らしいゾーンを優先して1つだけ拾う
 collect_temperature() {
     local zone type milli preferred=""
@@ -267,10 +329,11 @@ os_name() {
 }
 
 build_payload() {
-    local swap temperature
+    local swap temperature tmux_sessions
     collect_samples
     swap="$(collect_swap)"
     temperature="$(collect_temperature)"
+    tmux_sessions="$(collect_tmux)"
 
     printf '{'
     printf '"version":%d,' "$PAYLOAD_VERSION"
@@ -292,6 +355,7 @@ build_payload() {
     printf '"topProcesses":%s,' "$(collect_top_processes)"
     printf '"maintenance":%s,' "$(collect_maintenance)"
     printf '"sessions":%s,' "$(collect_sessions)"
+    [ -z "$tmux_sessions" ] || printf '"tmuxSessions":%s,' "$tmux_sessions"
     printf '"services":%s' "$(collect_services)"
     printf '}'
 }

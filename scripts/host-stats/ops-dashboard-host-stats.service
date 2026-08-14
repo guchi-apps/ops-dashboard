@@ -10,6 +10,9 @@ Type=oneshot
 EnvironmentFile=/etc/ops-dashboard-host-stats.env
 ExecStart=/opt/ops-dashboard-host-stats/agent.sh
 NoNewPrivileges=yes
-PrivateTmp=yes
+# tmuxのソケット（/tmp/tmux-<UID>/）を読むため、実ホストの /tmp が見える必要がある。
+# PrivateTmp=yes だとサービス専用の空の /tmp になり、セッションを1つも拾えない。
+# ProtectSystem=strict により /tmp は読み取り専用のままなので、書き込みはできない
+PrivateTmp=no
 ProtectHome=yes
 ProtectSystem=strict
