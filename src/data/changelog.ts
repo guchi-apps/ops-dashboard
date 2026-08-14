@@ -7,6 +7,14 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.10.0",
+        date: "2026-08-14",
+        changes: [
+            "メモリを多く使っているプロセスが確認できるようになりました。これまでは CPU を多く使っているものだけが表示されていたため、メモリが足りなくなっていても気づけませんでした。",
+            "tmux のセッションが多いときに、一覧に出しきれていない件数と全体の件数が分かるようになりました。",
+        ],
+    },
+    {
         version: "0.9.0",
         date: "2026-08-14",
         changes: [
