@@ -33,7 +33,7 @@ function PlanBadge({ plan }: { plan: string | null }) {
     if (!plan) return null
 
     return (
-        <span className="shrink-0 rounded-full bg-primary-foreground/20 px-2 py-0.5 text-[10px] sm:text-xs font-semibold dark:bg-muted">
+        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] sm:text-xs font-semibold">
             {plan}
         </span>
     )
@@ -58,13 +58,13 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
                     ))}
                 </div>
             ) : (
-                <p className="text-[11px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
+                <p className="text-[11px] sm:text-xs text-muted-foreground">
                     {provider.message ?? "使用状況を取得できませんでした"}
                 </p>
             )}
 
             {provider.billing && (
-                <div className="mt-auto flex items-baseline justify-between gap-2 border-t border-primary-foreground/20 pt-2 text-[10px] sm:text-xs text-primary-foreground/70 dark:border-border dark:text-muted-foreground">
+                <div className="mt-auto flex items-baseline justify-between gap-2 border-t border-border pt-2 text-[10px] sm:text-xs text-muted-foreground">
                     <span>{provider.billing.label}</span>
                     <span className="font-mono">
                         {provider.billing.amount}

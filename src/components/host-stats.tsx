@@ -1,33 +1,22 @@
 "use client"
 
 import { useDashboardData } from "@/components/dashboard-data"
-import { MetricCard, getUsageColor } from "@/components/metric-card"
+import {
+    MetricCard,
+    NEUTRAL_METRIC_COLORS,
+    getTemperatureColor,
+    getUsageColor,
+} from "@/components/metric-card"
 import { SectionHeading } from "@/components/section-heading"
 import { Sparkline } from "@/components/sparkline"
-import { formatBytes, formatUptime } from "@/lib/host-stats/format"
+import { StatusBadge } from "@/components/status-badge"
+import { formatAge, formatBytes, formatUptime } from "@/lib/host-stats/format"
+import { pickSeries as pick, sumSeries } from "@/lib/host-stats/history"
 import { cn } from "@/lib/utils"
-import type {
-    HostStatsHistoryPoint,
-    HostStatsHostView,
-    HostStatsTmuxSession,
-} from "@/types/host-stats"
+import type { HostStatsHostView, HostStatsTmuxSession } from "@/types/host-stats"
 
 /** 温度グラフの縦軸の最小の幅（℃）。変動が小さいときに波形が暴れて見えないようにする */
 const MIN_TEMPERATURE_SPAN = 10
-
-/** CPU温度の色分け。使用率（%）とは基準が違うため別に持つ */
-function getTemperatureColor(celsius: number): string {
-    if (celsius >= 85) return "text-red-400"
-    if (celsius >= 70) return "text-amber-400"
-    return "text-emerald-400"
-}
-
-function formatAge(seconds: number): string {
-    if (seconds < 60) return `${seconds}秒前`
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}分前`
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}時間前`
-    return `${Math.floor(seconds / 86400)}日前`
-}
 
 /** tmuxセッションの経過時間（秒）。作成時刻が読めないホストでは undefined */
 function tmuxAgeSeconds(createdAt?: string): number | undefined {
@@ -52,56 +41,6 @@ function formatTmuxDetail(session: HostStatsTmuxSession, withUser: boolean): str
 
 function formatRate(bytesPerSecond: number): string {
     return `${formatBytes(bytesPerSecond)}/s`
-}
-
-function pick(history: HostStatsHistoryPoint[], key: keyof HostStatsHistoryPoint): number[] {
-    return history
-        .map((point) => point[key])
-        .filter((value): value is number => typeof value === "number")
-}
-
-/** 受信・送信のように対になる系列を合計する（グラフ1本にまとめて出すため） */
-function sumSeries(a: number[], b: number[]): number[] {
-    if (a.length !== b.length) return a
-    return a.map((value, index) => value + b[index])
-}
-
-type BadgeTone = "ok" | "warn" | "danger" | "neutral"
-
-const BADGE_TONES: Record<BadgeTone, string> = {
-    ok: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-    warn: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-    danger: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
-    neutral: "border-border bg-muted/50 text-muted-foreground",
-}
-
-const DOT_TONES: Record<BadgeTone, string> = {
-    ok: "bg-emerald-500",
-    warn: "bg-amber-500",
-    danger: "bg-red-500",
-    neutral: "bg-muted-foreground",
-}
-
-function StatusBadge({
-    tone,
-    children,
-    withDot,
-}: {
-    tone: BadgeTone
-    children: React.ReactNode
-    withDot?: boolean
-}) {
-    return (
-        <span
-            className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-mono",
-                BADGE_TONES[tone]
-            )}
-        >
-            {withDot && <span className={cn("size-1.5 rounded-full", DOT_TONES[tone])} aria-hidden />}
-            {children}
-        </span>
-    )
 }
 
 function OfflineBanner({
@@ -254,7 +193,7 @@ function HostSection({
                         <Sparkline
                             values={loads}
                             max={Math.max(...loads, 1)}
-                            className={cn(chartClass, "text-sky-400")}
+                            className={cn(chartClass, NEUTRAL_METRIC_COLORS.load)}
                             label={`Load Averageの${historyLabelSuffix}`}
                         />
                     }
@@ -269,7 +208,7 @@ function HostSection({
                             <Sparkline
                                 values={networkSeries}
                                 max={Math.max(...networkSeries, 1)}
-                                className={cn(chartClass, "text-violet-400")}
+                                className={cn(chartClass, NEUTRAL_METRIC_COLORS.network)}
                                 label={`ネットワーク転送量の${historyLabelSuffix}`}
                             />
                         }
@@ -285,7 +224,7 @@ function HostSection({
                             <Sparkline
                                 values={diskIoSeries}
                                 max={Math.max(...diskIoSeries, 1)}
-                                className={cn(chartClass, "text-teal-400")}
+                                className={cn(chartClass, NEUTRAL_METRIC_COLORS.diskIo)}
                                 label={`ディスクI/Oの${historyLabelSuffix}`}
                             />
                         }

@@ -4,7 +4,12 @@ import { useDashboardData } from "@/components/dashboard-data"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
-import { formatRemaining, getElapsedPercent } from "@/lib/usage-format"
+import {
+    formatRemaining,
+    getActionsUsedPercent,
+    getElapsedPercent,
+    getRateLimitUsedPercent,
+} from "@/lib/usage-format"
 import type { GitHubActionsUsage, GitHubRateLimit } from "@/types/github-usage"
 
 /** レート制限の枠の長さ（1時間）。経過位置の目印を出すのに使う */
@@ -22,7 +27,7 @@ function CardHeader({ title, badge }: { title: string; badge?: string }) {
         <div className="flex items-center justify-between gap-2">
             <span className="min-w-0 truncate text-sm sm:text-base font-bold">{title}</span>
             {badge && (
-                <span className="shrink-0 rounded-full bg-primary-foreground/20 px-2 py-0.5 text-[10px] sm:text-xs font-semibold dark:bg-muted">
+                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] sm:text-xs font-semibold">
                     {badge}
                 </span>
             )}
@@ -32,7 +37,7 @@ function CardHeader({ title, badge }: { title: string; badge?: string }) {
 
 function CardFooter({ rows }: { rows: { label: string; value: string }[] }) {
     return (
-        <div className="mt-auto space-y-0.5 border-t border-primary-foreground/20 pt-2 text-[10px] sm:text-xs text-primary-foreground/70 dark:border-border dark:text-muted-foreground">
+        <div className="mt-auto space-y-0.5 border-t border-border pt-2 text-[10px] sm:text-xs text-muted-foreground">
             {rows.map((row) => (
                 <div key={row.label} className="flex items-baseline justify-between gap-2">
                     <span>{row.label}</span>
@@ -57,12 +62,12 @@ function RepositoryBreakdown({ actions }: { actions: GitHubActionsUsage }) {
             </div>
 
             {actions.repositories.length === 0 ? (
-                <p className="text-[10px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
+                <p className="text-[10px] sm:text-xs text-muted-foreground">
                     今月はまだ実行されていません
                 </p>
             ) : (
                 <>
-                    <p className="text-[10px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
+                    <p className="text-[10px] sm:text-xs text-muted-foreground">
                         公開リポジトリのActionsは無制限に無料のため、無料枠を消費しない
                     </p>
                     <ul className="space-y-0.5 text-[10px] sm:text-xs">
@@ -88,10 +93,7 @@ function RepositoryBreakdown({ actions }: { actions: GitHubActionsUsage }) {
 }
 
 function ActionsCard({ actions, now }: { actions: GitHubActionsUsage; now: number }) {
-    const usedPercent =
-        actions.allowanceLimitMinutes > 0
-            ? Math.round((actions.allowanceMinutes / actions.allowanceLimitMinutes) * 1000) / 10
-            : 0
+    const usedPercent = getActionsUsedPercent(actions)
 
     const period = new Date(actions.periodStartsAt).toLocaleDateString("ja-JP", {
         year: "numeric",
@@ -134,8 +136,7 @@ function ActionsCard({ actions, now }: { actions: GitHubActionsUsage; now: numbe
 }
 
 function RateLimitCard({ rateLimit, now }: { rateLimit: GitHubRateLimit; now: number }) {
-    const usedPercent =
-        rateLimit.limit > 0 ? Math.round((rateLimit.used / rateLimit.limit) * 1000) / 10 : 0
+    const usedPercent = getRateLimitUsedPercent(rateLimit)
     const resetsAtMs = new Date(rateLimit.resetsAt).getTime()
 
     return (
@@ -189,7 +190,7 @@ export function GitHubUsage() {
 
             {snapshot.status === "error" ? (
                 <DashboardCard className="px-3 py-3 sm:px-4 sm:py-4">
-                    <p className="text-[11px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
+                    <p className="text-[11px] sm:text-xs text-muted-foreground">
                         {snapshot.message ?? "使用状況を取得できませんでした"}
                     </p>
                 </DashboardCard>
