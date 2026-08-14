@@ -22,6 +22,7 @@ const MAX_SERVICES = 20
 const MAX_PROCESSES = 5
 const MAX_SESSION_USERS = 10
 const MAX_TMUX_SESSIONS = 20
+const MAX_TMUX_COMMANDS = 4
 const MAX_TEXT_LENGTH = 120
 
 /** ホスト識別子に使える文字。保存先のディレクトリ名になるため、パス区切りなどを通さない */
@@ -165,8 +166,27 @@ function parseTmuxSessions(value: unknown): HostStatsTmuxSession[] | undefined {
             attached: record.attached === true,
             createdAt: asOptionalText(record.createdAt, `tmuxSessions[${index}].createdAt`),
             user: asOptionalText(record.user, `tmuxSessions[${index}].user`),
+            commands: parseTmuxCommands(record.commands, index),
+            // 送ってこない世代のエージェントと「シェルだけで待機中」を取り違えないよう undefined を残す
+            busy: record.busy === undefined || record.busy === null ? undefined : record.busy === true,
+            lastActivityAt: asOptionalText(
+                record.lastActivityAt,
+                `tmuxSessions[${index}].lastActivityAt`
+            ),
+            path: asOptionalText(record.path, `tmuxSessions[${index}].path`),
         }
     })
+}
+
+function parseTmuxCommands(value: unknown, index: number): string[] | undefined {
+    if (value === undefined || value === null) return undefined
+    if (!Array.isArray(value)) fail(`tmuxSessions[${index}].commands が配列ではありません`)
+
+    return value
+        .slice(0, MAX_TMUX_COMMANDS)
+        .map((command, commandIndex) =>
+            asText(command, `tmuxSessions[${index}].commands[${commandIndex}]`)
+        )
 }
 
 /** ホスト名から保存先に使える識別子を作る（エージェントが id を送ってこない場合の保険） */
