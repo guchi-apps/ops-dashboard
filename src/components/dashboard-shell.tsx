@@ -290,8 +290,16 @@ export function DashboardShell({
                                 <StatusBadge tone={tmuxSummary.running > 0 ? "ok" : "neutral"}>
                                     稼働 {tmuxSummary.running}
                                 </StatusBadge>
+                                {/*
+                                    セッションを詳しく見る場所なので、総数まで出す（#61）。
+                                    エージェントは送信を上限で打ち切るため、一覧の行数だけでは
+                                    積み上がっていることに気づけない
+                                */}
                                 <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                                    待機 {tmuxSummary.idle} · 放置 {tmuxSummary.stale}
+                                    待機 {tmuxSummary.idle} · 放置 {tmuxSummary.stale} · 全
+                                    {tmuxSummary.total}件
+                                    {tmuxSummary.untracked > 0 &&
+                                        `（うち ${tmuxSummary.untracked}件 未取得）`}
                                 </span>
                             </>
                         }
