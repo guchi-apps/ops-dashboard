@@ -416,9 +416,13 @@ Notionは使用量・プラン枠を返すAPIを公開しておらず、レー�
 
 ```bash
 # VPS上で1回だけ実行する（管理者アカウントで作業する）
-curl -sSfL https://downloads.1password.com/linux/tar/stable/x86_64/op.tar.gz | sudo tar -xz -C /usr/local/bin op
+curl -fsSL -o /tmp/1password-cli.deb https://downloads.1password.com/linux/debian/amd64/stable/1password-cli-amd64-latest.deb
+sudo dpkg -i /tmp/1password-cli.deb && rm /tmp/1password-cli.deb
 op --version
 ```
+
+出力の `reset` は**リセット時刻ではなくリセットまでの残り秒数**で、まだ1回も使っていない枠では 0 が入る
+（その場合はリセット時刻が定まらないため、画面には「まだ使っていません」と出す）。
 
 `op` をPATHの通っていない場所に置いた場合は `OP_CLI_PATH` に実行パスを設定する。
 取得結果はサーバー側で既定5分間キャッシュする（`OP_USAGE_CACHE_SECONDS` で変更可）。
