@@ -50,6 +50,14 @@ jobs:
     needs: [verify]
     if: always()
     runs-on: ubuntu-latest
+    # GitHub側の値をここで明示的に渡す。以前は実行のたびに1Passwordから読んでいたが、
+    # サービスアカウントの日次レート制限を使い切ってフリート全体のデプロイが止まった
+    # （guchi-apps/issue-deck#1302）。SERVER_*・SUPABASE_* はorganizationの共通値。
+    #
+    # このブロックは scripts/generate-workflow-env-block.sh で生成する（#51）。
+    env:
+      SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -75,17 +83,11 @@ jobs:
             echo "should_notify=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Load secrets from 1Password
-        if: steps.status.outputs.should_notify == 'true'
-        uses: 1password/load-secrets-action@v4
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_ENV_FILE: ".github/ci.env.tpl"
-
       - name: Signaly に通知
         if: steps.status.outputs.should_notify == 'true'
+        # 通知はCIやデプロイの合否そのものではない。ここが失敗してもrun全体を落とさない
+        # （guchi-apps/issue-deck#1302）。
+        continue-on-error: true
         env:
           SIGNALY_WEBHOOK_URL: ${{ env.SIGNALY_WEBHOOK_URL }}
           NOTIFY_APP: ops-dashboard
