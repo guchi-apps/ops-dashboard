@@ -206,7 +206,9 @@ export function DashboardShell({
                                         稼働 {tmuxSummary.running}
                                     </StatusBadge>
                                     <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                                        待機 {tmuxSummary.idle + tmuxSummary.stale} · 全{tmuxSummary.total}件
+                                        入力待ち {tmuxSummary.waiting} · 待機{" "}
+                                        {tmuxSummary.idle + tmuxSummary.stale} · 全
+                                        {tmuxSummary.total}件
                                         {/* 上限で届かなかった分は一覧に出せないので、内訳が合わない理由を書いておく */}
                                         {tmuxSummary.untracked > 0 &&
                                             `（うち ${tmuxSummary.untracked}件 未取得）`}
@@ -296,8 +298,8 @@ export function DashboardShell({
                                     積み上がっていることに気づけない
                                 */}
                                 <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                                    待機 {tmuxSummary.idle} · 放置 {tmuxSummary.stale} · 全
-                                    {tmuxSummary.total}件
+                                    入力待ち {tmuxSummary.waiting} · 待機 {tmuxSummary.idle} · 放置{" "}
+                                    {tmuxSummary.stale} · 全{tmuxSummary.total}件
                                     {tmuxSummary.untracked > 0 &&
                                         `（うち ${tmuxSummary.untracked}件 未取得）`}
                                 </span>
@@ -352,6 +354,7 @@ function TmuxBreakdown({
                 {hosts.map((host) => {
                     const forHost = sessions.filter((session) => session.hostLabel === host)
                     const running = forHost.filter((session) => session.state === "running").length
+                    const waiting = forHost.filter((session) => session.state === "waiting").length
 
                     return (
                         <div key={host} className="flex items-baseline justify-between gap-2">
@@ -359,7 +362,9 @@ function TmuxBreakdown({
                             <span className="font-mono">
                                 {forHost.length === 0
                                     ? "セッションなし"
-                                    : `稼働 ${running} · 待機 ${forHost.length - running}`}
+                                    : `稼働 ${running} · 入力待ち ${waiting} · 待機 ${
+                                          forHost.length - running - waiting
+                                      }`}
                             </span>
                         </div>
                     )
