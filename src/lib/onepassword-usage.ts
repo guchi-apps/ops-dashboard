@@ -65,7 +65,9 @@ function parseRateLimits(stdout: string, fetchedAtMs: number): OnePasswordRateLi
 }
 
 async function fetchRateLimits(token: string, fetchedAtMs: number): Promise<OnePasswordRateLimit[]> {
-    // 環境をそのまま渡すと他サービスの認証情報まで子プロセスに配ることになるため、必要な分だけ渡す
+    // 環境をそのまま渡すと他サービスの認証情報まで子プロセスに配ることになるため、必要な分だけ渡す。
+    // XDG_RUNTIME_DIR を渡さないのも意図的で、渡すと op がそこにキャッシュ用デーモンを立てようとし、
+    // 実行ユーザーと所有者が食い違っていると（警告は出るが害のない）失敗ログを毎回吐く
     const { stdout } = await execFileAsync(
         process.env.OP_CLI_PATH ?? DEFAULT_CLI_PATH,
         ["service-account", "ratelimit", "--format=json"],
