@@ -82,7 +82,9 @@ function tmuxChip(view: HostStatsView | null, sessions: TmuxSessionView[]): Summ
     return {
         key: "tmux",
         label: "tmux",
-        value: `稼働 ${summary.running} · 待機 ${summary.idle + summary.stale}`,
+        value: `稼働 ${summary.running} · 入力待ち ${summary.waiting} · 待機 ${
+            summary.idle + summary.stale
+        }`,
         note: notes.length > 0 ? notes.join(" · ") : "放置なし",
         tone: notes.length > 0 ? "warn" : "neutral",
     }

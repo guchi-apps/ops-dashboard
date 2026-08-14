@@ -4,11 +4,20 @@ import type { HostStatsHostView, HostStatsTmuxSession } from "@/types/host-stats
 export const TMUX_STALE_AFTER_SECONDS = 86_400
 
 /**
- * running — シェル以外のコマンドが動いている（claude・node など）
+ * コマンドは動いているが、これを超えて画面が動いていないセッションを「入力待ち」として分ける。
+ *
+ * claude は起動しっぱなしが常態のため、プロセスの有無だけでは手が止まっているセッションを
+ * 見分けられない。処理中は画面が描き変わり続けるので、その停止を代わりの手掛かりにする。
+ */
+export const TMUX_WAITING_AFTER_SECONDS = 60
+
+/**
+ * running — シェル以外のコマンドが動いていて、画面も動いている（処理中）
+ * waiting — コマンドは動いているが人の入力を待っている
  * idle    — シェルだけで止まっている
  * stale   — デタッチのまま24時間以上 活動がない
  */
-export type TmuxSessionState = "running" | "idle" | "stale"
+export type TmuxSessionState = "running" | "waiting" | "idle" | "stale"
 
 export interface TmuxSessionView extends HostStatsTmuxSession {
     hostId: string
@@ -26,6 +35,8 @@ export interface TmuxSessionView extends HostStatsTmuxSession {
 
 export interface TmuxSummary {
     running: number
+    /** 人の入力を待っているセッション。放置と違い、こちらが動けば進む */
+    waiting: number
     idle: number
     stale: number
     /** 送信上限で切り捨てられた分を含むセッションの総数 */
@@ -42,11 +53,17 @@ export interface TmuxSummary {
 /** 状態ごとの表示名。バッジ・一覧・凡例で同じ言葉を使う */
 export const TMUX_STATE_LABELS: Record<TmuxSessionState, string> = {
     running: "稼働中",
+    waiting: "入力待ち",
     idle: "待機中",
     stale: "放置",
 }
 
-const STATE_ORDER: Record<TmuxSessionState, number> = { running: 0, idle: 1, stale: 2 }
+const STATE_ORDER: Record<TmuxSessionState, number> = {
+    running: 0,
+    waiting: 1,
+    idle: 2,
+    stale: 3,
+}
 
 function elapsedSeconds(isoTime: string | undefined, nowMs: number): number | undefined {
     if (!isoTime) return undefined
@@ -64,7 +81,22 @@ function getState(
 ): TmuxSessionState {
     // busy を送ってこない世代のエージェントでは、アタッチの有無で代用するしかない
     const running = session.busy ?? session.attached
-    if (running) return "running"
+    if (running) {
+        // **フックが「人を待っている」と言っているなら、それが事実。** 画面の動きから推し量る必要はない。
+        // `Stop`（応答の終了）は「いま止まっている」ことを意味しないため、ここでは入力待ちにしない
+        // （応答を終えた直後に次の作業へ入っていることがある）
+        if (session.lastEventName !== undefined && session.lastEventName !== "Stop") {
+            return "waiting"
+        }
+
+        // フックが届かないセッション（手で立てたもの）と、`Stop` のまま動きが無いセッションは
+        // 画面が止まっているかで判断する
+        if (inactiveSeconds !== undefined && inactiveSeconds >= TMUX_WAITING_AFTER_SECONDS) {
+            return "waiting"
+        }
+
+        return "running"
+    }
 
     if (session.attached) return "idle"
 
@@ -120,6 +152,7 @@ export function summarizeTmux(
 
     return {
         running: count("running"),
+        waiting: count("waiting"),
         idle: count("idle"),
         stale: count("stale"),
         total: sessions.length + untracked,
