@@ -1,5 +1,6 @@
 import { requireSessionForPage } from "@/lib/session"
 import { AiUsage } from "@/components/ai-usage"
+import { DashboardDataProvider } from "@/components/dashboard-data"
 import { GitHubUsage } from "@/components/github-usage"
 import { HostStats } from "@/components/host-stats"
 import { MonitorCard, MonitorCardGrid } from "@/components/monitor-card"
@@ -7,14 +8,20 @@ import { SectionHeading } from "@/components/section-heading"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { UptimeKumaDashboardCard } from "@/components/uptime-kuma-card"
 import { Plus } from "lucide-react"
-import { fetchUptimeRobotMonitorsServer, getUptimeRobotStatusInfo } from "@/lib/uptimerobot"
-import { fetchUptimeKumaDashboardMonitors, getUptimeKumaAddMonitorUrl } from "@/lib/uptime-kuma"
+import {
+    fetchUptimeRobotMonitorsServer,
+    getUptimeRobotStatusInfo,
+    type UptimeRobotMonitor,
+} from "@/lib/uptimerobot"
+import {
+    fetchUptimeKumaDashboardMonitors,
+    getUptimeKumaAddMonitorUrl,
+    type UptimeKumaMonitor,
+} from "@/lib/uptime-kuma"
 
 export const dynamic = "force-dynamic"
 
-async function UptimeRobotSection() {
-    const monitors = await fetchUptimeRobotMonitorsServer()
-
+function UptimeRobotSection({ monitors }: { monitors: UptimeRobotMonitor[] }) {
     return (
         <section className="space-y-3 sm:space-y-4">
             <SectionHeading title="UptimeRobot" />
@@ -45,8 +52,7 @@ async function UptimeRobotSection() {
     )
 }
 
-async function UptimeKumaSection() {
-    const monitors = await fetchUptimeKumaDashboardMonitors()
+function UptimeKumaSection({ monitors }: { monitors: UptimeKumaMonitor[] }) {
     if (monitors.length === 0) return null
 
     const addMonitorUrl = getUptimeKumaAddMonitorUrl()
@@ -81,29 +87,35 @@ async function UptimeKumaSection() {
 export default async function Home() {
     const session = await requireSessionForPage()
 
-    return (
-        <div className="min-h-screen p-4 md:p-8">
-            <div className="max-w-4xl mx-auto space-y-5 sm:space-y-6">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <h1 className="text-2xl font-bold shrink-0">ダッシュボード</h1>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm text-muted-foreground">
-                            {session.user.email}
-                        </span>
-                        <form action="/auth/signout" method="POST">
-                            <Button variant="outline" type="submit">
-                                ログアウト
-                            </Button>
-                        </form>
-                    </div>
-                </div>
+    // 初回描画で監視の枠が空にならないよう、サーバー側で取った値を初期値として渡す
+    const [uptimeKuma, uptimeRobot] = await Promise.all([
+        fetchUptimeKumaDashboardMonitors(),
+        fetchUptimeRobotMonitorsServer(),
+    ])
 
-                <HostStats />
-                <AiUsage />
-                <GitHubUsage />
-                <UptimeKumaSection />
-                <UptimeRobotSection />
+    return (
+        <DashboardDataProvider initial={{ uptimeKuma, uptimeRobot }}>
+            <div className="min-h-screen p-4 md:p-8">
+                <div className="max-w-4xl mx-auto space-y-5 sm:space-y-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <h1 className="text-2xl font-bold shrink-0">ダッシュボード</h1>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm text-muted-foreground">{session.user.email}</span>
+                            <form action="/auth/signout" method="POST">
+                                <Button variant="outline" type="submit">
+                                    ログアウト
+                                </Button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <HostStats />
+                    <AiUsage />
+                    <GitHubUsage />
+                    <UptimeKumaSection monitors={uptimeKuma} />
+                    <UptimeRobotSection monitors={uptimeRobot} />
+                </div>
             </div>
-        </div>
+        </DashboardDataProvider>
     )
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useDashboardData } from "@/components/dashboard-data"
 import { MetricCard, getUsageColor } from "@/components/metric-card"
 import { SectionHeading } from "@/components/section-heading"
 import { Sparkline } from "@/components/sparkline"
@@ -10,11 +10,7 @@ import type {
     HostStatsHistoryPoint,
     HostStatsHostView,
     HostStatsTmuxSession,
-    HostStatsView,
 } from "@/types/host-stats"
-
-/** エージェントの送信間隔（既定1分）より短くても害はないため、他セクションと同じ間隔にする */
-const REFRESH_INTERVAL_MS = 30_000
 
 /** 温度グラフの縦軸の最小の幅（℃）。変動が小さいときに波形が暴れて見えないようにする */
 const MIN_TEMPERATURE_SPAN = 10
@@ -380,31 +376,7 @@ function HostSection({
 }
 
 export function HostStats() {
-    const [view, setView] = useState<HostStatsView | null>(null)
-
-    useEffect(() => {
-        let cancelled = false
-
-        const load = async () => {
-            try {
-                const res = await fetch("/api/host-stats", { cache: "no-store" })
-                if (!res.ok) throw new Error("Failed to fetch host stats")
-
-                const data = (await res.json()) as HostStatsView
-                if (!cancelled) setView(data)
-            } catch (error) {
-                console.error("Failed to fetch host stats:", error)
-            }
-        }
-
-        void load()
-        const intervalId = setInterval(() => void load(), REFRESH_INTERVAL_MS)
-
-        return () => {
-            cancelled = true
-            clearInterval(intervalId)
-        }
-    }, [])
+    const { hostStats: view } = useDashboardData()
 
     // 一度も受信していない（エージェント未設置）ならセクションごと出さない
     if (!view?.hosts.length) return null

@@ -1,17 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useDashboardData } from "@/components/dashboard-data"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
 import { formatRemaining, getElapsedPercent } from "@/lib/usage-format"
-import type { AiProviderUsage, AiUsageSnapshot, AiUsageWindow } from "@/types/ai-usage"
-
-/** サーバー側のキャッシュ（既定5分）に合わせた取得間隔 */
-const REFRESH_INTERVAL_MS = 300_000
-
-/** リセットまでの残り時間表示を進めるための再描画間隔 */
-const TICK_INTERVAL_MS = 30_000
+import type { AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
 /** 制限枠の長さとリセット時刻から、枠のうち何割の時間が過ぎたかを出す */
 function getWindowElapsedPercent(usageWindow: AiUsageWindow, now: number): number | null {
@@ -83,42 +77,9 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
 }
 
 export function AiUsage() {
-    const [snapshot, setSnapshot] = useState<AiUsageSnapshot | null>(null)
-    const [loading, setLoading] = useState(true)
-    const [now, setNow] = useState(() => Date.now())
+    const { aiUsage: snapshot, now } = useDashboardData()
 
-    useEffect(() => {
-        let cancelled = false
-
-        const load = async () => {
-            try {
-                const res = await fetch("/api/ai-usage", { cache: "no-store" })
-                if (!res.ok) throw new Error("Failed to fetch AI usage")
-
-                const data = (await res.json()) as AiUsageSnapshot
-                if (!cancelled) setSnapshot(data)
-            } catch (error) {
-                console.error("Failed to fetch AI usage:", error)
-            } finally {
-                if (!cancelled) setLoading(false)
-            }
-        }
-
-        void load()
-        const intervalId = setInterval(() => void load(), REFRESH_INTERVAL_MS)
-
-        return () => {
-            cancelled = true
-            clearInterval(intervalId)
-        }
-    }, [])
-
-    useEffect(() => {
-        const tickId = setInterval(() => setNow(Date.now()), TICK_INTERVAL_MS)
-        return () => clearInterval(tickId)
-    }, [])
-
-    if (loading || !snapshot) return null
+    if (!snapshot) return null
 
     return (
         <section className="space-y-3 sm:space-y-4">
