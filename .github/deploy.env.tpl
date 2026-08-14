@@ -34,5 +34,8 @@ OPENAI_CHATGPT_ACCOUNT_ID=op://apps/ops-dashboard/openai-chatgpt-account-id
 GH_USAGE_TOKEN=op://apps/ops-dashboard/github-usage-token
 GH_USAGE_ORG=op://apps/ops-dashboard/github-usage-org
 
+# tmuxのセッション名から Issue へリンクするための owner。集計対象と同じ組織のため同じ値を参照する
+NEXT_PUBLIC_GH_OWNER=op://apps/ops-dashboard/github-usage-org
+
 # iPhoneウィジェット（Scriptable）用の固定トークン
 WIDGET_TOKEN=op://apps/ops-dashboard/widget-token
