@@ -7,6 +7,14 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.9.0",
+        date: "2026-08-14",
+        changes: [
+            "1Password の利用枠の残りが確認できるようになりました。1時間あたりの読み取り・書き込みと、アカウント全体の24時間あたりの残り回数を、タブ「AI・GitHub・1Password」で確認できます。",
+            "画面上部のまとめに 1Password の残枠が加わり、少なくなってきたときに色で気づけるようになりました。",
+        ],
+    },
+    {
         version: "0.8.0",
         date: "2026-08-14",
         changes: [

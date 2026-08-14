@@ -5,6 +5,7 @@ import type { UptimeRobotMonitor } from "@/lib/uptimerobot"
 import type { AiUsageSnapshot } from "@/types/ai-usage"
 import type { GitHubUsageSnapshot } from "@/types/github-usage"
 import type { HostStatsView } from "@/types/host-stats"
+import type { OnePasswordUsageSnapshot } from "@/types/onepassword-usage"
 
 export type SummaryTone = "ok" | "warn" | "danger" | "neutral"
 
@@ -18,7 +19,7 @@ export interface SummaryChip {
     tone: SummaryTone
 }
 
-/** 残量（%）の色分け。AI・GitHubで同じ基準を使う */
+/** 残量（%）の色分け。AI・GitHub・1Passwordで同じ基準を使う */
 function remainingTone(remainingPercent: number): SummaryTone {
     if (remainingPercent <= 15) return "danger"
     if (remainingPercent <= 35) return "warn"
@@ -123,6 +124,28 @@ function githubChip(snapshot: GitHubUsageSnapshot | null): SummaryChip | null {
     }
 }
 
+function onePasswordChip(snapshot: OnePasswordUsageSnapshot | null): SummaryChip | null {
+    if (snapshot?.status !== "ok") return null
+
+    // 使い切ると全アプリのデプロイが止まるため、一番きつい枠だけを出す
+    const tightest = snapshot.limits
+        .filter((limit) => limit.limit > 0)
+        .sort((a, b) => a.remaining / a.limit - b.remaining / b.limit)[0]
+
+    if (!tightest) return null
+
+    const remaining = Math.round((tightest.remaining / tightest.limit) * 100)
+    const scope = tightest.type === "account" ? "アカウント全体24時間" : "トークン1時間"
+
+    return {
+        key: "onepassword",
+        label: "1Password",
+        value: `残 ${remaining}%`,
+        note: `${scope} ${tightest.used.toLocaleString("ja-JP")} / ${tightest.limit.toLocaleString("ja-JP")} 回`,
+        tone: remainingTone(remaining),
+    }
+}
+
 function maintenanceChip(view: HostStatsView | null): SummaryChip | null {
     if (!view?.hosts.length) return null
 
@@ -172,6 +195,7 @@ export function buildSummaryChips(input: {
     uptimeRobot: UptimeRobotMonitor[]
     aiUsage: AiUsageSnapshot | null
     githubUsage: GitHubUsageSnapshot | null
+    onepasswordUsage: OnePasswordUsageSnapshot | null
 }): SummaryChip[] {
     return [
         hostChip(input.hostStats),
@@ -179,6 +203,7 @@ export function buildSummaryChips(input: {
         tmuxChip(input.hostStats, input.tmuxSessions),
         aiChip(input.aiUsage),
         githubChip(input.githubUsage),
+        onePasswordChip(input.onepasswordUsage),
         maintenanceChip(input.hostStats),
     ].filter((chip): chip is SummaryChip => chip !== null)
 }

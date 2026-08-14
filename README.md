@@ -20,11 +20,11 @@ Supabaseダッシュボードの Authentication → URL Configuration の Redire
 | 概要 | 全項目を畳んで1画面に収めたもの。ホストごとの主要4指標、tmuxの稼働・待機、AI/GitHubの残枠、監視の状態タイル |
 | ホスト | ホストごとの全指標と推移（Swap・温度・ネットワーク・ディスクI/O・上位プロセス・ディスク内訳） |
 | tmux | セッションの一覧。稼働中・待機中・放置の別、実行中コマンド、作業ディレクトリ、最終活動 |
-| AI・GitHub | 提供元ごとの制限枠と課金、Actionsのリポジトリ別内訳 |
+| AI・GitHub・1Password | 提供元ごとの制限枠と課金、Actionsのリポジトリ別内訳、1Passwordのレート制限 |
 | 監視 | Uptime Kuma / UptimeRobot のheartbeatと応答時間 |
 
 選んだタブは端末ごとに `localStorage` へ保存する。
-データの取得は共通のプロバイダに一本化しており（ホスト30秒・監視60秒・AI/GitHub5分）、サマリーが全ソースを横断して集計できるようにしている。
+データの取得は共通のプロバイダに一本化しており（ホスト30秒・監視60秒・AI/GitHub/1Password 5分）、サマリーが全ソースを横断して集計できるようにしている。
 狭い画面ではサマリーとタブが横スクロールになり、tmuxの一覧は表からカードに切り替わる。
 
 ## セットアップ
@@ -393,6 +393,46 @@ Notionは使用量・プラン枠を返すAPIを公開しておらず、レー�
 1クエリ10,000件のページング上限やペイロード上限（1,000ブロック / 500KB）も時間でリセットされる枠ではなく、
 ダッシュボードの残量表示には載らないため対象外としている（Geminiと同じ扱い）。
 
+## 1Passwordのレート制限の表示
+
+全アプリのデプロイ・CIが同じサービスアカウントで1Passwordからシークレットを読んでいるため、
+枠を使い切ると**どのアプリのデプロイも通らなくなる**。逼迫に事前に気づけるよう、残量をダッシュボードに表示する。
+
+| 表示 | 枠の単位 |
+| --- | --- |
+| 読み取り・書き込みの残量（1時間あたり） | サービスアカウントのトークン単位 |
+| 読み書きの残量（24時間あたり） | 1Passwordアカウント全体（全サービスアカウントの合計） |
+
+上限はプランで決まり、個人・ファミリーでは 1時間あたり読み取り1,000回・書き込み100回、
+アカウント全体で24時間あたり1,000回（[Rate limits](https://www.1password.dev/service-accounts/rate-limits/)）。
+
+### 取得方法
+
+**HTTPで取得する手段が無い**ため、ここだけは1Password CLI（`op service-account ratelimit --format=json`）を
+サーバー上で実行して取得している。CLIが内部で叩くエンドポイントはSRPでセッションを張る前提で、
+サービスアカウントトークンだけを持って直接呼ぶことはできない。
+
+そのため**VPSに `op` が入っていないと表示されない**（入っていない場合はエラーとして扱い、他のセクションには影響しない）。
+
+```bash
+# VPS上で1回だけ実行する（管理者アカウントで作業する）
+curl -sSfL https://downloads.1password.com/linux/tar/stable/x86_64/op.tar.gz | sudo tar -xz -C /usr/local/bin op
+op --version
+```
+
+`op` をPATHの通っていない場所に置いた場合は `OP_CLI_PATH` に実行パスを設定する。
+取得結果はサーバー側で既定5分間キャッシュする（`OP_USAGE_CACHE_SECONDS` で変更可）。
+
+### 認証情報
+
+`OP_SERVICE_ACCOUNT_TOKEN` にサービスアカウントトークンを設定する（未設定なら1Passwordセクションを表示しない）。
+デプロイで使っているものと同じトークンをそのまま渡している。1時間枠の消費はトークン単位で数えられるため、
+別のトークンを渡すと「実際にデプロイが消費している量」が見えなくなるからである。
+
+**トレードオフ**: このトークンは `apps` ボールト全体を読めるため、アプリのランタイムに渡す権限としては広い。
+1時間枠の表示を諦めてよければ、ボールトへのアクセスを持たない専用のサービスアカウントを作って
+そのトークンを渡すこともできる（アカウント全体の24時間枠は、どのトークンからでも同じ値が読める）。
+
 ## テスト
 
 ```bash
@@ -406,6 +446,6 @@ npm run build
 
 - **CI**: `.github/workflows/ci.yml`。`develop`へのpushと`main`/`develop`へのPRでlint・型チェック・buildを実行
 - **デプロイ**: `.github/workflows/deploy.yml`。`main`へのpushで、`package.json`のversionからGitタグ・GitHub Releaseを作成し、ビルド成果物をVPSへ配置してPM2で再起動する（`deploy/ecosystem.config.js`）
-- **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する。AI使用状況の表示を有効にするには、`apps/ops-dashboard`アイテムに`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id`のフィールドを追加しておく。GitHubの制限の表示には`github-usage-token` / `github-usage-org`のフィールドを追加しておく。iPhoneウィジェット向けAPIには`widget-token`のフィールド（32文字以上のランダム文字列）を追加しておく（いずれも未作成のままだとデプロイのシークレット読み込みが失敗する）
+- **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する。AI使用状況の表示を有効にするには、`apps/ops-dashboard`アイテムに`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id`のフィールドを追加しておく。GitHubの制限の表示には`github-usage-token` / `github-usage-org`のフィールドを追加しておく。iPhoneウィジェット向けAPIには`widget-token`のフィールド（32文字以上のランダム文字列）を追加しておく（いずれも未作成のままだとデプロイのシークレット読み込みが失敗する）。1Passwordのレート制限の表示には、GitHub Secretsの`OP_SERVICE_ACCOUNT_TOKEN`がそのままVPSの`.env`へ渡る（1Password側のフィールド追加は不要）
 - **Apache**: リバースプロキシ設定は`vps`リポジトリ（`apache/sites-available/admin.gucchii.com.conf`）が一次情報源。`deploy/apache-vhost.example.conf`は参考用の雛形
 - **Supabase**: Authentication → URL Configuration の Redirect URLs に `https://admin.gucchii.com/auth/callback` を追加登録すること

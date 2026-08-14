@@ -8,6 +8,7 @@ import { HostCard } from "@/components/host-card"
 import { HostStats } from "@/components/host-stats"
 import { MonitorSections } from "@/components/monitor-sections"
 import { MonitorTiles, getMonitorStatusText } from "@/components/monitor-tiles"
+import { OnePasswordUsage } from "@/components/onepassword-usage"
 import { StatusStrip } from "@/components/status-strip"
 import { StatusBadge } from "@/components/status-badge"
 import { TmuxLegend, TmuxSessionList, TmuxSessionTable } from "@/components/tmux-sessions"
@@ -57,7 +58,7 @@ const TAB_LABELS: Record<TabId, string> = {
     overview: "概要",
     hosts: "ホスト",
     tmux: "tmux",
-    usage: "AI・GitHub",
+    usage: "AI・GitHub・1Password",
     monitors: "監視",
 }
 
@@ -92,7 +93,8 @@ export function DashboardShell({
     addMonitorUrl: string | null
 }) {
     const data = useDashboardData()
-    const { hostStats, aiUsage, githubUsage, uptimeKuma, uptimeRobot, now, updatedAt } = data
+    const { hostStats, aiUsage, githubUsage, onepasswordUsage, uptimeKuma, uptimeRobot, now, updatedAt } =
+        data
 
     const activeTab = useSyncExternalStore(subscribeActiveTab, getStoredTab, getInitialTab)
 
@@ -110,8 +112,9 @@ export function DashboardShell({
                 uptimeRobot,
                 aiUsage,
                 githubUsage,
+                onepasswordUsage,
             }),
-        [hostStats, tmuxSessions, uptimeKuma, uptimeRobot, aiUsage, githubUsage]
+        [hostStats, tmuxSessions, uptimeKuma, uptimeRobot, aiUsage, githubUsage, onepasswordUsage]
     )
 
     const counts: Partial<Record<TabId, number>> = {
@@ -306,6 +309,7 @@ export function DashboardShell({
                 <div className="space-y-5">
                     <AiUsage />
                     <GitHubUsage />
+                    <OnePasswordUsage />
                 </div>
             )}
 
