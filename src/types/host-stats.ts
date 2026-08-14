@@ -77,6 +77,25 @@ export interface HostStatsTmuxSession {
     lastActivityAt?: string
     /** アクティブなペインの作業ディレクトリ。ホームディレクトリは ~ に置き換えて送られる */
     path?: string
+    /**
+     * issue-deck の回収が「このセッションを畳まない」と判断した理由（#59）。
+     * 付くのは回収の判定に乗ったセッションだけで、手で立てたセッションでは undefined。
+     */
+    holdReason?: string
+    /**
+     * その理由になった時刻（ISO 8601）。
+     * **「最後に判定した時刻」ではない。** 回収は理由が変わったときだけ記録を書き直すため、
+     * 同じ理由で止まっている期間が読める。回収自体が動いているかの判定には使えない。
+     */
+    holdReasonAt?: string
+    /** Claude Code のフックが最後に記録したイベント名（Stop / permission_prompt など） */
+    lastEventName?: string
+    /** そのイベントの時刻（ISO 8601） */
+    lastEventAt?: string
+    /** セッションが対応するIssueのリポジトリ（owner/repo）。形式を満たさない値は落として送られない */
+    issueRepository?: string
+    /** セッションが対応するIssueの番号 */
+    issueNumber?: number
 }
 
 /**

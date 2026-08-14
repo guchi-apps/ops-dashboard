@@ -47,6 +47,63 @@ function sessionKey(session: TmuxSessionView): string {
     return `${session.hostId}/${session.user ?? ""}/${session.name}`
 }
 
+/** フックのイベント名を、画面で意味の分かる言葉にする。知らない名前はそのまま出す */
+const EVENT_LABELS: Record<string, string> = {
+    Stop: "応答終了",
+    permission_prompt: "入力待ち",
+}
+
+/** Issue が分かるセッションは、名前からその Issue へ飛べるようにする */
+function SessionName({ session }: { session: TmuxSessionView }) {
+    if (!session.issueRepository || session.issueNumber === undefined) {
+        return <span className="font-mono">{session.name}</span>
+    }
+
+    return (
+        <a
+            href={`https://github.com/${session.issueRepository}/issues/${session.issueNumber}`}
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono underline decoration-dotted underline-offset-2 hover:text-foreground"
+        >
+            {session.name}
+        </a>
+    )
+}
+
+/**
+ * issue-deck の自動回収が「このセッションを畳まない」と判断した理由（#59）。
+ *
+ * これが無いと、放置されているのか正当に待っているのかを一覧から区別できない。
+ * 理由はホスト側の journald にしか出ず、しかも同じ理由が続く間は出力されない。
+ */
+function HoldNote({ session }: { session: TmuxSessionView }) {
+    if (!session.holdReason) return null
+
+    const notes = [
+        // 「その理由になってから」であって「最後に判定してから」ではない
+        session.holdForSeconds !== undefined ? `${formatAge(session.holdForSeconds)}から` : null,
+        session.lastEventName
+            ? [
+                  EVENT_LABELS[session.lastEventName] ?? session.lastEventName,
+                  session.sinceLastEventSeconds !== undefined
+                      ? formatAge(session.sinceLastEventSeconds)
+                      : null,
+              ]
+                  .filter(Boolean)
+                  .join(" ")
+            : null,
+    ].filter((note): note is string => note !== null)
+
+    return (
+        <div className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+            <span className="opacity-70">残す理由: </span>
+            {session.holdReason}
+            {notes.length > 0 && <span className="opacity-70">（{notes.join(" · ")}）</span>}
+        </div>
+    )
+}
+
 /** セッションの経過と最終活動。作成時刻を読めないホストでは出せる分だけ出す */
 function timeSummary(session: TmuxSessionView): string {
     const parts = [
@@ -162,7 +219,10 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                                     </span>
                                 </span>
                             </td>
-                            <td className="whitespace-nowrap px-2 py-2 font-mono">{session.name}</td>
+                            <td className="max-w-[24rem] px-2 py-2 align-top">
+                                <SessionName session={session} />
+                                <HoldNote session={session} />
+                            </td>
                             <td className="whitespace-nowrap px-2 py-2">
                                 <span className="flex gap-1">
                                     <CommandTags session={session} />
@@ -227,7 +287,9 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                                 {timeSummary(session)}
                             </span>
                         </div>
-                        <div className="mt-1 truncate font-mono text-[13px]">{session.name}</div>
+                        <div className="mt-1 truncate text-[13px]">
+                            <SessionName session={session} />
+                        </div>
                         <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
                             {[
                                 session.path,
@@ -238,6 +300,7 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                                 .filter(Boolean)
                                 .join(" · ")}
                         </div>
+                        <HoldNote session={session} />
                     </div>
                 ))}
             </div>
@@ -259,6 +322,10 @@ export function TmuxLegend() {
             <span>
                 <span className="font-bold text-foreground">放置</span> ＝ デタッチのまま
                 {STALE_HOURS}時間以上 活動がない
+            </span>
+            <span>
+                <span className="font-bold text-foreground">残す理由</span> ＝ issue-deck
+                の自動回収が、そのセッションを畳まずに残している理由
             </span>
         </div>
     )

@@ -16,6 +16,9 @@
 #   HOST_STATS_TIMEOUT      任意。送信のタイムアウト秒（既定: 15）
 #   HOST_STATS_TMUX_SOCKET_ROOT
 #                           任意。tmuxのソケットを探すディレクトリ（既定: /tmp）
+#   HOST_STATS_SESSION_STATE_SUBDIR
+#                           任意。issue-deckがセッションの状態を置く、ホームからの相対パス
+#                           （既定: .local/state/issue-deck/sessions）
 #
 # `--print` を付けて実行すると、送信せずに組み立てたJSONを表示する（設置時の確認用）。
 
@@ -49,6 +52,7 @@ DISK_PATHS="${HOST_STATS_DISK_PATHS:-/}"
 SERVICES="${HOST_STATS_SERVICES:-}"
 TIMEOUT="${HOST_STATS_TIMEOUT:-15}"
 TMUX_SOCKET_ROOT="${HOST_STATS_TMUX_SOCKET_ROOT:-/tmp}"
+SESSION_STATE_SUBDIR="${HOST_STATS_SESSION_STATE_SUBDIR:-.local/state/issue-deck/sessions}"
 
 HOSTNAME_VALUE="$(hostname)"
 HOST_ID="${HOST_STATS_ID:-$(printf '%s' "$HOSTNAME_VALUE" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | sed 's/-*$//')}"
@@ -321,6 +325,86 @@ tmux_sessions_tsv() {
     '
 }
 
+# issue-deckが残したセッションの状態を読む（#59）。
+#
+# 「なぜこのセッションが畳まれずに残っているのか」はtmuxのメタデータからは分からず、
+# これまでホストのjournaldを読むしか手が無かった。回収スクリプトは毎分すべてのセッションを
+# 判定して理由を持っているが、同じ理由が続く間はログに出さない（同じ行でjournaldが埋まるため）。
+#
+# 書式は issue-deck の scripts/lib/session-state.sh が持つ1行テキストで、jqを要さずに読める。
+# **issue-deck側が置き場を変えたら、この項目が出なくなるだけで送信そのものは壊れない。**
+#
+# 読んだ値は STATE_* に入れる。呼び出し元は collect_tmux のループの中で、同じシェルにいる。
+STATE_HOLD_REASON=""
+STATE_HOLD_AT=""
+STATE_EVENT_NAME=""
+STATE_EVENT_AT=""
+STATE_REPOSITORY=""
+STATE_ISSUE=""
+
+read_session_state() {
+    local session="$1" home="$2" dir file line value
+
+    STATE_HOLD_REASON=""
+    STATE_HOLD_AT=""
+    STATE_EVENT_NAME=""
+    STATE_EVENT_AT=""
+    STATE_REPOSITORY=""
+    STATE_ISSUE=""
+
+    [ -n "$home" ] || return 0
+
+    # **セッション名を検査してからパスに繋ぐ。** 名前はtmuxから読んだ値がそのまま来ており、
+    # 人が手で立てたセッションも混ざる。`../` を含む名前を通すと状態ファイル以外を読みに行ける。
+    # 規則は issue-deck の session_state_name_ok と同じ
+    case "$session" in
+        [A-Za-z0-9]*) ;;
+        *) return 0 ;;
+    esac
+    case "$session" in
+        *[!A-Za-z0-9_.-]*) return 0 ;;
+    esac
+
+    dir="$home/$SESSION_STATE_SUBDIR"
+
+    # 畳まない理由。**mtimeは「最後に判定した時刻」ではなく「その理由になった時刻」。**
+    # 回収スクリプトは理由が変わったときだけ書き直すため、同じ理由が続いた期間が読める
+    file="$dir/$session.reason"
+    if [ -f "$file" ]; then
+        STATE_HOLD_REASON="$(head -1 "$file" 2> /dev/null || true)"
+        value="$(stat -c %Y "$file" 2> /dev/null || true)"
+        if [ "${value:-0}" -gt 0 ] 2> /dev/null; then
+            STATE_HOLD_AT="$(date -u -d "@$value" +%Y-%m-%dT%H:%M:%SZ)"
+        fi
+    fi
+
+    # Claude Codeのフックが記録した最後のイベント。`<epoch> <イベント名>` の1行
+    file="$dir/$session.event"
+    if [ -f "$file" ]; then
+        line="$(head -1 "$file" 2> /dev/null || true)"
+        case "$line" in
+            *" "*)
+                value="${line%% *}"
+                if [ "${value:-0}" -gt 0 ] 2> /dev/null; then
+                    STATE_EVENT_AT="$(date -u -d "@$value" +%Y-%m-%dT%H:%M:%SZ)"
+                    STATE_EVENT_NAME="${line#* }"
+                fi
+                ;;
+        esac
+    fi
+
+    # 対応するIssue。画面からIssueへ飛べるようにする
+    file="$dir/$session.session"
+    if [ -f "$file" ]; then
+        STATE_REPOSITORY="$(sed -n 's/^repository=//p' "$file" 2> /dev/null | head -1)"
+        value="$(sed -n 's/^issue=//p' "$file" 2> /dev/null | head -1)"
+        case "${value:-}" in
+            "" | *[!0-9]*) ;;
+            *) STATE_ISSUE="$value" ;;
+        esac
+    fi
+}
+
 # 出力は2行。1行目がセッションのJSON配列、2行目が上限で切る前の総数。
 # コマンド置換は subshell で走りグローバル変数を持ち帰れないため、総数も標準出力に載せる。
 collect_tmux() {
@@ -354,6 +438,8 @@ collect_tmux() {
                 # 画面から分からないと、セッションが積み上がっていることに気づけない
                 total=$((total + 1))
                 [ "$count" -lt "$MAX_TMUX_SESSIONS" ] || continue
+
+                read_session_state "$name" "$home"
 
                 [ "$count" -eq 0 ] || printf ','
                 count=$((count + 1))
@@ -398,6 +484,20 @@ collect_tmux() {
                 # 放置セッションの判定に使う。世代の古いtmuxでは数値で返らないことがあり、その場合は送らない
                 if [ "${activity:-0}" -gt 0 ] 2> /dev/null; then
                     printf ',"lastActivityAt":"%s"' "$(date -u -d "@$activity" +%Y-%m-%dT%H:%M:%SZ)"
+                fi
+
+                # issue-deckの回収が残した判断（#59）。手で立てたセッションには何も無い
+                if [ -n "$STATE_HOLD_REASON" ]; then
+                    printf ',"holdReason":"%s"' "$(json_escape "$STATE_HOLD_REASON")"
+                    [ -z "$STATE_HOLD_AT" ] || printf ',"holdReasonAt":"%s"' "$STATE_HOLD_AT"
+                fi
+                if [ -n "$STATE_EVENT_NAME" ]; then
+                    printf ',"lastEventName":"%s","lastEventAt":"%s"' \
+                        "$(json_escape "$STATE_EVENT_NAME")" "$STATE_EVENT_AT"
+                fi
+                if [ -n "$STATE_REPOSITORY" ] && [ -n "$STATE_ISSUE" ]; then
+                    printf ',"issueRepository":"%s","issueNumber":%d' \
+                        "$(json_escape "$STATE_REPOSITORY")" "$STATE_ISSUE"
                 fi
 
                 printf '}'
