@@ -25,3 +25,18 @@ export function getElapsedPercent(startsAtMs: number, endsAtMs: number, now: num
 
     return Math.min(100, Math.max(0, Math.round(((now - startsAtMs) / totalMs) * 100)))
 }
+
+/** Actions の無料枠の使用率（%）。上限が無ければ 0 */
+export function getActionsUsedPercent(actions: {
+    allowanceMinutes: number
+    allowanceLimitMinutes: number
+}): number {
+    if (actions.allowanceLimitMinutes <= 0) return 0
+    return Math.round((actions.allowanceMinutes / actions.allowanceLimitMinutes) * 1000) / 10
+}
+
+/** APIレート制限の使用率（%） */
+export function getRateLimitUsedPercent(rateLimit: { used: number; limit: number }): number {
+    if (rateLimit.limit <= 0) return 0
+    return Math.round((rateLimit.used / rateLimit.limit) * 1000) / 10
+}

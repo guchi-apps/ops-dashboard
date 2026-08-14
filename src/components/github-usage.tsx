@@ -1,17 +1,16 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useDashboardData } from "@/components/dashboard-data"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
-import { formatRemaining, getElapsedPercent } from "@/lib/usage-format"
-import type { GitHubActionsUsage, GitHubRateLimit, GitHubUsageSnapshot } from "@/types/github-usage"
-
-/** サーバー側のキャッシュ（既定5分）に合わせた取得間隔 */
-const REFRESH_INTERVAL_MS = 300_000
-
-/** リセットまでの残り時間表示を進めるための再描画間隔 */
-const TICK_INTERVAL_MS = 30_000
+import {
+    formatRemaining,
+    getActionsUsedPercent,
+    getElapsedPercent,
+    getRateLimitUsedPercent,
+} from "@/lib/usage-format"
+import type { GitHubActionsUsage, GitHubRateLimit } from "@/types/github-usage"
 
 /** レート制限の枠の長さ（1時間）。経過位置の目印を出すのに使う */
 const RATE_LIMIT_WINDOW_MS = 3_600_000
@@ -28,7 +27,7 @@ function CardHeader({ title, badge }: { title: string; badge?: string }) {
         <div className="flex items-center justify-between gap-2">
             <span className="min-w-0 truncate text-sm sm:text-base font-bold">{title}</span>
             {badge && (
-                <span className="shrink-0 rounded-full bg-primary-foreground/20 px-2 py-0.5 text-[10px] sm:text-xs font-semibold dark:bg-muted">
+                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] sm:text-xs font-semibold">
                     {badge}
                 </span>
             )}
@@ -38,7 +37,7 @@ function CardHeader({ title, badge }: { title: string; badge?: string }) {
 
 function CardFooter({ rows }: { rows: { label: string; value: string }[] }) {
     return (
-        <div className="mt-auto space-y-0.5 border-t border-primary-foreground/20 pt-2 text-[10px] sm:text-xs text-primary-foreground/70 dark:border-border dark:text-muted-foreground">
+        <div className="mt-auto space-y-0.5 border-t border-border pt-2 text-[10px] sm:text-xs text-muted-foreground">
             {rows.map((row) => (
                 <div key={row.label} className="flex items-baseline justify-between gap-2">
                     <span>{row.label}</span>
@@ -63,12 +62,12 @@ function RepositoryBreakdown({ actions }: { actions: GitHubActionsUsage }) {
             </div>
 
             {actions.repositories.length === 0 ? (
-                <p className="text-[10px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
+                <p className="text-[10px] sm:text-xs text-muted-foreground">
                     今月はまだ実行されていません
                 </p>
             ) : (
                 <>
-                    <p className="text-[10px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
+                    <p className="text-[10px] sm:text-xs text-muted-foreground">
                         公開リポジトリのActionsは無制限に無料のため、無料枠を消費しない
                     </p>
                     <ul className="space-y-0.5 text-[10px] sm:text-xs">
@@ -94,10 +93,7 @@ function RepositoryBreakdown({ actions }: { actions: GitHubActionsUsage }) {
 }
 
 function ActionsCard({ actions, now }: { actions: GitHubActionsUsage; now: number }) {
-    const usedPercent =
-        actions.allowanceLimitMinutes > 0
-            ? Math.round((actions.allowanceMinutes / actions.allowanceLimitMinutes) * 1000) / 10
-            : 0
+    const usedPercent = getActionsUsedPercent(actions)
 
     const period = new Date(actions.periodStartsAt).toLocaleDateString("ja-JP", {
         year: "numeric",
@@ -140,8 +136,7 @@ function ActionsCard({ actions, now }: { actions: GitHubActionsUsage; now: numbe
 }
 
 function RateLimitCard({ rateLimit, now }: { rateLimit: GitHubRateLimit; now: number }) {
-    const usedPercent =
-        rateLimit.limit > 0 ? Math.round((rateLimit.used / rateLimit.limit) * 1000) / 10 : 0
+    const usedPercent = getRateLimitUsedPercent(rateLimit)
     const resetsAtMs = new Date(rateLimit.resetsAt).getTime()
 
     return (
@@ -173,43 +168,10 @@ function RateLimitCard({ rateLimit, now }: { rateLimit: GitHubRateLimit; now: nu
 }
 
 export function GitHubUsage() {
-    const [snapshot, setSnapshot] = useState<GitHubUsageSnapshot | null>(null)
-    const [loading, setLoading] = useState(true)
-    const [now, setNow] = useState(() => Date.now())
-
-    useEffect(() => {
-        let cancelled = false
-
-        const load = async () => {
-            try {
-                const res = await fetch("/api/github-usage", { cache: "no-store" })
-                if (!res.ok) throw new Error("Failed to fetch GitHub usage")
-
-                const data = (await res.json()) as GitHubUsageSnapshot
-                if (!cancelled) setSnapshot(data)
-            } catch (error) {
-                console.error("Failed to fetch GitHub usage:", error)
-            } finally {
-                if (!cancelled) setLoading(false)
-            }
-        }
-
-        void load()
-        const intervalId = setInterval(() => void load(), REFRESH_INTERVAL_MS)
-
-        return () => {
-            cancelled = true
-            clearInterval(intervalId)
-        }
-    }, [])
-
-    useEffect(() => {
-        const tickId = setInterval(() => setNow(Date.now()), TICK_INTERVAL_MS)
-        return () => clearInterval(tickId)
-    }, [])
+    const { githubUsage: snapshot, now } = useDashboardData()
 
     // 未設定のときは、使わない環境で「未設定」のカードが出続けないようセクションごと隠す
-    if (loading || !snapshot || snapshot.status === "unconfigured") return null
+    if (!snapshot || snapshot.status === "unconfigured") return null
 
     return (
         <section className="space-y-3 sm:space-y-4">
@@ -228,7 +190,7 @@ export function GitHubUsage() {
 
             {snapshot.status === "error" ? (
                 <DashboardCard className="px-3 py-3 sm:px-4 sm:py-4">
-                    <p className="text-[11px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
+                    <p className="text-[11px] sm:text-xs text-muted-foreground">
                         {snapshot.message ?? "使用状況を取得できませんでした"}
                     </p>
                 </DashboardCard>

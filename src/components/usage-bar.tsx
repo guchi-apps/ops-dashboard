@@ -50,7 +50,7 @@ export function UsageBar({
 
             <div className="relative">
                 <div
-                    className="h-2 w-full overflow-hidden rounded-full bg-primary-foreground/20 dark:bg-muted"
+                    className="h-2 w-full overflow-hidden rounded-full bg-muted"
                     role="progressbar"
                     aria-label={`${label}の使用率`}
                     aria-valuenow={Math.round(usedPercent)}
@@ -78,7 +78,7 @@ export function UsageBar({
                 )}
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-x-2 text-[10px] sm:text-xs text-primary-foreground/70 dark:text-muted-foreground">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 text-[10px] sm:text-xs text-muted-foreground">
                 <span>
                     {usedText ?? `使用 ${usedPercent}%`}
                     {elapsedPercent !== null && <span className="ml-1.5">経過 {elapsedPercent}%</span>}
