@@ -5,6 +5,7 @@ import { formatAge, formatUptime } from "@/lib/host-stats/format"
 import {
     TMUX_STALE_AFTER_SECONDS,
     TMUX_STATE_LABELS,
+    TMUX_WAITING_AFTER_SECONDS,
     type TmuxSessionState,
     type TmuxSessionView,
 } from "@/lib/host-stats/tmux"
@@ -12,11 +13,13 @@ import { cn } from "@/lib/utils"
 
 const STATE_TONES: Record<TmuxSessionState, StatusTone> = {
     running: "ok",
+    waiting: "info",
     idle: "neutral",
     stale: "warn",
 }
 
 const STALE_HOURS = Math.round(TMUX_STALE_AFTER_SECONDS / 3600)
+const WAITING_MINUTES = Math.round(TMUX_WAITING_AFTER_SECONDS / 60)
 
 /** 実行中コマンドのタグ。シェルしか無いセッションでは何も出さない */
 function CommandTags({ session }: { session: TmuxSessionView }) {
@@ -92,7 +95,8 @@ export function TmuxSessionList({
                             className={cn(
                                 "flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px]",
                                 session.state === "running" && "bg-emerald-500/[0.07]",
-                                session.state !== "running" && "opacity-80"
+                                session.state === "waiting" && "bg-sky-500/[0.07]",
+                                session.state !== "running" && session.state !== "waiting" && "opacity-80"
                             )}
                         >
                             <StatusDot tone={STATE_TONES[session.state]} />
@@ -151,7 +155,8 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                             key={sessionKey(session)}
                             className={cn(
                                 "border-t border-border",
-                                session.state === "running" && "bg-emerald-500/[0.06]"
+                                session.state === "running" && "bg-emerald-500/[0.06]",
+                                session.state === "waiting" && "bg-sky-500/[0.06]"
                             )}
                         >
                             <td className="whitespace-nowrap px-2 py-2">
@@ -188,6 +193,8 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                             <td
                                 className={cn(
                                     "whitespace-nowrap px-2 py-2 font-mono text-muted-foreground",
+                                    // 入力待ちのセッションでは、この列がそのまま「待たせている時間」になる
+                                    session.state === "waiting" && TEXT_TONES.info,
                                     session.state === "stale" && TEXT_TONES.warn
                                 )}
                             >
@@ -207,6 +214,7 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                         className={cn(
                             "rounded-lg border border-border bg-muted/30 p-2.5",
                             session.state === "running" && "border-emerald-500/30 bg-emerald-500/[0.07]",
+                            session.state === "waiting" && "border-sky-500/30 bg-sky-500/[0.07]",
                             session.state === "stale" && "border-amber-500/35 bg-amber-500/[0.07]"
                         )}
                     >
@@ -221,6 +229,7 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                             <span
                                 className={cn(
                                     "ml-auto font-mono text-[10px] text-muted-foreground",
+                                    session.state === "waiting" && TEXT_TONES.info,
                                     session.state === "stale" && TEXT_TONES.warn
                                 )}
                             >
@@ -250,8 +259,12 @@ export function TmuxLegend() {
     return (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
             <span>
-                <span className="font-bold text-foreground">稼働中</span>{" "}
-                ＝ シェル以外のコマンドがペインで動いている
+                <span className="font-bold text-foreground">稼働中</span> ＝ コマンドが動いていて、画面も
+                {WAITING_MINUTES}分以内に動いた
+            </span>
+            <span>
+                <span className="font-bold text-foreground">入力待ち</span> ＝ コマンドは動いているが、画面が
+                {WAITING_MINUTES}分以上 止まっている
             </span>
             <span>
                 <span className="font-bold text-foreground">待機中</span> ＝ シェルだけで止まっている
