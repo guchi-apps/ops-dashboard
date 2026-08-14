@@ -137,12 +137,32 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 
 `commands` / `busy` / `path` / `lastActivityAt` はいずれも任意の項目のため、エージェントを更新していないホストからのレポートもそのまま受け取れる（その場合はアタッチの有無で稼働中を判定する）。
 
-収集にあたっては次の2点に制約がある。
+#### 残す理由（[issue #59](https://github.com/guchi-apps/ops-dashboard/issues/59)）
+
+issue-deck の回収スクリプトは毎分すべてのセッションを判定して「畳まない理由」を持っているが、届くのは journald だけで、しかも**同じ理由が続く間は出力されない**（同じ行でjournaldが埋まるのを防ぐため）。放置なのか正当に待っているのかが画面から区別できなかった。
+
+そこでエージェントが issue-deck の状態ファイル（`~/.local/state/issue-deck/sessions/`）を読み、一緒に送っている。
+
+| 項目 | 出どころ |
+| --- | --- |
+| `holdReason` | `<セッション名>.reason` |
+| `holdReasonAt` | 同ファイルの mtime |
+| `lastEventName` / `lastEventAt` | `<セッション名>.event` |
+| `issueRepository` / `issueNumber` | `<セッション名>.session` |
+
+`holdReasonAt` は**「その理由になった時刻」であって「最後に判定した時刻」ではない**。回収は理由が変わったときだけ記録を書き直すため、同じ理由が10時間続いていれば mtime も10時間前になる。回収そのものが動いているかの判定には使えない。
+
+理由が付くのは回収の判定に乗ったセッションだけ（記述子があり `reapable=1`）で、手で立てたセッションには何も出ない。置き場は `HOST_STATS_SESSION_STATE_SUBDIR` で変えられる。
+
+**セッション名は検査してからパスに繋いでいる。** 名前はtmuxから読んだ値がそのまま来ており、`../` を含む名前を通すと状態ファイル以外を読みに行けるため（規則は issue-deck の `session_state_name_ok` と同じ）。
+
+収集にあたっては次の3点に制約がある。
 
 - tmuxのソケットはユーザーごとに `/tmp/tmux-<UID>/` にあり、root で `tmux ls` を叩いても root 自身のサーバーしか見えない。そのためソケットを列挙して `tmux -S <ソケット>` で個別に問い合わせている（ディレクトリは 0700 だが root は読める）
 - そのため `ops-dashboard-host-stats.service` は `PrivateTmp=no` にしてある。`PrivateTmp=yes` だとサービス専用の空の `/tmp` が見えるだけで、セッションを1件も拾えない。`ProtectSystem=strict` により `/tmp` は読み取り専用のままなので、書き込みはできない
+- 後述の「残す理由」はユーザーのホーム配下を読むため、`ProtectHome=read-only` にしてある（[issue #65](https://github.com/guchi-apps/ops-dashboard/issues/65)）。`yes` だと `/home` が空に見え、理由を1件も拾えない。**設置手順の `--print` はサンドボックスの外で走るため手では読めてしまい、timer 経由だけ空になる**という気づきにくい壊れ方をする
 
-**既にエージェントを設置済みのホストでは、`agent.sh` と一緒にユニットファイルも配り直すこと**（`PrivateTmp` の変更が効かないと tmux の行が出ない）。
+**既にエージェントを設置済みのホストでは、`agent.sh` と一緒にユニットファイルも配り直すこと**（`PrivateTmp` や `ProtectHome` の変更が効かないと、tmux の行や残す理由が出ない）。
 
 ```bash
 sudo cp "$SRC/agent.sh" /opt/ops-dashboard-host-stats/
