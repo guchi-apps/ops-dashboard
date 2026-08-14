@@ -6,6 +6,7 @@ import type {
     HostStatsReport,
     HostStatsService,
     HostStatsSessions,
+    HostStatsTmuxSession,
     HostStatsUsage,
 } from "@/types/host-stats"
 
@@ -20,6 +21,7 @@ const MAX_DISKS = 8
 const MAX_SERVICES = 20
 const MAX_PROCESSES = 5
 const MAX_SESSION_USERS = 10
+const MAX_TMUX_SESSIONS = 20
 const MAX_TEXT_LENGTH = 120
 
 /** ホスト識別子に使える文字。保存先のディレクトリ名になるため、パス区切りなどを通さない */
@@ -150,6 +152,23 @@ function parseSessions(value: unknown): HostStatsSessions | undefined {
     }
 }
 
+function parseTmuxSessions(value: unknown): HostStatsTmuxSession[] | undefined {
+    // tmux が入っていないホストは項目ごと送ってこない。0件（空配列）とは意味が違うので区別する
+    if (value === undefined || value === null) return undefined
+    if (!Array.isArray(value)) fail("tmuxSessions が配列ではありません")
+
+    return value.slice(0, MAX_TMUX_SESSIONS).map((entry, index) => {
+        const record = asRecord(entry, `tmuxSessions[${index}]`)
+        return {
+            name: asText(record.name, `tmuxSessions[${index}].name`),
+            windows: Math.round(nonNegative(asNumber(record.windows, `tmuxSessions[${index}].windows`))),
+            attached: record.attached === true,
+            createdAt: asOptionalText(record.createdAt, `tmuxSessions[${index}].createdAt`),
+            user: asOptionalText(record.user, `tmuxSessions[${index}].user`),
+        }
+    })
+}
+
 /** ホスト名から保存先に使える識別子を作る（エージェントが id を送ってこない場合の保険） */
 function slugFromHostname(hostname: string): string {
     const slug = hostname
@@ -201,6 +220,7 @@ export function parseHostStatsReport(input: unknown): HostStatsReport & { id: st
         topProcesses: parseProcesses(record.topProcesses),
         maintenance: parseMaintenance(record.maintenance),
         sessions: parseSessions(record.sessions),
+        tmuxSessions: parseTmuxSessions(record.tmuxSessions),
         services: parseServices(record.services),
     }
 }

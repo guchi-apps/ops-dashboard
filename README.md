@@ -56,7 +56,7 @@ VPS上ではダッシュボード自身が同じマシンで動いているの�
 各ホスト（VPS・サブPC）                        ダッシュボード（admin.gucchii.com）
   systemd timer（1分ごと）
     └─ scripts/host-stats/agent.sh
-         /proc・df・systemctl から収集
+         /proc・df・systemctl・tmux から収集
          → POST /api/host-stats（Bearer HOST_STATS_TOKEN）
                                                  └─ .data/host-stats/<識別子>/latest.json
                                                     .data/host-stats/<識別子>/history.jsonl
@@ -89,6 +89,7 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 | 再起動待ち | `/var/run/reboot-required` の有無 | Debian系のみ |
 | 未適用の更新 | `/var/lib/update-notifier/updates-available` | `update-notifier-common` が入っていれば表示される。ESM（有償の延長サポート）分は数えない |
 | ログイン中のセッション | `who` | セッション数とユーザー名 |
+| tmuxセッション | `tmux -S <ソケット> list-sessions` | セッション名・ウィンドウ数・作成からの経過時間・アタッチ有無をバッジで表示。tmuxが無いホストでは行ごと出ない |
 | オフライン判定 | 最終受信からの経過時間 | 既定5分で OFFLINE 表示（値は最後に受信したものを残す） |
 
 差分から求める3項目（CPU・ネットワーク・ディスクI/O）は、前回値をファイルに残さずに済ませるため、1回の実行内で1秒あけて2回読んだ差を使っている。
@@ -97,6 +98,29 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 
 グラフに残す履歴はCPU・メモリ・ディスク・Load・Swap・温度・ネットワーク・ディスクI/Oで、24時間を超えた行は送信のたびに掃除する。
 1,440点をそのまま返すとレスポンスが太るため、APIは最大180点へ間引いてから返す。
+
+### tmuxセッション一覧
+
+サブPCはClaude Codeの作業セッションを常駐させるホストで、リポジトリをまたいだセッションが同じ `tmux ls` に並ぶ（セッション名は issue-deck 側で `<リポジトリ名>-issue-<番号>` に統一している）。
+いま何が動いているかが見えないと二重起動や放置セッションに気づけないため、ホストのメトリクスと一緒に送っている（[issue #38](https://github.com/m-guchi/ops-dashboard/issues/38)）。
+アタッチ中のセッションは緑、デタッチ中は灰色のバッジで出る。
+
+収集にあたっては次の2点に制約がある。
+
+- tmuxのソケットはユーザーごとに `/tmp/tmux-<UID>/` にあり、root で `tmux ls` を叩いても root 自身のサーバーしか見えない。そのためソケットを列挙して `tmux -S <ソケット>` で個別に問い合わせている（ディレクトリは 0700 だが root は読める）
+- そのため `ops-dashboard-host-stats.service` は `PrivateTmp=no` にしてある。`PrivateTmp=yes` だとサービス専用の空の `/tmp` が見えるだけで、セッションを1件も拾えない。`ProtectSystem=strict` により `/tmp` は読み取り専用のままなので、書き込みはできない
+
+**既にエージェントを設置済みのホストでは、`agent.sh` と一緒にユニットファイルも配り直すこと**（`PrivateTmp` の変更が効かないと tmux の行が出ない）。
+
+```bash
+sudo cp "$SRC/agent.sh" /opt/ops-dashboard-host-stats/
+sudo cp "$SRC"/ops-dashboard-host-stats.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start ops-dashboard-host-stats.service
+```
+
+拾えるのは既定のソケット（`/tmp/tmux-<UID>/*`）にあるセッションだけで、`tmux -S <別のパス>` で作った独自ソケットのセッションは対象外。
+ソケットの置き場所を変えているホストでは `HOST_STATS_TMUX_SOCKET_ROOT` で探索先を指定する。
 
 ### ダッシュボード側の設定
 
