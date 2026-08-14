@@ -3,6 +3,7 @@
 import { StatusDot, TEXT_TONES, type StatusTone } from "@/components/status-badge"
 import { formatAge, formatUptime } from "@/lib/host-stats/format"
 import {
+    sessionIssueUrl,
     TMUX_STALE_AFTER_SECONDS,
     TMUX_STATE_LABELS,
     TMUX_WAITING_AFTER_SECONDS,
@@ -48,6 +49,34 @@ function CommandTags({ session }: { session: TmuxSessionView }) {
 
 function sessionKey(session: TmuxSessionView): string {
     return `${session.hostId}/${session.user ?? ""}/${session.name}`
+}
+
+/**
+ * セッション名。issue-deck が起動したものは、そのIssueへのリンクにする。
+ * 手元から直接起動したセッションは書式に合わないため、これまでどおり文字のまま出す。
+ */
+function SessionName({ session, className }: { session: TmuxSessionView; className?: string }) {
+    const url = sessionIssueUrl(session.name)
+
+    if (!url) {
+        return (
+            <span className={className} title={session.name}>
+                {session.name}
+            </span>
+        )
+    }
+
+    return (
+        <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className={cn(className, "hover:underline")}
+            title={`${session.name} — GitHub の Issue を開く`}
+        >
+            {session.name}
+        </a>
+    )
 }
 
 /** セッションの経過と最終活動。作成時刻を読めないホストでは出せる分だけ出す */
@@ -100,9 +129,7 @@ export function TmuxSessionList({
                             )}
                         >
                             <StatusDot tone={STATE_TONES[session.state]} />
-                            <span className="min-w-0 flex-1 truncate font-mono" title={session.name}>
-                                {session.name}
-                            </span>
+                            <SessionName session={session} className="min-w-0 flex-1 truncate font-mono" />
                             {withHostLabel && (
                                 <span className="shrink-0 text-[9px] text-muted-foreground">
                                     {session.hostLabel}
@@ -167,7 +194,9 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                                     </span>
                                 </span>
                             </td>
-                            <td className="whitespace-nowrap px-2 py-2 font-mono">{session.name}</td>
+                            <td className="whitespace-nowrap px-2 py-2">
+                                <SessionName session={session} className="font-mono" />
+                            </td>
                             <td className="whitespace-nowrap px-2 py-2">
                                 <span className="flex gap-1">
                                     <CommandTags session={session} />
@@ -236,7 +265,10 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                                 {timeSummary(session)}
                             </span>
                         </div>
-                        <div className="mt-1 truncate font-mono text-[13px]">{session.name}</div>
+                        <SessionName
+                            session={session}
+                            className="mt-1 block truncate font-mono text-[13px]"
+                        />
                         <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
                             {[
                                 session.path,

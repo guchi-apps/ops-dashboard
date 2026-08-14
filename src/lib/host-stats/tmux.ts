@@ -102,6 +102,32 @@ function getState(
     return busy ? "waiting" : "idle"
 }
 
+/**
+ * issue-deck が付けるセッション名の書式。`<リポジトリ名>-issue-<番号>` に統一されている
+ * （issue-deck の scripts/start-issue.sh の tmux_session_name()）。
+ *
+ * リポジトリ名自体に `-issue-` が含まれても後ろの番号を取り違えないよう、最後の区切りで分ける。
+ */
+const ISSUE_SESSION_PATTERN = /^(.+)-issue-(\d+)$/
+
+/**
+ * セッション名から、その作業のIssueを指すURLを作る。書式に合わない名前では null を返す。
+ *
+ * 飛び先を GitHub にしているのは、issue-deck 側に Issue 単体を指すURLが無いため
+ * （画面が1枚で、選択状態をURLに持たない）。
+ * owner が未設定のときはリンクを作らない。組織名を当て推量で埋めると、存在しないURLへ飛ばすことになる。
+ */
+export function sessionIssueUrl(sessionName: string): string | null {
+    const owner = process.env.NEXT_PUBLIC_GH_OWNER
+    if (!owner) return null
+
+    const matched = ISSUE_SESSION_PATTERN.exec(sessionName)
+    if (!matched) return null
+
+    const [, repository, issueNumber] = matched
+    return `https://github.com/${owner}/${repository}/issues/${issueNumber}`
+}
+
 /** 作成時刻を読めないセッションは、新しさで比べられないため末尾に回す */
 function sortAge(session: TmuxSessionView): number {
     return session.ageSeconds ?? Number.MAX_SAFE_INTEGER
