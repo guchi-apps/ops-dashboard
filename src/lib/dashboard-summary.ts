@@ -74,11 +74,17 @@ function tmuxChip(view: HostStatsView | null, sessions: TmuxSessionView[]): Summ
     const summary = summarizeTmux(view?.hosts ?? [], sessions)
     if (!summary.available) return null
 
+    // 「動いている数」と「人の入力を待っている数」を並べる。放置の件数はその次に効く情報
+    const notes = [
+        summary.waiting > 0 ? `入力待ち ${summary.waiting}件` : null,
+        summary.stale > 0 ? `24時間以上 放置 ${summary.stale}件` : null,
+    ].filter((note): note is string => note !== null)
+
     return {
         key: "tmux",
         label: "tmux",
-        value: `稼働 ${summary.running} · 待機 ${summary.idle + summary.stale}`,
-        note: summary.stale > 0 ? `24時間以上 放置 ${summary.stale}件` : "放置なし",
+        value: `稼働 ${summary.running} · 待ち ${summary.waiting}`,
+        note: notes.length > 0 ? notes.join(" · ") : `全${summary.total}件 待機中`,
         tone: summary.stale > 0 ? "warn" : "neutral",
     }
 }
