@@ -28,6 +28,12 @@ const MAX_TEXT_LENGTH = 120
 /** ホスト識別子に使える文字。保存先のディレクトリ名になるため、パス区切りなどを通さない */
 const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
+/**
+ * Issueのリポジトリ名（owner/repo）。
+ * この値から GitHub のURLを組み立てるため、形を検査しないまま画面へ渡さない。
+ */
+const REPOSITORY_PATTERN = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
+
 export class HostStatsReportError extends Error {}
 
 function fail(message: string): never {
@@ -180,8 +186,24 @@ function parseTmuxSessions(value: unknown): HostStatsTmuxSession[] | undefined {
                 `tmuxSessions[${index}].lastActivityAt`
             ),
             path: asOptionalText(record.path, `tmuxSessions[${index}].path`),
+            holdReason: asOptionalText(record.holdReason, `tmuxSessions[${index}].holdReason`),
+            holdReasonAt: asOptionalText(record.holdReasonAt, `tmuxSessions[${index}].holdReasonAt`),
+            lastEventName: asOptionalText(
+                record.lastEventName,
+                `tmuxSessions[${index}].lastEventName`
+            ),
+            lastEventAt: asOptionalText(record.lastEventAt, `tmuxSessions[${index}].lastEventAt`),
+            issueRepository: parseRepositoryFullName(record.issueRepository, index),
+            issueNumber: asOptionalCount(record.issueNumber, `tmuxSessions[${index}].issueNumber`),
         }
     })
+}
+
+/** owner/repo の形を満たさない値は、エラーにせず落とす（リンクが出ないだけで一覧は使える） */
+function parseRepositoryFullName(value: unknown, index: number): string | undefined {
+    const text = asOptionalText(value, `tmuxSessions[${index}].issueRepository`)
+    if (text === undefined) return undefined
+    return REPOSITORY_PATTERN.test(text) ? text : undefined
 }
 
 function parseTmuxCommands(value: unknown, index: number): string[] | undefined {

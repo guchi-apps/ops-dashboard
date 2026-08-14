@@ -18,6 +18,10 @@ export interface TmuxSessionView extends HostStatsTmuxSession {
     ageSeconds?: number
     /** 最後に活動してからの経過秒数。エージェントが古いホストでは undefined */
     inactiveSeconds?: number
+    /** その理由で止まっている秒数。回収の判定に乗らないセッションでは undefined */
+    holdForSeconds?: number
+    /** Claude Code のフックが最後にイベントを記録してからの経過秒数 */
+    sinceLastEventSeconds?: number
 }
 
 export interface TmuxSummary {
@@ -83,6 +87,8 @@ export function collectTmuxSessions(hosts: HostStatsHostView[], nowMs: number): 
                 hostLabel: host.label,
                 ageSeconds,
                 inactiveSeconds,
+                holdForSeconds: elapsedSeconds(session.holdReasonAt, nowMs),
+                sinceLastEventSeconds: elapsedSeconds(session.lastEventAt, nowMs),
                 state: getState(session, inactiveSeconds, ageSeconds),
             }
         })
