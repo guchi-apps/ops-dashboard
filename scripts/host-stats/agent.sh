@@ -33,6 +33,12 @@ MIN_PROCESS_AGE_SECONDS=10
 # 送るtmuxセッションの上限。ダッシュボード側も同数で切るため、超えた分は表示されない
 MAX_TMUX_SESSIONS=20
 
+# 1セッションあたりに送る「実行中コマンド」の数の上限
+MAX_TMUX_COMMANDS=3
+
+# 稼働中とみなさないコマンド。プロンプトで止まっているだけのシェルはここに挙げる
+TMUX_SHELL_COMMANDS="bash zsh sh fish dash ksh csh tcsh"
+
 : "${OPS_DASHBOARD_URL:?OPS_DASHBOARD_URL が未設定です}"
 : "${HOST_STATS_TOKEN:?HOST_STATS_TOKEN が未設定です}"
 DISK_PATHS="${HOST_STATS_DISK_PATHS:-/}"
@@ -246,15 +252,69 @@ collect_sessions() {
 # サブPCはClaude Codeの作業セッションを常駐させるホストで、リポジトリをまたいだセッションが
 # 同じ tmux ls に並ぶ。いま何が動いているかが見えないと、二重起動や放置セッションに気づけない。
 #
+# 動いているかどうかはアタッチの有無では判断できない。デタッチしたまま裏でclaudeが走っているのが
+# 普通の使い方で、それを「待機中」と読んでしまうと一覧の意味がなくなる。
+# そのため各ペインの実行コマンドを見て、シェル以外が動いていれば稼働中として送る。
+#
 # ソケットはユーザーごとに <ソケット置き場>/tmux-<UID>/ にあり、rootで `tmux ls` を叩いても
 # root自身のサーバーしか見えない。そのためソケットを列挙して -S で個別に問い合わせる。
 # ソケットのディレクトリは 0700 でユーザー所有だが、rootはDACを迂回できるため読める。
 # （systemdユニットで PrivateTmp=no にしているのは、ここで実ホストの /tmp を見るため）
+
+# 1ソケット分のセッションを「1行1セッション」のTSVにまとめる。
+#
+# ペイン側の情報（実行コマンド・作業ディレクトリ）はセッション単位に畳んでから返す。
+# 一覧と畳み込みを2回の tmux 呼び出しで済ませるため、両方の出力を1つのawkに流し込み、
+# 行頭の P / S で区別している。
+tmux_sessions_tsv() {
+    local socket="$1" home="$2" tab
+    tab="$(printf '\t')"
+
+    {
+        tmux -S "$socket" list-panes -a \
+            -F "P${tab}#{session_name}${tab}#{window_active}#{pane_active}${tab}#{pane_current_command}${tab}#{pane_current_path}" \
+            2> /dev/null || true
+        tmux -S "$socket" list-sessions \
+            -F "S${tab}#{session_name}${tab}#{session_windows}${tab}#{session_created}${tab}#{session_attached}${tab}#{session_activity}" \
+            2> /dev/null || true
+    } | awk -F'\t' -v home="$home" -v shells="$TMUX_SHELL_COMMANDS" -v max_commands="$MAX_TMUX_COMMANDS" '
+        BEGIN {
+            split(shells, shell_list, " ")
+            for (i in shell_list) is_shell[shell_list[i]] = 1
+            # 区切りにタブを使うと、実行中コマンドが空のセッションで read が
+            # 空フィールドを詰めてしまう（タブはIFSの空白文字扱い）。空白でない制御文字を使う
+            separator = sprintf("%c", 31)
+        }
+        $1 == "P" {
+            session = $2
+            if (!is_shell[$4]) {
+                busy[session] = 1
+                if (!seen[session "\t" $4] && command_count[session] < max_commands) {
+                    seen[session "\t" $4] = 1
+                    commands[session] = (commands[session] == "" ? $4 : commands[session] "," $4)
+                    command_count[session]++
+                }
+            }
+            # 出すのはアクティブなウィンドウのアクティブなペイン（＝いま見えている場所）だけ
+            if ($3 == "11") path[session] = $5
+            next
+        }
+        $1 == "S" {
+            session = $2
+            directory = path[session]
+            if (home != "" && index(directory, home) == 1) directory = "~" substr(directory, length(home) + 1)
+            printf "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n", \
+                session, separator, $3, separator, $4, separator, $5, separator, $6, separator, \
+                (busy[session] ? 1 : 0), separator, commands[session], separator, directory
+        }
+    '
+}
+
 collect_tmux() {
-    local dir socket uid user count=0
-    local name windows created attached attached_json
-    local format
-    format="#{session_name}$(printf '\t')#{session_windows}$(printf '\t')#{session_created}$(printf '\t')#{session_attached}"
+    local dir socket uid user home count=0
+    local name windows created attached activity busy commands directory
+    local attached_json busy_json first_command pane_command
+    local command_list
 
     # tmuxが入っていないホストでは項目ごと送らない（0件との区別をダッシュボード側で付けるため）
     command -v tmux > /dev/null 2>&1 || return 0
@@ -266,13 +326,14 @@ collect_tmux() {
         uid="${dir##*/tmux-}"
         case "$uid" in "" | *[!0-9]*) continue ;; esac
         user="$(getent passwd "$uid" 2> /dev/null | cut -d: -f1)"
+        home="$(getent passwd "$uid" 2> /dev/null | cut -d: -f6)"
         [ -n "$user" ] || user="uid:$uid"
 
         for socket in "$dir"/*; do
             [ -S "$socket" ] || continue
 
             # サーバーが落ちた後のソケットが残っていることがあるため、失敗は無視して次へ
-            while IFS="$(printf '\t')" read -r name windows created attached; do
+            while IFS=$'\x1f' read -r name windows created attached activity busy commands directory; do
                 [ -n "$name" ] || continue
                 [ "$count" -lt "$MAX_TMUX_SESSIONS" ] || break 3
 
@@ -285,13 +346,44 @@ collect_tmux() {
                     attached_json=false
                 fi
 
-                printf '{"name":"%s","windows":%d,"attached":%s,"user":"%s"' \
-                    "$(json_escape "$name")" "${windows:-0}" "$attached_json" "$(json_escape "$user")"
+                if [ "${busy:-0}" = "1" ]; then
+                    busy_json=true
+                else
+                    busy_json=false
+                fi
+
+                printf '{"name":"%s","windows":%d,"attached":%s,"busy":%s,"user":"%s"' \
+                    "$(json_escape "$name")" "${windows:-0}" "$attached_json" "$busy_json" \
+                    "$(json_escape "$user")"
+
+                if [ -n "$commands" ]; then
+                    IFS=',' read -r -a command_list <<< "$commands"
+                    printf ',"commands":['
+                    first_command=1
+                    for pane_command in "${command_list[@]}"; do
+                        [ -n "$pane_command" ] || continue
+                        [ "$first_command" -eq 1 ] || printf ','
+                        first_command=0
+                        printf '"%s"' "$(json_escape "$pane_command")"
+                    done
+                    printf ']'
+                fi
+
+                if [ -n "$directory" ]; then
+                    printf ',"path":"%s"' "$(json_escape "$directory")"
+                fi
+
                 if [ "${created:-0}" -gt 0 ] 2> /dev/null; then
                     printf ',"createdAt":"%s"' "$(date -u -d "@$created" +%Y-%m-%dT%H:%M:%SZ)"
                 fi
+
+                # 放置セッションの判定に使う。世代の古いtmuxでは数値で返らないことがあり、その場合は送らない
+                if [ "${activity:-0}" -gt 0 ] 2> /dev/null; then
+                    printf ',"lastActivityAt":"%s"' "$(date -u -d "@$activity" +%Y-%m-%dT%H:%M:%SZ)"
+                fi
+
                 printf '}'
-            done < <(tmux -S "$socket" list-sessions -F "$format" 2> /dev/null || true)
+            done < <(tmux_sessions_tsv "$socket" "$home")
         done
     done
     printf ']'

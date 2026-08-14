@@ -70,7 +70,7 @@ export function MonitorCard({
                 )}
                 <div className={`text-xl sm:text-2xl font-bold font-mono ${statusColor}`}>{statusText}</div>
                 {uptimeLabel && (
-                    <div className="text-xs sm:text-sm font-medium text-primary-foreground/70 dark:text-muted-foreground">
+                    <div className="text-xs sm:text-sm font-medium text-muted-foreground">
                         {uptimeLabel}
                     </div>
                 )}
