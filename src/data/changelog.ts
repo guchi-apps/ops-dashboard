@@ -7,6 +7,21 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.11.1",
+        date: "2026-08-15",
+        changes: [
+            "tmux タブでも、セッションの総数と、一覧に出しきれていない件数が分かるようになりました。",
+        ],
+    },
+    {
+        version: "0.11.0",
+        date: "2026-08-15",
+        changes: [
+            "tmux のセッションが自動で片付けられずに残っている理由が、一覧に表示されるようになりました。「PRがまだマージされていない」「人の入力待ち」など、残っている理由と、その状態が続いている時間が分かります。",
+            "セッション名から、対応する Issue のページへ直接開けるようになりました。",
+        ],
+    },
+    {
         version: "0.10.0",
         date: "2026-08-14",
         changes: [
