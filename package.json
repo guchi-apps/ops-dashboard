@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "version": "node scripts/version-changelog.mjs && git add src/data/changelog.ts",
     "env:init": "cp -n .env.example .env.local && echo 'Created .env.local (edit values, then: npm run dev)'"
   },
   "dependencies": {
