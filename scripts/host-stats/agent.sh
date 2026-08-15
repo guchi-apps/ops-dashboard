@@ -281,13 +281,22 @@ collect_sessions() {
 # ペイン側の情報（実行コマンド・作業ディレクトリ）はセッション単位に畳んでから返す。
 # 一覧と畳み込みを2回の tmux 呼び出しで済ませるため、両方の出力を1つのawkに流し込み、
 # 行頭の P / S で区別している。
+#
+# **最終活動には `#{window_activity}` を使う。`#{session_activity}` ではない**（#72）。
+# `session_activity` が動くのはクライアントの操作（アタッチ・キー入力）で、ペインの出力では
+# 更新されない。デタッチしたまま裏でclaudeが走っているのが常態のこのホストでは、
+# 実測で `session_activity` が `session_created` のまま数時間止まり、画面が動き続けている
+# セッションまで「60秒以上 画面が止まっている＝入力待ち」と読まれていた。
+# ウィンドウ側の活動時刻はペインの出力で更新されるため、こちらを取る（両者の新しい方を採る）。
 tmux_sessions_tsv() {
     local socket="$1" home="$2" tab
     tab="$(printf '\t')"
 
     {
+        # window_activity をコマンド・パスより前に置く。パスに区切り文字が紛れても
+        # 時刻の桁がずれないようにするため
         tmux -S "$socket" list-panes -a \
-            -F "P${tab}#{session_name}${tab}#{window_active}#{pane_active}${tab}#{pane_current_command}${tab}#{pane_current_path}" \
+            -F "P${tab}#{session_name}${tab}#{window_active}#{pane_active}${tab}#{window_activity}${tab}#{pane_current_command}${tab}#{pane_current_path}" \
             2> /dev/null || true
         tmux -S "$socket" list-sessions \
             -F "S${tab}#{session_name}${tab}#{session_windows}${tab}#{session_created}${tab}#{session_attached}${tab}#{session_activity}" \
@@ -302,24 +311,29 @@ tmux_sessions_tsv() {
         }
         $1 == "P" {
             session = $2
-            if (!is_shell[$4]) {
+            if (!is_shell[$5]) {
                 busy[session] = 1
-                if (!seen[session "\t" $4] && command_count[session] < max_commands) {
-                    seen[session "\t" $4] = 1
-                    commands[session] = (commands[session] == "" ? $4 : commands[session] "," $4)
+                if (!seen[session "\t" $5] && command_count[session] < max_commands) {
+                    seen[session "\t" $5] = 1
+                    commands[session] = (commands[session] == "" ? $5 : commands[session] "," $5)
                     command_count[session]++
                 }
             }
+            # セッションに窓が複数あれば、いちばん新しい活動を採る
+            if ($4 + 0 > activity[session]) activity[session] = $4 + 0
             # 出すのはアクティブなウィンドウのアクティブなペイン（＝いま見えている場所）だけ
-            if ($3 == "11") path[session] = $5
+            if ($3 == "11") path[session] = $6
             next
         }
         $1 == "S" {
             session = $2
             directory = path[session]
             if (home != "" && index(directory, home) == 1) directory = "~" substr(directory, length(home) + 1)
+            # 窓の活動（＝画面の動き）とセッションの活動（＝クライアントの操作）の新しい方を最終活動とする
+            last_activity = activity[session]
+            if ($6 + 0 > last_activity) last_activity = $6 + 0
             printf "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n", \
-                session, separator, $3, separator, $4, separator, $5, separator, $6, separator, \
+                session, separator, $3, separator, $4, separator, $5, separator, last_activity, separator, \
                 (busy[session] ? 1 : 0), separator, commands[session], separator, directory
         }
     '
