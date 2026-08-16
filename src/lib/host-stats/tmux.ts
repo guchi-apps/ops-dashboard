@@ -12,6 +12,22 @@ export const TMUX_STALE_AFTER_SECONDS = 86_400
 export const TMUX_WAITING_AFTER_SECONDS = 60
 
 /**
+ * フックが記録するイベント名のうち、「人を待っている」ことを直接示すもの。
+ *
+ * 記録されるのは issue-deck の `session-notify.sh` が扱う3種類だけ（`scripts/lib/session-state.sh`）。
+ *
+ * - `permission_prompt` — 承認プロンプト・質問を出して人を待っている
+ * - `working` — **人が答えて作業へ戻った**（入力待ちではない）
+ * - `Stop` — 応答の終了。次の作業へ入っていることもあるため、これだけでは入力待ちと断定しない
+ *
+ * **知らない名前は入力待ちに数えない。** issue-deck 側がイベントを増やしたときに、
+ * 意味の分からない名前を全部「人を待っている」と読むと、動いているセッションまで
+ * 入力待ちに倒れる（#72 では `working` がこの形で誤判定されていた）。
+ * 数えられなかった分は、画面が止まっているかの判定が拾う。
+ */
+const WAITING_EVENT_NAMES = new Set(["permission_prompt"])
+
+/**
  * running — シェル以外のコマンドが動いていて、画面も動いている（処理中）
  * waiting — コマンドは動いているが人の入力を待っている
  * idle    — シェルだけで止まっている
@@ -83,14 +99,12 @@ function getState(
     const running = session.busy ?? session.attached
     if (running) {
         // **フックが「人を待っている」と言っているなら、それが事実。** 画面の動きから推し量る必要はない。
-        // `Stop`（応答の終了）は「いま止まっている」ことを意味しないため、ここでは入力待ちにしない
-        // （応答を終えた直後に次の作業へ入っていることがある）
-        if (session.lastEventName !== undefined && session.lastEventName !== "Stop") {
+        if (session.lastEventName !== undefined && WAITING_EVENT_NAMES.has(session.lastEventName)) {
             return "waiting"
         }
 
-        // フックが届かないセッション（手で立てたもの）と、`Stop` のまま動きが無いセッションは
-        // 画面が止まっているかで判断する
+        // フックが届かないセッション（手で立てたもの）と、人を待っているとは限らないイベント
+        // （`working`・`Stop`・知らない名前）で止まっているセッションは、画面が止まっているかで判断する
         if (inactiveSeconds !== undefined && inactiveSeconds >= TMUX_WAITING_AFTER_SECONDS) {
             return "waiting"
         }

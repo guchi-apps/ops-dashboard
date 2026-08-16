@@ -54,7 +54,9 @@ function sessionKey(session: TmuxSessionView): string {
 /** フックのイベント名を、画面で意味の分かる言葉にする。知らない名前はそのまま出す */
 const EVENT_LABELS: Record<string, string> = {
     Stop: "応答終了",
-    permission_prompt: "入力待ち",
+    permission_prompt: "承認・質問で待機",
+    // 「人が答えて作業へ戻った」を表す。入力待ちではない（#72）
+    working: "作業再開",
 }
 
 /** Issue が分かるセッションは、名前からその Issue へ飛べるようにする */
@@ -75,28 +77,47 @@ function SessionName({ session }: { session: TmuxSessionView }) {
     )
 }
 
+/** フックが最後に記録したイベントを「言葉 + 経過」の1つの句にする */
+function eventNote(session: TmuxSessionView): string | null {
+    if (!session.lastEventName) return null
+
+    return [
+        EVENT_LABELS[session.lastEventName] ?? session.lastEventName,
+        session.sinceLastEventSeconds !== undefined
+            ? formatAge(session.sinceLastEventSeconds)
+            : null,
+    ]
+        .filter(Boolean)
+        .join(" ")
+}
+
 /**
- * issue-deck の自動回収が「このセッションを畳まない」と判断した理由（#59）。
+ * その状態と判断した根拠。次の2つを、あるものだけ出す。
  *
- * これが無いと、放置されているのか正当に待っているのかを一覧から区別できない。
- * 理由はホスト側の journald にしか出ず、しかも同じ理由が続く間は出力されない。
+ * - 残す理由: issue-deck の自動回収が「このセッションを畳まない」と判断した理由（#59）。
+ *   これが無いと、放置されているのか正当に待っているのかを一覧から区別できない。
+ *   理由はホスト側の journald にしか出ず、しかも同じ理由が続く間は出力されない
+ * - 最後のイベント: フックの記録。**入力待ちかどうかの第一の根拠がこれ**なので、
+ *   回収の判定に乗らないセッション（残す理由が付かないもの）でも出す（#72）
  */
-function HoldNote({ session }: { session: TmuxSessionView }) {
-    if (!session.holdReason) return null
+function SessionNote({ session }: { session: TmuxSessionView }) {
+    const event = eventNote(session)
+
+    if (!session.holdReason) {
+        if (event === null) return null
+
+        return (
+            <div className="mt-0.5 text-[10px] leading-snug text-muted-foreground">
+                <span className="opacity-70">最後のイベント: </span>
+                {event}
+            </div>
+        )
+    }
 
     const notes = [
         // 「その理由になってから」であって「最後に判定してから」ではない
         session.holdForSeconds !== undefined ? `${formatAge(session.holdForSeconds)}から` : null,
-        session.lastEventName
-            ? [
-                  EVENT_LABELS[session.lastEventName] ?? session.lastEventName,
-                  session.sinceLastEventSeconds !== undefined
-                      ? formatAge(session.sinceLastEventSeconds)
-                      : null,
-              ]
-                  .filter(Boolean)
-                  .join(" ")
-            : null,
+        event,
     ].filter((note): note is string => note !== null)
 
     return (
@@ -230,7 +251,7 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                             </td>
                             <td className="max-w-[24rem] px-2 py-2 align-top">
                                 <SessionName session={session} />
-                                <HoldNote session={session} />
+                                <SessionNote session={session} />
                             </td>
                             <td className="whitespace-nowrap px-2 py-2">
                                 <span className="flex gap-1">
@@ -310,7 +331,7 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                                 .filter(Boolean)
                                 .join(" · ")}
                         </div>
-                        <HoldNote session={session} />
+                        <SessionNote session={session} />
                     </div>
                 ))}
             </div>
