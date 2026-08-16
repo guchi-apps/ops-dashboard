@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { requireSessionForApi } from "@/lib/session"
+import { requireSessionOrApiToken } from "@/lib/session"
 import { HostStatsReportError, parseHostStatsReport } from "@/lib/host-stats/report"
 import { getHostStatsView, saveHostStatsReport } from "@/lib/host-stats/store"
 
@@ -17,7 +17,8 @@ const MAX_BODY_BYTES = 32_768
  *
  * - POST: エージェントからの受信。ログイン画面を通れないため `HOST_STATS_TOKEN` で認証する
  *   （このパスは src/proxy.ts の認証対象から除外している）
- * - GET: ダッシュボードからの取得。通常どおりログインセッションで認証する
+ * - GET: ダッシュボードからの取得。ログインセッション、またはサーバー間用の `OPS_API_TOKEN`
+ *   で認証する（後者はAIDEのMCPサーバー向け。詳細は src/lib/session.ts）
  */
 export async function POST(request: NextRequest) {
     const token = process.env.HOST_STATS_TOKEN
@@ -50,8 +51,8 @@ export async function POST(request: NextRequest) {
     }
 }
 
-export async function GET() {
-    const { response } = await requireSessionForApi()
+export async function GET(request: NextRequest) {
+    const { response } = await requireSessionOrApiToken(request)
     if (response) return response
 
     try {
