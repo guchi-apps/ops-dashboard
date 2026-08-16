@@ -521,9 +521,17 @@ collect_tmux() {
     printf ']\n%d' "$total"
 }
 
-# CPU温度。センサーの構成はマシンによって違うため、パッケージ温度らしいゾーンを優先して1つだけ拾う
-collect_temperature() {
-    local zone type milli preferred=""
+# CPU温度は thermal_zone → hwmon の順に探す。
+#
+# **`/sys/class/thermal` を持たないマシンがある**（#101）。サブPC（AMD Athlon 200GE）では
+# `k10temp` が hwmon にしか登録せず、`/sys/class/thermal` には `cooling_device*` しか無い。
+# thermal_zone だけを見ていたため、サブPCのカードにだけ温度が出ていなかった。
+#
+# thermal_zone を持つVPS側は先に当たるため、従来と同じ経路のまま。
+
+# パッケージ温度らしいゾーンを優先して1つだけ拾う（ミリ℃）
+thermal_zone_temp_milli() {
+    local zone type preferred=""
     for zone in /sys/class/thermal/thermal_zone*; do
         [ -r "$zone/temp" ] || continue
         type="$(cat "$zone/type" 2>/dev/null || true)"
@@ -537,8 +545,77 @@ collect_temperature() {
     done
 
     [ -n "$preferred" ] || return 0
-    milli="$(cat "$preferred/temp" 2>/dev/null || true)"
-    [ -n "$milli" ] || return 0
+    cat "$preferred/temp" 2>/dev/null || true
+}
+
+# hwmon の `name` から見たCPU温度センサーの優先順位。小さいほど優先し、0は対象外。
+#
+# **番号（hwmon0・hwmon1…）は検出順であってセンサーの種類を表さない。** サブPCでは hwmon1 が
+# 内蔵GPU（amdgpu）で、番号だけで選ぶとGPU温度をCPU温度として送ってしまう。必ず name を見る。
+hwmon_rank() {
+    case "$1" in
+        k10temp | zenpower | coretemp) printf '1' ;;             # CPUダイの温度（AMD / Intel）
+        cpu_thermal | cpu-thermal | soc_thermal) printf '2' ;;    # ARM系SoC
+        acpitz) printf '3' ;;                                     # 筐体温度。CPUそのものではないが無いよりまし
+        *) printf '0' ;;                                          # amdgpu・nvme・iwlwifi 等。CPU温度ではない
+    esac
+}
+
+# 1つの hwmon ディレクトリからCPU温度の入力を選んで読む（ミリ℃）。
+#
+# `temp*_label` が Tctl / Tdie / Package id 0 のものを優先する。coretemp はコアごとの
+# `temp2_input` 以降も持っており、ラベルを見ないとパッケージ温度を選べない。
+# ラベルが無いドライバ（k10temp も世代によっては持たない）では最初に読める入力を使う。
+hwmon_dir_temp_milli() {
+    local dir="$1" input label
+    for input in "$dir"/temp*_input; do
+        [ -r "$input" ] || continue
+        label="$(cat "${input%_input}_label" 2>/dev/null || true)"
+        case "$label" in
+            Tctl | Tdie | "Package id 0")
+                cat "$input" 2>/dev/null || true
+                return 0
+                ;;
+        esac
+    done
+
+    for input in "$dir"/temp*_input; do
+        [ -r "$input" ] || continue
+        cat "$input" 2>/dev/null || true
+        return 0
+    done
+}
+
+# hwmon 全体から、いちばん確からしいCPU温度センサーを1つ選んで読む（ミリ℃）
+hwmon_temp_milli() {
+    local dir name rank best="" best_rank=0
+    for dir in /sys/class/hwmon/hwmon*; do
+        [ -d "$dir" ] || continue
+        name="$(cat "$dir/name" 2>/dev/null || true)"
+        [ -n "$name" ] || continue
+        rank="$(hwmon_rank "$name")"
+        [ "$rank" -gt 0 ] || continue
+        if [ "$best_rank" -eq 0 ] || [ "$rank" -lt "$best_rank" ]; then
+            best="$dir"
+            best_rank="$rank"
+        fi
+    done
+
+    [ -n "$best" ] || return 0
+    hwmon_dir_temp_milli "$best"
+}
+
+collect_temperature() {
+    local milli
+    milli="$(thermal_zone_temp_milli)"
+    [ -n "$milli" ] || milli="$(hwmon_temp_milli)"
+
+    # 読めた値が整数のミリ℃であることだけ確かめる。空の入力やエラー文字列をそのまま
+    # JSONへ載せると、ペイロード全体が壊れて受信側で400になる
+    case "$milli" in
+        "" | *[!0-9]*) return 0 ;;
+    esac
+
     awk -v milli="$milli" 'BEGIN { printf "%.1f", milli / 1000 }'
 }
 
