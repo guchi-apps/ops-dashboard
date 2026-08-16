@@ -446,6 +446,25 @@ Authorization: Bearer <OPS_API_TOKEN>
 
 `OPS_API_TOKEN` に32文字以上のランダム文字列を設定する。本番では1Passwordの `apps/ops-dashboard` アイテムに `ops-api-token` フィールドを追加し、`scripts/sync-github-secrets.sh` でGitHubのsecretへ同期する。
 
+### 本番で401になったときの確認
+
+VPS上で `.env` の値を使って直接叩く。**`.env` の値はダブルクォートで囲まれている**ため、
+取り出すときにクォートを外すこと（[issue #102](https://github.com/guchi-apps/ops-dashboard/issues/102)）。
+
+```bash
+cd <デプロイ先ディレクトリ>
+TOKEN=$(grep -m1 '^OPS_API_TOKEN=' .env | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $TOKEN" http://127.0.0.1:3110/api/host-stats
+```
+
+`sed` を省いて `cut -d= -f2-` だけで取り出すと、`"` ごと送ってしまい**必ず401になる**。
+Next.js 側はクォートを外して読むため、サーバーが持っている値は正しいのに確認コマンドだけがずれる、
+という切り分けにくい状態になる。
+
+200が返ればトークン経路は動いている。401が続く場合は、`.env` の値と呼び出し元
+（AIDEのMCPサーバー）が使っている値が同じかを確認する。**`.env` を書き換えたらプロセスの
+再起動（`pm2 restart ops-dashboard`）が必要**で、`.env` は起動時にしか読まれない。
+
 ## GitHubの制限の表示
 
 `guchi-apps` organization のGitHub Actions無料枠の消費量と、REST APIのレート制限をダッシュボードに表示する。
@@ -557,5 +576,6 @@ npm run build
 - **CI**: `.github/workflows/ci.yml`。`develop`へのpushと`main`/`develop`へのPRでlint・型チェック・buildを実行
 - **デプロイ**: `.github/workflows/deploy.yml`。`main`へのpushで、`package.json`のversionからGitタグ・GitHub Releaseを作成し、ビルド成果物をVPSへ配置してPM2で再起動する（`deploy/ecosystem.config.js`）
 - **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する。AI使用状況の表示を有効にするには、`apps/ops-dashboard`アイテムに`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id`のフィールドを追加しておく。GitHubの制限の表示には`github-usage-token` / `github-usage-org`のフィールドを追加しておく。iPhoneウィジェット向けAPIには`widget-token`のフィールド（32文字以上のランダム文字列）を追加しておく。サーバー間参照向けの読み取りAPIには`ops-api-token`のフィールド（同じく32文字以上のランダム文字列）を追加しておく（いずれも未作成のままだとデプロイのシークレット読み込みが失敗する）。1Passwordのレート制限の表示には、GitHub Secretsの`OP_SERVICE_ACCOUNT_TOKEN`がそのままVPSの`.env`へ渡る（1Password側のフィールド追加は不要）
+- **環境変数の渡り方**: VPS上の`.env`は`next start`（Next.js）自身が起動時に読み込む。`deploy/ecosystem.config.js`がPM2から渡しているのは`NODE_ENV`と`PORT`だけだが、それで足りている（`dotenv`は不要）。**そのため`pm2 show ops-dashboard`の環境変数一覧には`.env`の値は出てこない**（PM2が注入した分しか表示されないため）。出ていないことは値が渡っていない証拠にはならない。切り分けは`.env`の中身と、実際にAPIを叩いた結果で行う（[issue #102](https://github.com/guchi-apps/ops-dashboard/issues/102)）
 - **Apache**: リバースプロキシ設定は`vps`リポジトリ（`apache/sites-available/admin.gucchii.com.conf`）が一次情報源。`deploy/apache-vhost.example.conf`は参考用の雛形
 - **Supabase**: Authentication → URL Configuration の Redirect URLs に `https://admin.gucchii.com/auth/callback` を追加登録すること
