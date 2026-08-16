@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server"
-import { requireSessionForApi } from "@/lib/session"
+import type { NextRequest } from "next/server"
+import { requireSessionOrApiToken } from "@/lib/session"
 import { getAiUsageSnapshot } from "@/lib/ai-usage"
 
 export const dynamic = "force-dynamic"
 
-export async function GET() {
-    const { response } = await requireSessionForApi()
+export async function GET(request: NextRequest) {
+    const { response } = await requireSessionOrApiToken(request)
     if (response) return response
 
     try {

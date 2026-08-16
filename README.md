@@ -392,6 +392,48 @@ Authorization: Bearer <WIDGET_TOKEN>
 `anthropic-beta` ヘッダーのバージョン文字列が変わると**無言で401になる**。値は
 `src/lib/ai-usage/claude.ts` の `OAUTH_BETA_VERSION` にまとめてあるので、そこを書き換えれば復旧できる。
 
+## サーバー間参照向けの読み取りAPI
+
+ダッシュボードの読み取りAPIを、ログインセッションを持たないサーバープロセスからも参照できるようにしている（[issue #85](https://github.com/guchi-apps/ops-dashboard/issues/85)）。
+
+**呼び出し元は同じVPS上で動くAIDEのMCPサーバー**（[guchi-apps/aide#31](https://github.com/guchi-apps/aide/issues/31)）。ClaudeアプリはVPS上のAPIへ直接届かないため、AIDEがここを `http://127.0.0.1:3110` から叩いて「いま異常があるか」の粒度に畳み、1本のMCPツールとして返す。指標の収集はこのダッシュボードが既に行っているので、AIDE側では作り直さない。
+
+**外部公開は増えていない。** Apacheが公開しているのは従来どおりで、この口はVPS内のlocalhost経由でのみ使う。
+
+```
+GET /api/host-stats          ホスト（VPS・サブPC）のステータス
+GET /api/monitors            UptimeRobot
+GET /api/uptime-kuma         Uptime Kuma
+GET /api/ai-usage            AI利用枠（Claude / ChatGPT）
+GET /api/github-usage        GitHubの制限
+GET /api/onepassword-usage   1Passwordのレート制限
+
+Authorization: Bearer <OPS_API_TOKEN>
+```
+
+- **認証**: `src/lib/session.ts` の `requireSessionOrApiToken()` で、ログインセッションか
+  `OPS_API_TOKEN` のどちらかを求める。画面からの利用はこれまでどおりセッションで通り、挙動は変わらない。
+  `OPS_API_TOKEN` が未設定ならトークン経路は無効になり、セッション必須だった従来の状態に戻る
+- **トークンの照合**: 両方をSHA-256で固定長へ畳んでから `timingSafeEqual` で比較する。
+  `timingSafeEqual` は長さが違うと例外を投げるため、素で渡すと期待値の長さを推測されうる
+- **トークンを分けている理由**: 用途（読み取り全般 / ウィジェット中継 / メトリクス受信）が違うため、
+  `WIDGET_TOKEN`・`HOST_STATS_TOKEN` とは別トークンにしている。1本を使い回すと、
+  片方を失効させたときにもう片方が巻き添えで止まる
+- **`POST /api/host-stats` は対象外**。従来どおり `HOST_STATS_TOKEN` で認証する
+- **レスポンスの形は画面向けと同一**。AIDE側は既存の型（`src/types/host-stats.ts` ほか）を契約として
+  実装しているため、**形を変える場合は aide#31 側の追随が要る**
+
+| コード | 条件 |
+| --- | --- |
+| 200 | 取得成功（本文は画面が使っているものと同じ） |
+| 401 | ログインセッションが無く、`Authorization` も一致しない（`OPS_API_TOKEN` 未設定を含む） |
+
+上記のパスは `src/proxy.ts` の `PUBLIC_PATH_PREFIXES` で認証対象から除外している。**除外したパスの保護はルート側だけが担う**ため、これらのディレクトリへルート（特にGET以外のメソッド）を足すときは必ずルート側で認証すること。付け忘れるとそのまま無認証で公開される。
+
+### 設定
+
+`OPS_API_TOKEN` に32文字以上のランダム文字列を設定する。本番では1Passwordの `apps/ops-dashboard` アイテムに `ops-api-token` フィールドを追加し、`scripts/sync-github-secrets.sh` でGitHubのsecretへ同期する。
+
 ## GitHubの制限の表示
 
 `guchi-apps` organization のGitHub Actions無料枠の消費量と、REST APIのレート制限をダッシュボードに表示する。
@@ -502,6 +544,6 @@ npm run build
 
 - **CI**: `.github/workflows/ci.yml`。`develop`へのpushと`main`/`develop`へのPRでlint・型チェック・buildを実行
 - **デプロイ**: `.github/workflows/deploy.yml`。`main`へのpushで、`package.json`のversionからGitタグ・GitHub Releaseを作成し、ビルド成果物をVPSへ配置してPM2で再起動する（`deploy/ecosystem.config.js`）
-- **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する。AI使用状況の表示を有効にするには、`apps/ops-dashboard`アイテムに`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id`のフィールドを追加しておく。GitHubの制限の表示には`github-usage-token` / `github-usage-org`のフィールドを追加しておく。iPhoneウィジェット向けAPIには`widget-token`のフィールド（32文字以上のランダム文字列）を追加しておく（いずれも未作成のままだとデプロイのシークレット読み込みが失敗する）。1Passwordのレート制限の表示には、GitHub Secretsの`OP_SERVICE_ACCOUNT_TOKEN`がそのままVPSの`.env`へ渡る（1Password側のフィールド追加は不要）
+- **シークレット**: 1Password（`apps`ボールト、`op://apps/ops-dashboard/...`）を`.github/deploy.env.tpl` / `.github/ci.env.tpl`経由で参照。GitHub Secretsには`OP_SERVICE_ACCOUNT_TOKEN`のみ登録する。AI使用状況の表示を有効にするには、`apps/ops-dashboard`アイテムに`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id`のフィールドを追加しておく。GitHubの制限の表示には`github-usage-token` / `github-usage-org`のフィールドを追加しておく。iPhoneウィジェット向けAPIには`widget-token`のフィールド（32文字以上のランダム文字列）を追加しておく。サーバー間参照向けの読み取りAPIには`ops-api-token`のフィールド（同じく32文字以上のランダム文字列）を追加しておく（いずれも未作成のままだとデプロイのシークレット読み込みが失敗する）。1Passwordのレート制限の表示には、GitHub Secretsの`OP_SERVICE_ACCOUNT_TOKEN`がそのままVPSの`.env`へ渡る（1Password側のフィールド追加は不要）
 - **Apache**: リバースプロキシ設定は`vps`リポジトリ（`apache/sites-available/admin.gucchii.com.conf`）が一次情報源。`deploy/apache-vhost.example.conf`は参考用の雛形
 - **Supabase**: Authentication → URL Configuration の Redirect URLs に `https://admin.gucchii.com/auth/callback` を追加登録すること
