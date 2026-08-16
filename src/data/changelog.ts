@@ -7,6 +7,16 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.13.0",
+        date: "2026-08-16",
+        changes: [
+            "issue-deckの画面からリリース（develop→mainの反映）を起動できるようになりました",
+            "リリース時に、変更内容をもとにした更新履歴が自動で追加されるようになりました",
+            "tmuxセッション一覧で、作業中セッションの「入力待ち」判定の誤りを修正しました（実際は動いているのに待機中と表示される問題を解消）",
+            "tmuxセッション一覧で、保留理由が無いセッションにも直近のイベント（作業再開など）を表示するようにしました",
+        ],
+    },
+    {
         version: "0.12.0",
         date: "2026-08-15",
         changes: [
