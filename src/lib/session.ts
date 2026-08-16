@@ -1,3 +1,5 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 
@@ -61,4 +63,53 @@ export async function requireSessionForApi(): Promise<
     };
   }
   return { session };
+}
+
+/** 認証を通した呼び出し元。画面からのアクセスか、サーバー間のトークンかを区別する。 */
+export type ApiCaller = { kind: "session"; session: Session } | { kind: "token" };
+
+/**
+ * 受け取った文字列が期待値と一致するかを、実行時間から情報が漏れにくい形で判定する。
+ *
+ * `timingSafeEqual` は長さが違うとその場で例外を投げるため、素で渡すと「長さが合っているか」
+ * だけを応答時間・エラーの有無から切り分けられてしまう。先にSHA-256で固定長（32バイト）へ
+ * 畳んでおくことで、長さが違っても同じ経路を通り、期待値の長さを推測させない。
+ */
+function tokenMatches(provided: string, expected: string): boolean {
+  const providedDigest = createHash("sha256").update(provided).digest();
+  const expectedDigest = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(providedDigest, expectedDigest);
+}
+
+/**
+ * 読み取りAPIルート用。ログインセッションか、サーバー間用の固定トークンのどちらかを求める。
+ *
+ * 画面からの利用はこれまでどおりログインセッションで通る。加えて、同一VPS上で動くAIDEの
+ * MCPサーバー（guchi-apps/aide#31）がログイン画面を通れないため、`OPS_API_TOKEN` を
+ * `Authorization: Bearer` で照合する経路を併設している。`OPS_API_TOKEN` が未設定なら
+ * トークン経路は常に不可となり、セッション必須だったこれまでの挙動と変わらない。
+ *
+ * このヘルパーを使うパスは src/proxy.ts の認証対象から除外している。除外されたパスの保護は
+ * ここ一箇所に集約されるため、**同じディレクトリへルート（特にGET以外）を足すときは
+ * 必ず認証を通すこと**。付け忘れるとそのまま無認証で公開される。
+ */
+export async function requireSessionOrApiToken(
+  request: Request,
+): Promise<
+  { caller: ApiCaller; response?: undefined } | { caller?: undefined; response: NextResponse }
+> {
+  const session = await getSession();
+  if (session) return { caller: { kind: "session", session } };
+
+  const apiToken = process.env.OPS_API_TOKEN;
+  const authorization = request.headers.get("authorization");
+  if (apiToken && authorization?.startsWith("Bearer ")) {
+    if (tokenMatches(authorization.slice("Bearer ".length), apiToken)) {
+      return { caller: { kind: "token" } };
+    }
+  }
+
+  return {
+    response: NextResponse.json({ error: "認証が必要です" }, { status: 401 }),
+  };
 }
