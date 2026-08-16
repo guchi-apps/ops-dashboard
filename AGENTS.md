@@ -29,6 +29,18 @@ This version has breaking changes — APIs, conventions, and file structure may 
 `npm run build` はラッパーを通さないため無人実行から使える。DBは使わない（`prisma/` を持たない）ので、
 マイグレーションやシードの手順は無い。
 
+### 開発サーバーでの画面確認
+
+**`/login` 配下以外の全ページはログイン必須**（`src/proxy.ts` の `PUBLIC_PATH_PREFIXES`）で、
+Supabaseのセッションが無いと `/login` へリダイレクトされる。`.env.local` が無いworktree
+（GUIが無くOAuthを完了できない環境を含む）では、素の `curl` で画面を確認できない。
+
+ログイン不要な描画だけを確かめたい場合は、`PUBLIC_PATH_PREFIXES` に載っている `/login` 配下へ
+**一時的な確認用ルート**（例: `src/app/login/preview-xxx/page.tsx`）を置き、ダミーのSupabase
+環境変数を与えて `npm run dev` を起動すれば `curl` で描画結果を取得できる。
+**確認後は必ずそのルートを削除し、`.next` を消してから `npx tsc --noEmit` をやり直す**
+（消したルートの型定義が `.next/dev/types/` に残り、存在しないモジュールとして型エラーになる）。
+
 ## マルチエージェント運用（GitHub Actions 無人実行）
 
 `@claude` コメントを起点に、計画提示〜実装〜develop向けPR作成までを GitHub Actions 上で無人実行する。
@@ -88,6 +100,13 @@ Issue専用ブランチは `develop` から作成し、ブランチ名は **`iss
 `src/data/changelog.ts` の先頭へ新バージョンのエントリを差し込む。文面は共有ワークフローが
 差分から生成して `RELEASE_CHANGELOG` で渡してくるので、**バンプPRのレビュー時に内容を確認し、
 必要なら直す**（利用者が読む文章のため）。
+
+同じ経路で **`RELEASE_USAGE`（利用者向けの操作手順）** も渡ってくる（issue-deck#1729）。
+`RELEASE_CHANGELOG` が「何が変わったか」、`RELEASE_USAGE` が「どう使うか」で、後者は
+`ChangelogEntry.usage` として `changes` とは別に持たせ、更新履歴の画面でそのバージョンの
+変更点の下に「使い方」として出す。**画面で使える変化が無いリリースでは空文字で渡るため、
+そのときは `usage` の項目ごと出力しない**（空の見出しが残ると書き漏らしに見えるため）。
+共有ワークフローの参照タグ（`@workflows/vN`）が上がるまでは実際には常に空文字が渡る。
 
 **`preversion` にテストやlintを足さないこと。** 共有ワークフローはバージョンbumpのために
 依存関係をインストールしない（`setup-node` も `npm ci` も無い）ため、`node_modules` を要する

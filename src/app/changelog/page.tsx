@@ -40,6 +40,18 @@ export default function ChangelogPage() {
                                         <li key={index}>{change}</li>
                                     ))}
                                 </ul>
+                                {entry.usage && entry.usage.length > 0 && (
+                                    <div className="mt-4 rounded-lg border border-border bg-muted/60 p-4">
+                                        <h3 className="text-sm font-semibold text-foreground">
+                                            使い方
+                                        </h3>
+                                        <ol className="mt-2 list-decimal list-outside space-y-1 pl-5 text-sm text-muted-foreground">
+                                            {entry.usage.map((step, index) => (
+                                                <li key={index}>{step}</li>
+                                            ))}
+                                        </ol>
+                                    </div>
+                                )}
                             </DashboardCard>
                         </section>
                     ))}
