@@ -41,25 +41,33 @@ function MiniMetric({
                 {value}
             </div>
             {values && (
+                // 狭い画面では補足を出さない代わりに、波形を高くして読み取りやすくする（#96）
                 <Sparkline
                     values={values}
                     min={min}
                     max={max}
-                    className={cn("mt-0.5 h-4 w-full", valueClassName)}
+                    className={cn("mt-0.5 h-6 w-full sm:h-4", valueClassName)}
                     label={chartLabel}
                 />
             )}
-            {detail && <div className="truncate text-[9px] text-muted-foreground" title={detail}>{detail}</div>}
+            {detail && (
+                <div className="hidden truncate text-[9px] text-muted-foreground sm:block" title={detail}>
+                    {detail}
+                </div>
+            )}
         </div>
     )
 }
 
-/** 副次的な指標。主要4指標の下に1行で流す */
+/**
+ * 副次的な指標。主要4指標の下に1行で流す。
+ * 狭い画面では出さない（#96）。概要は推移を眺める場所で、数字を読むのはホストタブの役目。
+ */
 function SecondaryFacts({ facts }: { facts: { label: string; value: string }[] }) {
     if (facts.length === 0) return null
 
     return (
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+        <div className="mt-2 hidden flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground sm:flex">
             {facts.map((fact) => (
                 <span key={fact.label}>
                     {fact.label} <span className="font-mono text-foreground">{fact.value}</span>
@@ -74,6 +82,9 @@ function SecondaryFacts({ facts }: { facts: { label: string; value: string }[] }
  *
  * 詳細タブと同じ内容を全部出すと1画面に収まらないため、主要4指標＋副次指標の1行に畳んでいる。
  * 個々の推移をじっくり見るのはホストタブの役目。
+ *
+ * 狭い画面（スマホ）ではさらに絞り、指標と推移グラフだけにする（#96）。1台で1画面を使い切ると、
+ * 2台目やtmuxの一覧までスクロールしないと状況をつかめない。
  */
 export function HostCard({
     host,
@@ -143,6 +154,10 @@ export function HostCard({
     ].filter((fact): fact is { label: string; value: string } => fact !== null)
 
     const { maintenance, sessions } = latest
+
+    // 狭い画面の概要はグラフだけに畳むが、停止しているサービスだけは隠さない（#96）。
+    // 更新・再起動待ちは画面上部の「メンテ」チップが拾うため、ここでは広い画面のみに出す
+    const hasStoppedService = (latest.services ?? []).some((service) => !service.active)
 
     return (
         <div className={cn("h-full rounded-xl border border-border bg-card p-3", !online && "opacity-70")}>
@@ -224,15 +239,27 @@ export function HostCard({
 
             <SecondaryFacts facts={facts} />
 
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className={cn("mt-2 flex-wrap gap-1.5", hasStoppedService ? "flex" : "hidden sm:flex")}>
                 {(latest.services ?? []).map((service) => (
-                    <StatusBadge key={service.name} tone={service.active ? "ok" : "danger"} withDot>
+                    <StatusBadge
+                        key={service.name}
+                        tone={service.active ? "ok" : "danger"}
+                        withDot
+                        className={cn(service.active && "hidden sm:inline-flex")}
+                    >
                         {service.name}
                     </StatusBadge>
                 ))}
-                {maintenance?.rebootRequired && <StatusBadge tone="danger">再起動待ち</StatusBadge>}
+                {maintenance?.rebootRequired && (
+                    <StatusBadge tone="danger" className="hidden sm:inline-flex">
+                        再起動待ち
+                    </StatusBadge>
+                )}
                 {maintenance?.updatesAvailable !== undefined && maintenance.updatesAvailable > 0 && (
-                    <StatusBadge tone={maintenance.securityUpdatesAvailable ? "danger" : "warn"}>
+                    <StatusBadge
+                        tone={maintenance.securityUpdatesAvailable ? "danger" : "warn"}
+                        className="hidden sm:inline-flex"
+                    >
                         更新 {maintenance.updatesAvailable}件
                         {maintenance.securityUpdatesAvailable
                             ? `（セキュリティ ${maintenance.securityUpdatesAvailable}件）`
@@ -240,7 +267,7 @@ export function HostCard({
                     </StatusBadge>
                 )}
                 {sessions && sessions.count > 0 && (
-                    <StatusBadge tone="neutral">
+                    <StatusBadge tone="neutral" className="hidden sm:inline-flex">
                         ログイン {sessions.count}
                         {sessions.users.length > 0 && `（${sessions.users.join(", ")}）`}
                     </StatusBadge>

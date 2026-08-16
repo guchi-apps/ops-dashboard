@@ -38,6 +38,19 @@ Supabaseのセッションが無いと `/login` へリダイレクトされる�
 ログイン不要な描画だけを確かめたい場合は、`PUBLIC_PATH_PREFIXES` に載っている `/login` 配下へ
 **一時的な確認用ルート**（例: `src/app/login/preview-xxx/page.tsx`）を置き、ダミーのSupabase
 環境変数を与えて `npm run dev` を起動すれば `curl` で描画結果を取得できる。
+
+`.env.local` が無いworktreeでは、ポートとSupabaseの変数をコマンドに直接渡す。**`src/proxy.ts` が
+読むキーは `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`** で、`..._ANON_KEY` を渡しても全リクエストが
+500になる（値の中身は検証されないのでダミーでよい）。
+
+```bash
+PORT=17096 NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co \
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=dummy npm run dev
+```
+
+レスポンシブの確認は `curl` では見た目まで分からないため、取得したHTMLの `class` に狙った
+ユーティリティ（`hidden sm:flex` など）が乗っているかと、`/_next/static/chunks/*.css` にその
+クラスが生成されているかで確かめる。
 **確認後は必ずそのルートを削除し、`.next` を消してから `npx tsc --noEmit` をやり直す**
 （消したルートの型定義が `.next/dev/types/` に残り、存在しないモジュールとして型エラーになる）。
 
