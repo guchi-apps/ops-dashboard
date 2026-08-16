@@ -7,6 +7,13 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.14.0",
+        date: "2026-08-16",
+        changes: [
+            "同一VPS上で動くツール（AIDE）から、ダッシュボードの利用状況データ（AI利用枠・GitHub利用状況・監視ステータスなど）を読み取れるようになりました。ブラウザからのログインでのご利用にはこれまでどおりの影響はありません。",
+        ],
+    },
+    {
         version: "0.13.0",
         date: "2026-08-16",
         changes: [
