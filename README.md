@@ -100,7 +100,7 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 | ネットワーク転送量 | `/proc/net/dev` の差分 | `lo` と仮想NIC（docker・veth 等）は除いた合計 |
 | ディスクI/O | `/proc/diskstats` の差分 | パーティション・ループバックを除く物理デバイスの合計 |
 | 稼働時間 | `/proc/uptime` | |
-| CPU温度 | `/sys/class/thermal/thermal_zone*` | 取れないマシンではカードごと省かれる |
+| CPU温度 | `/sys/class/thermal/thermal_zone*` → 無ければ `/sys/class/hwmon/hwmon*` | 取れないマシンではカードごと省かれる。詳細は下記 |
 | CPU上位プロセス | `ps -eo pcpu=,rss=,args= --sort=-pcpu` | 上位5件。カーネルスレッドは除く |
 | メモリ上位プロセス | `ps -eo pcpu=,rss=,args= --sort=-rss` | 上位5件。CPU順の一覧には犯人が出てこないメモリ枯渇を捕まえるために別で送る（[issue #54](https://github.com/guchi-apps/ops-dashboard/issues/54)） |
 | サービス死活 | `systemctl is-active <名前>` | 指定したサービスをバッジで表示 |
@@ -113,6 +113,18 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 差分から求める3項目（CPU・ネットワーク・ディスクI/O）は、前回値をファイルに残さずに済ませるため、1回の実行内で1秒あけて2回読んだ差を使っている。
 
 更新件数は `/usr/lib/update-notifier/apt-check` でも取れるが、1回あたり1.5秒ほどCPUを使う一方で値は1日に数回しか変わらないため、update-notifier が書き出したファイルを読むだけにしている。
+
+**CPU温度は `/sys/class/thermal` だけでは取れないマシンがある**（[issue #101](https://github.com/guchi-apps/ops-dashboard/issues/101)）。
+サブPC（AMD Athlon 200GE）では `k10temp` が hwmon にしか登録せず、`/sys/class/thermal` に `thermal_zone*` が1つも無い。
+そのため thermal_zone で見つからなければ `/sys/class/hwmon/hwmon*` を見に行く。選び方は次のとおり。
+
+- **`hwmon<番号>` の番号は検出順で、センサーの種類を表さない。** サブPCでは `hwmon1` が内蔵GPU（`amdgpu`）のため、
+  必ず `name` を読んでから選ぶ。CPU温度のドライバ（`k10temp`・`zenpower`・`coretemp` → `cpu_thermal` 系 → `acpitz`）の
+  優先順で1つだけ拾い、該当が無ければ温度を送らない（GPUやNVMeの温度で代用しない）
+- 選んだディレクトリの中では `temp*_label` が `Tctl` / `Tdie` / `Package id 0` の入力を優先する。
+  `coretemp` はコアごとの入力も持つため、ラベルを見ないとパッケージ温度を選べない
+
+センサーの構成はマシンごとに違うため、`for d in /sys/class/hwmon/hwmon*; do echo "$d $(cat "$d/name")"; done` で確認できる。
 
 グラフに残す履歴はCPU・メモリ・ディスク・Load・Swap・温度・ネットワーク・ディスクI/Oで、24時間を超えた行は送信のたびに掃除する。
 1,440点をそのまま返すとレスポンスが太るため、APIは最大180点へ間引いてから返す。
