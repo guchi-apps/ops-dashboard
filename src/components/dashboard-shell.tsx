@@ -62,6 +62,14 @@ const TAB_LABELS: Record<TabId, string> = {
     monitors: "監視",
 }
 
+/**
+ * 狭い画面用の短い名前。長い名前のままだと5つのタブが画面に収まらず、
+ * 右端の「監視」がスクロールしないと見えなくなる（#96）
+ */
+const TAB_SHORT_LABELS: Partial<Record<TabId, string>> = {
+    usage: "利用枠",
+}
+
 /** 概要タブに並べるカードの外枠。見出しの高さを揃え、中身だけを差し替える */
 function Panel({
     title,
@@ -180,7 +188,8 @@ export function DashboardShell({
                                 : "border-transparent text-muted-foreground hover:text-foreground"
                         )}
                     >
-                        {TAB_LABELS[tab]}
+                        <span className="sm:hidden">{TAB_SHORT_LABELS[tab] ?? TAB_LABELS[tab]}</span>
+                        <span className="hidden sm:inline">{TAB_LABELS[tab]}</span>
                         {counts[tab] !== undefined && counts[tab]! > 0 && (
                             <span className="ml-1.5 text-[10px] text-muted-foreground">{counts[tab]}</span>
                         )}
