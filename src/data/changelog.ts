@@ -14,6 +14,13 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.16.1",
+        date: "2026-08-17",
+        changes: [
+            "本番環境でのAPIトークン認証エラー（401）が発生した際に参照できる、原因切り分け手順をドキュメントに追記しました。アプリ自体の動作や画面に変更はありません。",
+        ],
+    },
+    {
         version: "0.16.0",
         date: "2026-08-16",
         changes: [
