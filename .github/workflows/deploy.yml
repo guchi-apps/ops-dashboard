@@ -110,7 +110,6 @@ jobs:
       OPS_API_TOKEN: ${{ secrets.OPS_API_TOKEN }}
       SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
       SIGNALY_LOGIN_WEBHOOK_URL: ${{ secrets.SIGNALY_LOGIN_WEBHOOK_URL }}
-      PORT: ${{ vars.PORT }}
       GH_USAGE_ORG: ${{ vars.GH_USAGE_ORG }}
       UPTIMEKUMA_BASE_URL: ${{ vars.UPTIMEKUMA_BASE_URL }}
       UPTIMEKUMA_DASHBOARD_SLUG: ${{ vars.UPTIMEKUMA_DASHBOARD_SLUG }}
@@ -186,7 +185,6 @@ jobs:
       OPS_API_TOKEN: ${{ secrets.OPS_API_TOKEN }}
       SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
       SIGNALY_LOGIN_WEBHOOK_URL: ${{ secrets.SIGNALY_LOGIN_WEBHOOK_URL }}
-      PORT: ${{ vars.PORT }}
       GH_USAGE_ORG: ${{ vars.GH_USAGE_ORG }}
       UPTIMEKUMA_BASE_URL: ${{ vars.UPTIMEKUMA_BASE_URL }}
       UPTIMEKUMA_DASHBOARD_SLUG: ${{ vars.UPTIMEKUMA_DASHBOARD_SLUG }}
@@ -242,18 +240,19 @@ jobs:
           WIDGET_TOKEN: ${{ env.WIDGET_TOKEN }}
           OPS_API_TOKEN: ${{ env.OPS_API_TOKEN }}
           TARGET_DIR: ${{ env.TARGET_DIR }}
-          APP_PORT: ${{ env.PORT }}
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USERNAME }}
           key: ${{ env.SSH_PRIVATE_KEY }}
           port: ${{ env.SSH_PORT }}
-          envs: NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,ALLOWED_EMAILS,UPTIMEROBOT_READ_ONLY_KEY,UPTIMEKUMA_BASE_URL,UPTIMEKUMA_DASHBOARD_SLUG,HOST_STATS_TOKEN,SIGNALY_LOGIN_WEBHOOK_URL,ANTHROPIC_OAUTH_REFRESH_TOKEN,OPENAI_CHATGPT_REFRESH_TOKEN,OPENAI_CHATGPT_ACCOUNT_ID,GH_USAGE_TOKEN,GH_USAGE_ORG,OP_SERVICE_ACCOUNT_TOKEN,WIDGET_TOKEN,OPS_API_TOKEN,TARGET_DIR,APP_PORT
+          envs: NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,ALLOWED_EMAILS,UPTIMEROBOT_READ_ONLY_KEY,UPTIMEKUMA_BASE_URL,UPTIMEKUMA_DASHBOARD_SLUG,HOST_STATS_TOKEN,SIGNALY_LOGIN_WEBHOOK_URL,ANTHROPIC_OAUTH_REFRESH_TOKEN,OPENAI_CHATGPT_REFRESH_TOKEN,OPENAI_CHATGPT_ACCOUNT_ID,GH_USAGE_TOKEN,GH_USAGE_ORG,OP_SERVICE_ACCOUNT_TOKEN,WIDGET_TOKEN,OPS_API_TOKEN,TARGET_DIR
           script: |
             set -euo pipefail
             cd "${TARGET_DIR}"
 
-            PORT="${APP_PORT:-3110}"
+            # 待受ポートはシークレットではなく設定値として平文で持つ
+            # （guchi-apps/docs の standards/ports.md「ポート番号は 1Password で管理しない」。#111）。
+            PORT=3110
 
             echo "Cleaning up old release files..."
             rm -rf .next package.json package-lock.json public deploy scripts next.config.ts
