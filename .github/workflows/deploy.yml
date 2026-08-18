@@ -301,9 +301,20 @@ jobs:
             fi
 
             echo "Health check..."
-            sleep 5
-            curl -fsS "http://127.0.0.1:${PORT}/login" >/dev/null
-            echo "Deployment successful."
+            # Next.js は起動完了までに数秒かかる。1回だけの curl では起動を待ちきれず、
+            # アプリが正常に立ち上がっていても deploy ジョブが失敗する（guchi-apps/docs#29）。
+            for i in $(seq 1 30); do
+              if curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/login"; then
+                echo "Deployment successful."
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "Health check failed after 60s."
+            pm2 describe ops-dashboard || true
+            pm2 logs ops-dashboard --lines 50 --nostream || true
+            exit 1
 
   notify:
     runs-on: ubuntu-latest
