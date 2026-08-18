@@ -82,6 +82,22 @@ jobs:
           prerelease: ${{ steps.meta.outputs.prerelease == 'true' }}
           skip_if_release_exists: true
 
+      - name: Signaly に通知
+        # 通知のためだけにジョブを分けない。Actionsの課金はジョブ単位で1分に切り上げられる
+        # ため、数秒で終わるnotify-releaseジョブが実行のたびに1分かかっていた。
+        #
+        # 通知はリリースの合否そのものではない。ここが失敗してもrun全体を落とさない
+        # （guchi-apps/issue-deck#1302）。
+        if: always()
+        continue-on-error: true
+        env:
+          SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
+          NOTIFY_STATUS: ${{ job.status }}
+          NOTIFY_APP: ops-dashboard
+          NOTIFY_KIND: リリース
+          NOTIFY_VERSION: ${{ needs.tag.outputs.tag }}
+        run: bash .github/scripts/signaly-notify.sh
+
   build:
     runs-on: ubuntu-latest
     needs: tag
@@ -301,14 +317,44 @@ jobs:
             fi
 
             echo "Health check..."
-            sleep 5
-            curl -fsS "http://127.0.0.1:${PORT}/login" >/dev/null
-            echo "Deployment successful."
+            # Next.js は起動完了までに数秒かかる。1回だけの curl では起動を待ちきれず、
+            # アプリが正常に立ち上がっていても deploy ジョブが失敗する（guchi-apps/docs#29）。
+            for i in $(seq 1 30); do
+              if curl -fsS -o /dev/null "http://127.0.0.1:${PORT}/login"; then
+                echo "Deployment successful."
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "Health check failed after 60s."
+            pm2 describe ops-dashboard || true
+            pm2 logs ops-dashboard --lines 50 --nostream || true
+            exit 1
+
+      - name: Signaly に通知
+        # 通知のためだけにジョブを分けない（notify-releaseと同じ理由）。deployが動かなかった
+        # 場合（tag/buildで失敗・キャンセル）の通知は下のnotifyジョブが受け持つ。
+        #
+        # 通知はデプロイの合否そのものではない。ここが失敗してもrun全体を落とさない
+        # （guchi-apps/issue-deck#1302）。
+        if: always()
+        continue-on-error: true
+        env:
+          SIGNALY_WEBHOOK_URL: ${{ env.SIGNALY_WEBHOOK_URL }}
+          NOTIFY_APP: ops-dashboard
+          NOTIFY_KIND: デプロイ
+          NOTIFY_STATUS: ${{ job.status }}
+        run: bash .github/scripts/signaly-notify.sh
 
   notify:
     runs-on: ubuntu-latest
     needs: [tag, build, deploy]
-    if: always()
+    # deployジョブが動かなかったとき（tag/buildで失敗・キャンセルし、deployがskipされた
+    # とき）だけの保険。deployが動いた場合の通知はdeployジョブの最終ステップが送る。
+    # Actionsの課金はジョブ単位で1分に切り上げられるため、成功時に数秒の通知専用ジョブを
+    # 立てない。
+    if: always() && needs.deploy.result == 'skipped'
 
     # GitHub側の値をここで明示的に渡す。以前は実行のたびに1Passwordから読んでいたが、
     # サービスアカウントの日次レート制限を使い切ってフリート全体のデプロイが止まった
@@ -346,33 +392,4 @@ jobs:
           NOTIFY_APP: ops-dashboard
           NOTIFY_KIND: デプロイ
           NOTIFY_STATUS: ${{ steps.status.outputs.result }}
-        run: bash .github/scripts/signaly-notify.sh
-
-  notify-release:
-    runs-on: ubuntu-latest
-    needs: [tag, deploy, release]
-    if: always() && needs.release.result != 'skipped'
-
-    # GitHub側の値をここで明示的に渡す。以前は実行のたびに1Passwordから読んでいたが、
-    # サービスアカウントの日次レート制限を使い切ってフリート全体のデプロイが止まった
-    # （guchi-apps/issue-deck#1302）。SERVER_*・SUPABASE_* はorganizationの共通値。
-    #
-    # このブロックは scripts/generate-workflow-env-block.sh で生成する（#51）。
-    env:
-      SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Signaly に通知
-        # 通知はCIやデプロイの合否そのものではない。ここが失敗してもrun全体を落とさない
-        # （guchi-apps/issue-deck#1302）。
-        continue-on-error: true
-        env:
-          SIGNALY_WEBHOOK_URL: ${{ env.SIGNALY_WEBHOOK_URL }}
-          NOTIFY_STATUS: ${{ needs.release.result }}
-          NOTIFY_APP: ops-dashboard
-          NOTIFY_KIND: リリース
-          NOTIFY_VERSION: ${{ needs.tag.outputs.tag }}
         run: bash .github/scripts/signaly-notify.sh
