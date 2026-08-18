@@ -30,7 +30,12 @@ on:
   issues:
     types: [opened, edited, closed]
   schedule:
-    - cron: "*/15 * * * *"
+    # 15分ごとから30分ごとへ落とした。scheduleで動くのはdevelop-merge-sweepだけで、
+    # これはGitHub Auto-mergeがdevelop-pr-mergedジョブを起こさなかった場合の安全網に
+    # すぎない。本線はイベント駆動側であり、ほとんどのrunは対象0件で即終了する。
+    # Actionsの課金はジョブ単位で1分に切り上げられるため、その空振り1回ごとに1分
+    # かかっていた。取りこぼしの検知は最大30分遅れるが、安全網としては十分機能する。
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
 
 jobs:
