@@ -48,7 +48,16 @@ jobs:
 
   notify:
     needs: [verify]
-    if: always()
+    # 通知が要るときだけジョブを起こす。Actionsの課金はジョブ単位で1分に切り上げられる
+    # ため、`always()`で毎回起こすと5秒で終わる空振りにも1分かかっていた。スキップされた
+    # ジョブは課金されないので、送信可否の判断をステップからジョブの`if:`へ引き上げる。
+    #
+    # 条件は「Determine workflow status」が持っていたshould_notifyと同じ。
+    # develop push: failure only. main PR: success, failure, and cancelled.
+    if: >-
+      always()
+      && ((needs.verify.result != 'success' && needs.verify.result != 'cancelled')
+      || (github.event_name == 'pull_request' && github.base_ref == 'main'))
     runs-on: ubuntu-latest
     # GitHub側の値をここで明示的に渡す。以前は実行のたびに1Passwordから読んでいたが、
     # サービスアカウントの日次レート制限を使い切ってフリート全体のデプロイが止まった
@@ -74,17 +83,8 @@ jobs:
           fi
           echo "result=$result" >> "$GITHUB_OUTPUT"
           echo "jobs=verify: $verify" >> "$GITHUB_OUTPUT"
-          # develop push: failure only. main PR: success, failure, and cancelled.
-          if [ "$result" = "failure" ]; then
-            echo "should_notify=true" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.base_ref }}" = "main" ]; then
-            echo "should_notify=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_notify=false" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Signaly に通知
-        if: steps.status.outputs.should_notify == 'true'
         # 通知はCIやデプロイの合否そのものではない。ここが失敗してもrun全体を落とさない
         # （guchi-apps/issue-deck#1302）。
         continue-on-error: true
