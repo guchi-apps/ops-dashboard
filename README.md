@@ -27,6 +27,10 @@ Supabaseダッシュボードの Authentication → URL Configuration の Redire
 データの取得は共通のプロバイダに一本化しており（ホスト30秒・監視60秒・AI/GitHub/1Password 5分）、サマリーが全ソースを横断して集計できるようにしている。
 狭い画面ではサマリーとタブが横スクロールになり、tmuxの一覧は表からカードに切り替わる。
 
+ヘッダーの更新ボタンを押すと、この自動取得を待たずにホスト・AI・GitHub・1Password・監視をまとめて取り直す（[issue #29](https://github.com/guchi-apps/ops-dashboard/issues/29)）。
+AI・GitHub・1Passwordはサーバー側にもキャッシュ（既定5分）があるため、このボタンからの取得だけ `?force=1` を付けてキャッシュを飛ばし、提供元へ取りにいく。
+提供元のレート制限（Anthropicは180秒以上の間隔を推奨）があるため、押した直後30秒は続けて押せず、サーバー側も同じ30秒のあいだは `force` でもキャッシュを返す（`src/lib/usage-cache.ts`）。
+
 ## セットアップ
 
 ```bash

@@ -1,5 +1,11 @@
 import { fetchChatGptUsage } from "@/lib/ai-usage/chatgpt"
 import { fetchClaudeUsage } from "@/lib/ai-usage/claude"
+import {
+    isUsageCacheFresh,
+    newUsageCacheEntry,
+    type UsageCacheEntry,
+    type UsageFetchOptions,
+} from "@/lib/usage-cache"
 import type { AiUsageSnapshot } from "@/types/ai-usage"
 
 /**
@@ -9,7 +15,7 @@ import type { AiUsageSnapshot } from "@/types/ai-usage"
  */
 const DEFAULT_CACHE_SECONDS = 300
 
-let cache: { snapshot: AiUsageSnapshot; expiresAt: number } | null = null
+let cache: UsageCacheEntry<AiUsageSnapshot> | null = null
 
 function getCacheTtlMs(): number {
     const configured = Number.parseInt(process.env.AI_USAGE_CACHE_SECONDS ?? "", 10)
@@ -17,9 +23,12 @@ function getCacheTtlMs(): number {
     return seconds * 1000
 }
 
-export async function getAiUsageSnapshot(): Promise<AiUsageSnapshot> {
-    if (cache && cache.expiresAt > Date.now()) {
-        return cache.snapshot
+export async function getAiUsageSnapshot({
+    force = false,
+}: UsageFetchOptions = {}): Promise<AiUsageSnapshot> {
+    const cached = cache
+    if (cached && isUsageCacheFresh(cached, force)) {
+        return cached.snapshot
     }
 
     const [claude, chatgpt] = await Promise.all([fetchClaudeUsage(), fetchChatGptUsage()])
@@ -28,6 +37,6 @@ export async function getAiUsageSnapshot(): Promise<AiUsageSnapshot> {
         fetchedAt: new Date().toISOString(),
     }
 
-    cache = { snapshot, expiresAt: Date.now() + getCacheTtlMs() }
+    cache = newUsageCacheEntry(snapshot, getCacheTtlMs())
     return snapshot
 }

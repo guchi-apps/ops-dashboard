@@ -1,6 +1,12 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { describeError } from "@/lib/upstream"
+import {
+    isUsageCacheFresh,
+    newUsageCacheEntry,
+    type UsageCacheEntry,
+    type UsageFetchOptions,
+} from "@/lib/usage-cache"
 import type {
     OnePasswordLimitAction,
     OnePasswordLimitType,
@@ -85,7 +91,7 @@ async function fetchRateLimits(token: string, fetchedAtMs: number): Promise<OneP
     return parseRateLimits(stdout, fetchedAtMs)
 }
 
-let cache: { snapshot: OnePasswordUsageSnapshot; expiresAt: number } | null = null
+let cache: UsageCacheEntry<OnePasswordUsageSnapshot> | null = null
 
 function getCacheTtlMs(): number {
     const configured = Number.parseInt(process.env.OP_USAGE_CACHE_SECONDS ?? "", 10)
@@ -93,14 +99,17 @@ function getCacheTtlMs(): number {
     return seconds * 1000
 }
 
-export async function getOnePasswordUsageSnapshot(): Promise<OnePasswordUsageSnapshot> {
-    if (cache && cache.expiresAt > Date.now()) {
-        return cache.snapshot
+export async function getOnePasswordUsageSnapshot({
+    force = false,
+}: UsageFetchOptions = {}): Promise<OnePasswordUsageSnapshot> {
+    const cached = cache
+    if (cached && isUsageCacheFresh(cached, force)) {
+        return cached.snapshot
     }
 
     const snapshot = await buildSnapshot(process.env.OP_SERVICE_ACCOUNT_TOKEN)
     const ttlMs = snapshot.status === "ok" ? getCacheTtlMs() : ERROR_CACHE_SECONDS * 1000
-    cache = { snapshot, expiresAt: Date.now() + ttlMs }
+    cache = newUsageCacheEntry(snapshot, ttlMs)
     return snapshot
 }
 
