@@ -1,6 +1,7 @@
 "use client"
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
+import { MIN_FORCE_REFRESH_MS } from "@/lib/usage-cache"
 import type { AiUsageSnapshot } from "@/types/ai-usage"
 import type { GitHubUsageSnapshot } from "@/types/github-usage"
 import type { HostStatsView } from "@/types/host-stats"
@@ -20,6 +21,21 @@ const USAGE_INTERVAL_MS = 300_000
 /** リセットまでの残り時間や経過時間の表示を進めるための再描画間隔 */
 const CLOCK_INTERVAL_MS = 30_000
 
+/**
+ * 手動更新を続けて押せない時間。
+ * サーバー側も同じ間隔でキャッシュを返すため（`MIN_FORCE_REFRESH_MS`）、
+ * ここを短くしても提供元へは取りにいかない。押せるのに値が変わらない状態を作らないよう合わせる。
+ * AIだけは提供元の推奨に合わせて180秒までサーバー側がキャッシュを返すため、
+ * この間隔で押し直してもAIのカードだけは時刻が進まないことがある。
+ */
+const REFRESH_COOLDOWN_MS = MIN_FORCE_REFRESH_MS
+
+/** 更新に失敗した表示を残す時間。押した結果が伝わる程度に出して、自動取得の表示へ戻す */
+const REFRESH_ERROR_VISIBLE_MS = 8_000
+
+/** 手動更新の状態。idle=押せる / refreshing=取得中 / error=直前の手動更新が失敗した */
+export type RefreshState = "idle" | "refreshing" | "error"
+
 /** サーバー側で取得済みの初期値。初回描画で監視の枠が空にならないようにする */
 export interface DashboardInitialData {
     uptimeKuma: UptimeKumaMonitor[]
@@ -35,6 +51,11 @@ interface DashboardData extends DashboardInitialData {
     now: number
     /** いずれかのデータを最後に受け取った時刻（epoch ミリ秒）。未受信なら null */
     updatedAt: number | null
+    /** ヘッダーの更新ボタン。自動取得を待たずに全ソースを取り直す */
+    refresh: () => void
+    refreshState: RefreshState
+    /** 連打を抑えている残り秒数。0 なら押せる */
+    refreshCooldownSeconds: number
 }
 
 const DashboardDataContext = createContext<DashboardData | null>(null)
@@ -62,19 +83,22 @@ export function DashboardDataProvider({
         "/api/ai-usage",
         USAGE_INTERVAL_MS,
         selectAsIs,
-        null
+        null,
+        true
     )
     const githubUsage = usePolledJson<GitHubUsageSnapshot | null>(
         "/api/github-usage",
         USAGE_INTERVAL_MS,
         selectAsIs,
-        null
+        null,
+        true
     )
     const onepasswordUsage = usePolledJson<OnePasswordUsageSnapshot | null>(
         "/api/onepassword-usage",
         USAGE_INTERVAL_MS,
         selectAsIs,
-        null
+        null,
+        true
     )
     const uptimeKuma = usePolledJson<UptimeKumaMonitor[]>(
         "/api/uptime-kuma",
@@ -90,6 +114,28 @@ export function DashboardDataProvider({
     )
 
     const now = useClock()
+
+    // 更新ボタンは全ソースをまとめて取り直す。ソースごとにボタンを分けると押す場所が増え、
+    // 提供元のレート制限もソースごとに管理することになるため、ヘッダーの1つに集約している
+    const refreshers = useMemo(
+        () => [
+            hostStats.refresh,
+            aiUsage.refresh,
+            githubUsage.refresh,
+            onepasswordUsage.refresh,
+            uptimeKuma.refresh,
+            uptimeRobot.refresh,
+        ],
+        [
+            hostStats.refresh,
+            aiUsage.refresh,
+            githubUsage.refresh,
+            onepasswordUsage.refresh,
+            uptimeKuma.refresh,
+            uptimeRobot.refresh,
+        ]
+    )
+    const manualRefresh = useManualRefresh(refreshers)
 
     const value = useMemo<DashboardData>(
         () => ({
@@ -108,8 +154,20 @@ export function DashboardDataProvider({
                 uptimeKuma.updatedAt,
                 uptimeRobot.updatedAt,
             ]),
+            refresh: manualRefresh.refresh,
+            refreshState: manualRefresh.state,
+            refreshCooldownSeconds: manualRefresh.cooldownSeconds,
         }),
-        [hostStats, aiUsage, githubUsage, onepasswordUsage, uptimeKuma, uptimeRobot, now]
+        [
+            hostStats,
+            aiUsage,
+            githubUsage,
+            onepasswordUsage,
+            uptimeKuma,
+            uptimeRobot,
+            now,
+            manualRefresh,
+        ]
     )
 
     return <DashboardDataContext.Provider value={value}>{children}</DashboardDataContext.Provider>
@@ -125,6 +183,8 @@ interface PolledJson<T> {
     value: T
     /** 最後に取得できた時刻（epoch ミリ秒）。一度も取得できていなければ null */
     updatedAt: number | null
+    /** 自動取得を待たずに取り直す。取得できたら true */
+    refresh: (force: boolean) => Promise<boolean>
 }
 
 /** APIのレスポンスをそのまま使う（/api/host-stats など、本体がそのまま返ってくるもの） */
@@ -137,42 +197,117 @@ function selectMonitors<T>(payload: unknown): T[] {
     return (payload as { monitors?: T[] }).monitors ?? []
 }
 
+/**
+ * 一定間隔でJSONを取りにいく。
+ *
+ * `forceable` を立てたAPIは `?force=1` を付けるとサーバー側のキャッシュを飛ばして
+ * 提供元へ取り直す（AI・GitHub・1Password）。手動更新のときだけ付ける。
+ */
 function usePolledJson<T>(
     url: string,
     intervalMs: number,
     select: (payload: unknown) => T,
-    initial: T
+    initial: T,
+    forceable = false
 ): PolledJson<T> {
-    const [state, setState] = useState<PolledJson<T>>({ value: initial, updatedAt: null })
+    const [state, setState] = useState<{ value: T; updatedAt: number | null }>({
+        value: initial,
+        updatedAt: null,
+    })
 
-    useEffect(() => {
-        let cancelled = false
-
-        const load = async () => {
+    // URLも select も定数のためこのコールバックは作り直されない。
+    // 手動更新から呼べるよう、取得の本体は useEffect の外に置いている
+    const load = useCallback(
+        async (force: boolean): Promise<boolean> => {
             try {
-                const res = await fetch(url, { cache: "no-store" })
+                const res = await fetch(force && forceable ? `${url}?force=1` : url, {
+                    cache: "no-store",
+                })
                 if (!res.ok) throw new Error(`${url} が ${res.status} を返しました`)
 
                 const payload: unknown = await res.json()
-                if (cancelled) return
-
                 setState({ value: select(payload), updatedAt: Date.now() })
+                return true
             } catch (error) {
                 // 取得に失敗しても直前の値を出し続ける（1回の失敗で画面が消えるのを避ける）
                 console.error(`Failed to fetch ${url}:`, error)
+                return false
             }
+        },
+        [url, select, forceable]
+    )
+
+    useEffect(() => {
+        // 取得は非同期で、状態の更新はレスポンスが返ってからになる。
+        // それをlintに伝えるため、効果の中では非同期関数として包んでから呼ぶ
+        const tick = async () => {
+            await load(false)
         }
 
-        void load()
-        const intervalId = setInterval(() => void load(), intervalMs)
+        void tick()
+        const intervalId = setInterval(() => void tick(), intervalMs)
 
-        return () => {
-            cancelled = true
-            clearInterval(intervalId)
+        return () => clearInterval(intervalId)
+    }, [load, intervalMs])
+
+    return useMemo(() => ({ ...state, refresh: load }), [state, load])
+}
+
+interface ManualRefresh {
+    refresh: () => void
+    state: RefreshState
+    cooldownSeconds: number
+}
+
+/**
+ * ヘッダーの更新ボタンの状態を持つ。
+ *
+ * 押した直後は `REFRESH_COOLDOWN_MS` のあいだ押せなくする。提供元のレート制限があり、
+ * 連打しても値は変わらないため。
+ */
+function useManualRefresh(refreshers: ((force: boolean) => Promise<boolean>)[]): ManualRefresh {
+    const [state, setState] = useState<RefreshState>("idle")
+    const [cooldownUntil, setCooldownUntil] = useState<number | null>(null)
+    const [cooldownSeconds, setCooldownSeconds] = useState(0)
+    const runningRef = useRef(false)
+
+    const refresh = useCallback(() => {
+        if (runningRef.current) return
+        runningRef.current = true
+        setState("refreshing")
+
+        void (async () => {
+            const results = await Promise.all(refreshers.map((load) => load(true)))
+            runningRef.current = false
+            setCooldownUntil(Date.now() + REFRESH_COOLDOWN_MS)
+            setState(results.every(Boolean) ? "idle" : "error")
+        })()
+    }, [refreshers])
+
+    // 残り秒数を1秒ごとに詰める。0になったらタイマーごと止める
+    useEffect(() => {
+        if (cooldownUntil === null) return
+
+        const tick = () => {
+            const seconds = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000))
+            setCooldownSeconds(seconds)
+            if (seconds === 0) setCooldownUntil(null)
         }
-    }, [url, intervalMs, select])
 
-    return state
+        tick()
+        const intervalId = setInterval(tick, 1000)
+        return () => clearInterval(intervalId)
+    }, [cooldownUntil])
+
+    // 失敗の表示は出しっぱなしにしない。自動取得は続いているため、残すと実態と合わなくなる
+    useEffect(() => {
+        if (state !== "error") return
+
+        const timeoutId = setTimeout(() => setState("idle"), REFRESH_ERROR_VISIBLE_MS)
+        return () => clearTimeout(timeoutId)
+    }, [state])
+
+    return useMemo(() => ({ refresh, state, cooldownSeconds }), [refresh, state, cooldownSeconds])
 }
 
 function useClock(): number {

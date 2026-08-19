@@ -1,8 +1,9 @@
 "use client"
 
+import { RefreshCw } from "lucide-react"
 import { useMemo, useSyncExternalStore } from "react"
 import { AiUsage } from "@/components/ai-usage"
-import { useDashboardData } from "@/components/dashboard-data"
+import { useDashboardData, type RefreshState } from "@/components/dashboard-data"
 import { GitHubUsage } from "@/components/github-usage"
 import { HostCard } from "@/components/host-card"
 import { HostStats } from "@/components/host-stats"
@@ -70,6 +71,79 @@ const TAB_SHORT_LABELS: Partial<Record<TabId, string>> = {
     usage: "利用枠",
 }
 
+/**
+ * ヘッダーの更新時刻と更新ボタン。
+ *
+ * 押すとホスト・AI・GitHub・1Password・監視をまとめて取り直す。押した結果は時刻が進むことで分かるため、
+ * 狭い画面でも時刻だけは出す（ボタンはアイコンのみにして幅を詰める）。
+ */
+function RefreshControl({
+    updatedAt,
+    state,
+    cooldownSeconds,
+    onRefresh,
+}: {
+    updatedAt: number | null
+    state: RefreshState
+    cooldownSeconds: number
+    onRefresh: () => void
+}) {
+    const time = updatedAt
+        ? new Date(updatedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })
+        : null
+    const busy = state === "refreshing"
+    const failed = state === "error"
+
+    const label = busy
+        ? "更新中"
+        : cooldownSeconds > 0
+          ? `あと${cooldownSeconds}秒で更新できます`
+          : "最新の状態に更新"
+
+    return (
+        <>
+            {(time || failed) && (
+                <span
+                    aria-live="polite"
+                    className={cn(
+                        "font-mono text-[11px]",
+                        failed ? "text-destructive" : "text-muted-foreground"
+                    )}
+                >
+                    {failed ? (
+                        <>
+                            <span className="sm:hidden">更新できません</span>
+                            <span className="hidden sm:inline">
+                                更新できませんでした{time && `（${time} 時点の値）`}
+                            </span>
+                        </>
+                    ) : (
+                        `${time} 更新`
+                    )}
+                </span>
+            )}
+            <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={onRefresh}
+                disabled={busy || cooldownSeconds > 0}
+                aria-label={label}
+                title={label}
+                className="px-2 sm:px-3"
+            >
+                <RefreshCw
+                    className={cn("size-3.5", busy && "animate-spin motion-reduce:animate-none")}
+                    aria-hidden
+                />
+                <span className="hidden sm:inline">
+                    {busy ? "更新中" : cooldownSeconds > 0 ? cooldownSeconds : "更新"}
+                </span>
+            </Button>
+        </>
+    )
+}
+
 /** 概要タブに並べるカードの外枠。見出しの高さを揃え、中身だけを差し替える */
 function Panel({
     title,
@@ -101,8 +175,19 @@ export function DashboardShell({
     addMonitorUrl: string | null
 }) {
     const data = useDashboardData()
-    const { hostStats, aiUsage, githubUsage, onepasswordUsage, uptimeKuma, uptimeRobot, now, updatedAt } =
-        data
+    const {
+        hostStats,
+        aiUsage,
+        githubUsage,
+        onepasswordUsage,
+        uptimeKuma,
+        uptimeRobot,
+        now,
+        updatedAt,
+        refresh,
+        refreshState,
+        refreshCooldownSeconds,
+    } = data
 
     const activeTab = useSyncExternalStore(subscribeActiveTab, getStoredTab, getInitialTab)
 
@@ -146,15 +231,12 @@ export function DashboardShell({
                         <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
                         LIVE
                     </span>
-                    {updatedAt && (
-                        <span className="hidden font-mono text-[11px] text-muted-foreground sm:inline">
-                            {new Date(updatedAt).toLocaleTimeString("ja-JP", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                            })}{" "}
-                            更新
-                        </span>
-                    )}
+                    <RefreshControl
+                        updatedAt={updatedAt}
+                        state={refreshState}
+                        cooldownSeconds={refreshCooldownSeconds}
+                        onRefresh={refresh}
+                    />
                     <span className="hidden max-w-[16rem] truncate text-xs text-muted-foreground lg:inline">
                         {userEmail}
                     </span>
