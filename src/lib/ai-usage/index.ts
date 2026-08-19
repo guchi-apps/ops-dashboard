@@ -1,6 +1,7 @@
 import { fetchChatGptUsage } from "@/lib/ai-usage/chatgpt"
 import { fetchClaudeUsage } from "@/lib/ai-usage/claude"
 import {
+    AI_MIN_FORCE_REFRESH_MS,
     isUsageCacheFresh,
     newUsageCacheEntry,
     type UsageCacheEntry,
@@ -15,6 +16,13 @@ import type { AiUsageSnapshot } from "@/types/ai-usage"
  */
 const DEFAULT_CACHE_SECONDS = 300
 
+/**
+ * 取得に失敗したスナップショットは通常より短くしか持たない。
+ * 429などの一時的な失敗を5分抱えると、カードがその間ずっとエラー表示のままになるため
+ * （GitHub・1Passwordと同じ扱い）。設定していない提供元は待っても変わらないので対象にしない。
+ */
+const ERROR_CACHE_SECONDS = 30
+
 let cache: UsageCacheEntry<AiUsageSnapshot> | null = null
 
 function getCacheTtlMs(): number {
@@ -27,7 +35,7 @@ export async function getAiUsageSnapshot({
     force = false,
 }: UsageFetchOptions = {}): Promise<AiUsageSnapshot> {
     const cached = cache
-    if (cached && isUsageCacheFresh(cached, force)) {
+    if (cached && isUsageCacheFresh(cached, force, AI_MIN_FORCE_REFRESH_MS)) {
         return cached.snapshot
     }
 
@@ -37,6 +45,7 @@ export async function getAiUsageSnapshot({
         fetchedAt: new Date().toISOString(),
     }
 
-    cache = newUsageCacheEntry(snapshot, getCacheTtlMs())
+    const failed = snapshot.providers.some((provider) => provider.status === "error")
+    cache = newUsageCacheEntry(snapshot, failed ? ERROR_CACHE_SECONDS * 1000 : getCacheTtlMs())
     return snapshot
 }

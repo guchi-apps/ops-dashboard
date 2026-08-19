@@ -25,6 +25,8 @@ const CLOCK_INTERVAL_MS = 30_000
  * 手動更新を続けて押せない時間。
  * サーバー側も同じ間隔でキャッシュを返すため（`MIN_FORCE_REFRESH_MS`）、
  * ここを短くしても提供元へは取りにいかない。押せるのに値が変わらない状態を作らないよう合わせる。
+ * AIだけは提供元の推奨に合わせて180秒までサーバー側がキャッシュを返すため、
+ * この間隔で押し直してもAIのカードだけは時刻が進まないことがある。
  */
 const REFRESH_COOLDOWN_MS = MIN_FORCE_REFRESH_MS
 
@@ -260,8 +262,8 @@ interface ManualRefresh {
 /**
  * ヘッダーの更新ボタンの状態を持つ。
  *
- * 押した直後は `REFRESH_COOLDOWN_MS` のあいだ押せなくする。提供元のレート制限
- * （Anthropicは180秒以上の間隔を推奨）があり、連打しても値は変わらないため。
+ * 押した直後は `REFRESH_COOLDOWN_MS` のあいだ押せなくする。提供元のレート制限があり、
+ * 連打しても値は変わらないため。
  */
 function useManualRefresh(refreshers: ((force: boolean) => Promise<boolean>)[]): ManualRefresh {
     const [state, setState] = useState<RefreshState>("idle")
