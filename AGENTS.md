@@ -58,7 +58,8 @@ PORT=17096 NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co \
 
 `@claude` コメントを起点に、計画提示〜実装〜develop向けPR作成までを GitHub Actions 上で無人実行する。
 ワークフローの実体は `guchi-apps/issue-deck` にあり、このリポジトリの `.github/workflows/` には
-`uses:` で参照する薄い caller だけを置いている（`@workflows/v15`）。
+`uses:` で参照する薄い caller だけを置いている（現在は `@workflows/v23`）。**callerを追加・更新する
+ときは、`uses:` のタグと `prompts-ref` をリポジトリ内の全callerで同じ値に揃える。**
 
 設計・運用の詳細は issue-deck 側を参照する。
 
