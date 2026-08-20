@@ -9,8 +9,11 @@ export async function GET(request: NextRequest) {
     const { response } = await requireSessionOrApiToken(request)
     if (response) return response
 
+    // ヘッダーの更新ボタンからの取得だけ、サーバー側のキャッシュを飛ばして取り直す
+    const force = request.nextUrl.searchParams.get("force") === "1"
+
     try {
-        const snapshot = await getAiUsageSnapshot()
+        const snapshot = await getAiUsageSnapshot({ force })
         return NextResponse.json(snapshot, {
             headers: { "Cache-Control": "no-store" },
         })

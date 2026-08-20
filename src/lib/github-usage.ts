@@ -1,4 +1,10 @@
 import { describeError, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
+import {
+    isUsageCacheFresh,
+    newUsageCacheEntry,
+    type UsageCacheEntry,
+    type UsageFetchOptions,
+} from "@/lib/usage-cache"
 import type {
     GitHubActionsRepoUsage,
     GitHubActionsUsage,
@@ -212,7 +218,7 @@ async function fetchRateLimit(token: string): Promise<GitHubRateLimit> {
  * 課金レポートはリポジトリ数ぶんのリクエストが必要になるうえ、
  * 実行時間は数分単位でしか動かないため、プロセス内でスナップショットをキャッシュする。
  */
-let cache: { snapshot: GitHubUsageSnapshot; expiresAt: number } | null = null
+let cache: UsageCacheEntry<GitHubUsageSnapshot> | null = null
 
 function getCacheTtlMs(): number {
     const configured = Number.parseInt(process.env.GH_USAGE_CACHE_SECONDS ?? "", 10)
@@ -220,9 +226,12 @@ function getCacheTtlMs(): number {
     return seconds * 1000
 }
 
-export async function getGitHubUsageSnapshot(): Promise<GitHubUsageSnapshot> {
-    if (cache && cache.expiresAt > Date.now()) {
-        return cache.snapshot
+export async function getGitHubUsageSnapshot({
+    force = false,
+}: UsageFetchOptions = {}): Promise<GitHubUsageSnapshot> {
+    const cached = cache
+    if (cached && isUsageCacheFresh(cached, force)) {
+        return cached.snapshot
     }
 
     const token = process.env.GH_USAGE_TOKEN
@@ -230,7 +239,7 @@ export async function getGitHubUsageSnapshot(): Promise<GitHubUsageSnapshot> {
 
     const snapshot = await buildSnapshot(token, org)
     const ttlMs = snapshot.status === "ok" ? getCacheTtlMs() : ERROR_CACHE_SECONDS * 1000
-    cache = { snapshot, expiresAt: Date.now() + ttlMs }
+    cache = newUsageCacheEntry(snapshot, ttlMs)
     return snapshot
 }
 
