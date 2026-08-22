@@ -14,6 +14,18 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.18.0",
+        date: "2026-08-22",
+        changes: [
+            "スマートフォンでタブの中身を左右にスワイプして切り替えられるようになりました。",
+        ],
+        usage: [
+            "スマートフォンでダッシュボードを開きます",
+            "画面上部のタブの中身を指で左右にスワイプします",
+            "指を離すと、隣のタブに切り替わり、タブの表示も自動で追従すれば成功です",
+        ],
+    },
+    {
         version: "0.17.1",
         date: "2026-08-22",
         changes: [
