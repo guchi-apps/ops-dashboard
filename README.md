@@ -305,8 +305,22 @@ HOST_STATS_TIMERS=guchi@aide-zaim-sync,guchi@aide-zaim-keep-alive
 **`<ユーザー>@` を前置すると、ユーザー単位のユニット**（`~/.config/systemd/user/`）を指す。
 エージェントは root で動くため `systemctl --user` をそのまま呼べず、
 `systemctl --machine=<ユーザー>@.host --user` で当該ユーザーのマネージャに問い合わせる。
-`ProtectHome=read-only` のままで `/run/user/<UID>/bus` へは繋がる（読み取り専用のマウントでも
-ソケットへの `connect` は妨げられない）。
+`machinectl` / `systemd-container` は入っていなくてよい（同一ホストの `<ユーザー>@.host` は
+`/run/user/<UID>/bus` へ直接繋ぐだけ）。`ProtectHome=read-only` のままでも繋がる
+（読み取り専用マウントが弾くのは通常ファイル・ディレクトリ・シンボリックリンクへの書き込みで、
+ソケットへの `connect` は妨げられない）。**`Linger=yes`**（`loginctl show-user <ユーザー>`）で
+ユーザーマネージャが常駐していることが前提。
+
+収集にあたっては `systemctl` の癖が2つある。
+
+- **存在しないユニットでも `systemctl show` は `Result=success` / `ExecMainStatus=0` を返す。**
+  終了ステータスも0なので、コマンドの成否では区別できない。`LoadState` を併せて取り、
+  `loaded` のときだけ実行結果を読む（1行も返らないのは、問い合わせ自体に失敗したとき）
+- **`NextElapseUSecRealtime` が入るのは `OnCalendar` のタイマーだけ。** `OnUnitActiveSec` などの
+  単調時計のタイマーでは空になり、`NextElapseUSecMonotonic` は `5d 20h 47min` のような
+  人間向けの経過時間でそのままでは使えない。`systemctl list-timers --all -o json` の `next` は
+  どちらのタイマーでも epoch マイクロ秒で返るため、空のときはそこから補っている
+  （`--timestamp=unix` は `ExecMainExitTimestamp` には効くが、この2つには効かない）
 
 問い合わせ自体に失敗したユニットは `available: false` として送り、画面では「取得できず」（黄）に
 なる。**このとき通知は出さない。** 取得できていないものを異常として鳴らすと誤検知になるため、
