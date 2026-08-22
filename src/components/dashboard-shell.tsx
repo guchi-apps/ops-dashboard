@@ -1,7 +1,7 @@
 "use client"
 
 import { RefreshCw } from "lucide-react"
-import { useMemo, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
 import { AiUsage } from "@/components/ai-usage"
 import { useDashboardData, type RefreshState } from "@/components/dashboard-data"
 import { GitHubUsage } from "@/components/github-usage"
@@ -12,6 +12,7 @@ import { MonitorTiles, getMonitorStatusText } from "@/components/monitor-tiles"
 import { OnePasswordUsage } from "@/components/onepassword-usage"
 import { StatusStrip } from "@/components/status-strip"
 import { StatusBadge } from "@/components/status-badge"
+import { SwipeTabs } from "@/components/swipe-tabs"
 import { TmuxLegend, TmuxSessionList, TmuxSessionTable } from "@/components/tmux-sessions"
 import { Button } from "@/components/ui/button"
 import { AiUsageCompact, GitHubUsageCompact } from "@/components/usage-compact"
@@ -191,6 +192,33 @@ export function DashboardShell({
 
     const activeTab = useSyncExternalStore(subscribeActiveTab, getStoredTab, getInitialTab)
 
+    // スワイプで切り替えたときにタブ帯が動かないと、いまどこにいるのかが分からなくなる（#136）
+    const tabListRef = useRef<HTMLDivElement>(null)
+    const activeIndex = TAB_IDS.indexOf(activeTab)
+
+    const goToTabAt = useCallback((index: number) => {
+        const tab = TAB_IDS[index]
+        if (tab) storeActiveTab(tab)
+    }, [])
+
+    const goPrevious = useCallback(() => goToTabAt(activeIndex - 1), [goToTabAt, activeIndex])
+    const goNext = useCallback(() => goToTabAt(activeIndex + 1), [goToTabAt, activeIndex])
+
+    useEffect(() => {
+        const list = tabListRef.current
+        const button = list?.querySelector<HTMLElement>(`[data-tab-id="${activeTab}"]`)
+        if (!list || !button) return
+
+        // 選択中のタブが帯からはみ出していたら、少し余白を残して見える位置まで寄せる
+        const listRect = list.getBoundingClientRect()
+        const buttonRect = button.getBoundingClientRect()
+        if (buttonRect.left < listRect.left) {
+            list.scrollBy({ left: buttonRect.left - listRect.left - 16, behavior: "smooth" })
+        } else if (buttonRect.right > listRect.right) {
+            list.scrollBy({ left: buttonRect.right - listRect.right + 16, behavior: "smooth" })
+        }
+    }, [activeTab])
+
     const hosts = useMemo(() => hostStats?.hosts ?? [], [hostStats])
     const tmuxSessions = useMemo(() => collectTmuxSessions(hosts, now), [hosts, now])
     const tmuxSummary = useMemo(() => summarizeTmux(hosts, tmuxSessions), [hosts, tmuxSessions])
@@ -251,6 +279,7 @@ export function DashboardShell({
             <StatusStrip chips={chips} />
 
             <div
+                ref={tabListRef}
                 role="tablist"
                 aria-label="表示の切り替え"
                 className="-mx-3 mb-2.5 mt-1.5 flex gap-1 overflow-x-auto border-b border-border px-3 sm:mx-0 sm:px-0"
@@ -260,6 +289,7 @@ export function DashboardShell({
                         key={tab}
                         type="button"
                         role="tab"
+                        data-tab-id={tab}
                         aria-selected={activeTab === tab}
                         onClick={() => storeActiveTab(tab)}
                         className={cn(
@@ -279,145 +309,154 @@ export function DashboardShell({
                 ))}
             </div>
 
-            {activeTab === "overview" && (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
-                    {hosts.map((host) => (
-                        <div key={host.id} className={hostSpan}>
-                            <HostCard host={host} historyHours={hostStats?.historyHours ?? 24} />
-                        </div>
-                    ))}
+            <SwipeTabs
+                label={TAB_LABELS[activeTab]}
+                contentKey={activeTab}
+                canGoPrevious={activeIndex > 0}
+                canGoNext={activeIndex < TAB_IDS.length - 1}
+                onPrevious={goPrevious}
+                onNext={goNext}
+            >
+                {activeTab === "overview" && (
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
+                        {hosts.map((host) => (
+                            <div key={host.id} className={hostSpan}>
+                                <HostCard host={host} historyHours={hostStats?.historyHours ?? 24} />
+                            </div>
+                        ))}
 
-                    {tmuxSummary.available && (
+                        {tmuxSummary.available && (
+                            <Panel
+                                title="tmux セッション"
+                                className={hosts.length >= 2 ? "xl:col-span-4" : "xl:col-span-6"}
+                                trailing={
+                                    <>
+                                        <StatusBadge tone={tmuxSummary.running > 0 ? "ok" : "neutral"}>
+                                            稼働 {tmuxSummary.running}
+                                        </StatusBadge>
+                                        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                                            入力待ち {tmuxSummary.waiting} · 待機{" "}
+                                            {tmuxSummary.idle + tmuxSummary.stale} · 全
+                                            {tmuxSummary.total}件
+                                            {/* 上限で届かなかった分は一覧に出せないので、内訳が合わない理由を書いておく */}
+                                            {tmuxSummary.untracked > 0 &&
+                                                `（うち ${tmuxSummary.untracked}件 未取得）`}
+                                        </span>
+                                    </>
+                                }
+                            >
+                                <TmuxSessionList
+                                    sessions={tmuxSessions}
+                                    withHostLabel={
+                                        new Set(tmuxSessions.map((session) => session.hostId)).size > 1
+                                    }
+                                />
+                            </Panel>
+                        )}
+
+                        {aiUsage && (
+                            <Panel
+                                title="AI 使用状況"
+                                className="xl:col-span-3"
+                                trailing={
+                                    <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                                        {new Date(aiUsage.fetchedAt).toLocaleTimeString("ja-JP", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                        })}{" "}
+                                        時点
+                                    </span>
+                                }
+                            >
+                                <AiUsageCompact snapshot={aiUsage} now={now} />
+                            </Panel>
+                        )}
+
+                        {githubUsage && githubUsage.status !== "unconfigured" && (
+                            <Panel
+                                title="GitHub"
+                                className="xl:col-span-3"
+                                trailing={
+                                    <span className="ml-auto truncate font-mono text-[10px] text-muted-foreground">
+                                        {githubUsage.org ?? ""}
+                                    </span>
+                                }
+                            >
+                                <GitHubUsageCompact snapshot={githubUsage} now={now} />
+                            </Panel>
+                        )}
+
+                        <Panel
+                            title="監視"
+                            className="md:col-span-2 xl:col-span-6"
+                            trailing={
+                                <>
+                                    {monitorStatus.down > 0 && (
+                                        <StatusBadge tone="danger">DOWN {monitorStatus.down}</StatusBadge>
+                                    )}
+                                    <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                                        {monitorStatus.text}
+                                    </span>
+                                </>
+                            }
+                        >
+                            <MonitorTiles kuma={uptimeKuma} robot={uptimeRobot} />
+                        </Panel>
+                    </div>
+                )}
+
+                {activeTab === "hosts" && (
+                    <div className="space-y-5">
+                        <HostStats />
+                    </div>
+                )}
+
+                {activeTab === "tmux" && (
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
                         <Panel
                             title="tmux セッション"
-                            className={hosts.length >= 2 ? "xl:col-span-4" : "xl:col-span-6"}
+                            className="xl:col-span-2"
                             trailing={
                                 <>
                                     <StatusBadge tone={tmuxSummary.running > 0 ? "ok" : "neutral"}>
                                         稼働 {tmuxSummary.running}
                                     </StatusBadge>
+                                    {/*
+                                        セッションを詳しく見る場所なので、総数まで出す（#61）。
+                                        エージェントは送信を上限で打ち切るため、一覧の行数だけでは
+                                        積み上がっていることに気づけない
+                                    */}
                                     <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                                        入力待ち {tmuxSummary.waiting} · 待機{" "}
-                                        {tmuxSummary.idle + tmuxSummary.stale} · 全
-                                        {tmuxSummary.total}件
-                                        {/* 上限で届かなかった分は一覧に出せないので、内訳が合わない理由を書いておく */}
+                                        入力待ち {tmuxSummary.waiting} · 待機 {tmuxSummary.idle} · 放置{" "}
+                                        {tmuxSummary.stale} · 全{tmuxSummary.total}件
                                         {tmuxSummary.untracked > 0 &&
                                             `（うち ${tmuxSummary.untracked}件 未取得）`}
                                     </span>
                                 </>
                             }
                         >
-                            <TmuxSessionList
-                                sessions={tmuxSessions}
-                                withHostLabel={
-                                    new Set(tmuxSessions.map((session) => session.hostId)).size > 1
-                                }
-                            />
+                            <TmuxSessionTable sessions={tmuxSessions} />
+                            <div className="mt-3">
+                                <TmuxLegend />
+                            </div>
                         </Panel>
-                    )}
 
-                    {aiUsage && (
-                        <Panel
-                            title="AI 使用状況"
-                            className="xl:col-span-3"
-                            trailing={
-                                <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                                    {new Date(aiUsage.fetchedAt).toLocaleTimeString("ja-JP", {
-                                        hour: "2-digit",
-                                        minute: "2-digit",
-                                    })}{" "}
-                                    時点
-                                </span>
-                            }
-                        >
-                            <AiUsageCompact snapshot={aiUsage} now={now} />
+                        <Panel title="内訳">
+                            <TmuxBreakdown sessions={tmuxSessions} hosts={hosts.map((host) => host.label)} />
                         </Panel>
-                    )}
+                    </div>
+                )}
 
-                    {githubUsage && githubUsage.status !== "unconfigured" && (
-                        <Panel
-                            title="GitHub"
-                            className="xl:col-span-3"
-                            trailing={
-                                <span className="ml-auto truncate font-mono text-[10px] text-muted-foreground">
-                                    {githubUsage.org ?? ""}
-                                </span>
-                            }
-                        >
-                            <GitHubUsageCompact snapshot={githubUsage} now={now} />
-                        </Panel>
-                    )}
+                {activeTab === "usage" && (
+                    <div className="space-y-5">
+                        <AiUsage />
+                        <GitHubUsage />
+                        <OnePasswordUsage />
+                    </div>
+                )}
 
-                    <Panel
-                        title="監視"
-                        className="md:col-span-2 xl:col-span-6"
-                        trailing={
-                            <>
-                                {monitorStatus.down > 0 && (
-                                    <StatusBadge tone="danger">DOWN {monitorStatus.down}</StatusBadge>
-                                )}
-                                <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                                    {monitorStatus.text}
-                                </span>
-                            </>
-                        }
-                    >
-                        <MonitorTiles kuma={uptimeKuma} robot={uptimeRobot} />
-                    </Panel>
-                </div>
-            )}
-
-            {activeTab === "hosts" && (
-                <div className="space-y-5">
-                    <HostStats />
-                </div>
-            )}
-
-            {activeTab === "tmux" && (
-                <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
-                    <Panel
-                        title="tmux セッション"
-                        className="xl:col-span-2"
-                        trailing={
-                            <>
-                                <StatusBadge tone={tmuxSummary.running > 0 ? "ok" : "neutral"}>
-                                    稼働 {tmuxSummary.running}
-                                </StatusBadge>
-                                {/*
-                                    セッションを詳しく見る場所なので、総数まで出す（#61）。
-                                    エージェントは送信を上限で打ち切るため、一覧の行数だけでは
-                                    積み上がっていることに気づけない
-                                */}
-                                <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                                    入力待ち {tmuxSummary.waiting} · 待機 {tmuxSummary.idle} · 放置{" "}
-                                    {tmuxSummary.stale} · 全{tmuxSummary.total}件
-                                    {tmuxSummary.untracked > 0 &&
-                                        `（うち ${tmuxSummary.untracked}件 未取得）`}
-                                </span>
-                            </>
-                        }
-                    >
-                        <TmuxSessionTable sessions={tmuxSessions} />
-                        <div className="mt-3">
-                            <TmuxLegend />
-                        </div>
-                    </Panel>
-
-                    <Panel title="内訳">
-                        <TmuxBreakdown sessions={tmuxSessions} hosts={hosts.map((host) => host.label)} />
-                    </Panel>
-                </div>
-            )}
-
-            {activeTab === "usage" && (
-                <div className="space-y-5">
-                    <AiUsage />
-                    <GitHubUsage />
-                    <OnePasswordUsage />
-                </div>
-            )}
-
-            {activeTab === "monitors" && <MonitorSections addMonitorUrl={addMonitorUrl} />}
+                {activeTab === "monitors" && <MonitorSections addMonitorUrl={addMonitorUrl} />}
+            </SwipeTabs>
         </div>
     )
 }
