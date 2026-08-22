@@ -1,3 +1,4 @@
+import { trackRepositoryVisibility } from "@/lib/github-repo-visibility"
 import { describeError, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
 import {
     isUsageCacheFresh,
@@ -42,14 +43,18 @@ const DEFAULT_CACHE_SECONDS = 300
  */
 const ERROR_CACHE_SECONDS = 30
 
-/** private リポジトリ一覧の取得ページ数の上限（1ページ100件） */
+/** リポジトリ一覧の取得ページ数の上限（1ページ100件） */
 const MAX_REPO_PAGES = 5
 
 interface UsageItem {
+    /** 使用が発生した時刻（ISO 8601）。公開/非公開をその時点の状態で判定するのに使う */
+    date: string
     product: string
     sku: string
     unitType: string
     quantity: number
+    grossAmount: number
+    discountAmount: number
     netAmount: number
     repositoryName?: string | null
 }
@@ -60,6 +65,7 @@ interface UsageReportResponse {
 
 interface OrgRepository {
     name: string
+    private: boolean
 }
 
 interface OrgResponse {
@@ -109,24 +115,27 @@ async function githubFetch<T>(path: string, token: string, label: string): Promi
 }
 
 /**
- * 無料枠を消費するのは private リポジトリのみのため、判定用に名前の集合を作る。
+ * 組織のリポジトリと、その現在の公開状態を集める。
  * 課金レポート側は public/private を返さないので、別途この一覧と突き合わせる必要がある。
+ *
+ * 非公開のものだけでなく全件を取るのは、公開状態の履歴（{@link trackRepositoryVisibility}）に
+ * 「いつ公開になったか」を残すため。公開のリポジトリを記録しないと切り替えを検出できない。
  */
-async function fetchPrivateRepositoryNames(org: string, token: string): Promise<Set<string>> {
-    const names = new Set<string>()
+async function fetchRepositoryVisibility(org: string, token: string): Promise<Map<string, boolean>> {
+    const visibility = new Map<string, boolean>()
 
     for (let page = 1; page <= MAX_REPO_PAGES; page++) {
         const repos = await githubFetch<OrgRepository[]>(
-            `/orgs/${encodeURIComponent(org)}/repos?type=private&per_page=100&page=${page}`,
+            `/orgs/${encodeURIComponent(org)}/repos?type=all&per_page=100&page=${page}`,
             token,
-            "非公開リポジトリ一覧"
+            "リポジトリ一覧"
         )
 
-        for (const repo of repos) names.add(repo.name)
+        for (const repo of repos) visibility.set(repo.name, repo.private)
         if (repos.length < 100) break
     }
 
-    return names
+    return visibility
 }
 
 /**
@@ -181,49 +190,69 @@ function getAllowanceLimitMinutes(planName: string | null): number {
     return FALLBACK_ALLOWANCE_MINUTES
 }
 
+/** 課金明細から積み上げた、その月のActions全体の合計 */
+interface ActionsTotals {
+    minutes: number
+    storageGigabyteHours: number
+    grossAmountUsd: number
+    discountAmountUsd: number
+    netAmountUsd: number
+}
+
 /**
  * 今月のActions使用状況を課金レポートから組み立てる。
  *
  * 年月を明示せずに叩くと、全リポジトリの合計が単一のリポジトリ名に束ねられた状態で返るため、
  * リポジトリ別の内訳を出すには必ず year / month を指定する必要がある。
+ *
+ * 無料枠を消費するのは非公開リポジトリの分だけだが、課金レポートは公開/非公開を返さない。
+ * 現在の公開状態だけで判定すると月の途中で公開へ切り替えたリポジトリの分が抜けるため、
+ * {@link trackRepositoryVisibility} が持つ履歴を使って「使用時点の状態」で判定する（#151）。
  */
 async function fetchActionsUsage(org: string, token: string, now: Date): Promise<GitHubActionsUsage> {
     const year = now.getUTCFullYear()
     const month = now.getUTCMonth() + 1
 
-    const [report, privateNames, planName] = await Promise.all([
+    const [report, repoVisibility, planName] = await Promise.all([
         githubFetch<UsageReportResponse>(
             `/organizations/${encodeURIComponent(org)}/settings/billing/usage?year=${year}&month=${month}`,
             token,
             "課金レポート"
         ),
-        fetchPrivateRepositoryNames(org, token),
+        fetchRepositoryVisibility(org, token),
         fetchOrgPlanName(org, token),
     ])
 
+    const visibility = await trackRepositoryVisibility(repoVisibility, now)
     const items = (report.usageItems ?? []).filter((item) => item.product === "actions")
 
     const minutesByRepo = new Map<string, { minutes: number; allowanceMinutes: number }>()
-    let totalMinutes = 0
     let allowanceMinutes = 0
-    let storageGigabyteHours = 0
-    let netAmountUsd = 0
+    const totals: ActionsTotals = {
+        minutes: 0,
+        storageGigabyteHours: 0,
+        grossAmountUsd: 0,
+        discountAmountUsd: 0,
+        netAmountUsd: 0,
+    }
 
     for (const item of items) {
-        netAmountUsd += item.netAmount
+        totals.grossAmountUsd += item.grossAmount
+        totals.discountAmountUsd += item.discountAmount
+        totals.netAmountUsd += item.netAmount
 
         if (item.unitType === "GigabyteHours") {
-            storageGigabyteHours += item.quantity
+            totals.storageGigabyteHours += item.quantity
             continue
         }
 
         if (item.unitType !== "Minutes") continue
 
         const repoName = item.repositoryName ?? "(不明)"
-        const isPrivate = privateNames.has(repoName)
-        const consumed = isPrivate ? item.quantity * getRunnerMultiplier(item.sku) : 0
+        const wasPrivate = visibility.wasPrivateAt(repoName, new Date(item.date))
+        const consumed = wasPrivate ? item.quantity * getRunnerMultiplier(item.sku) : 0
 
-        totalMinutes += item.quantity
+        totals.minutes += item.quantity
         allowanceMinutes += consumed
 
         const current = minutesByRepo.get(repoName) ?? { minutes: 0, allowanceMinutes: 0 }
@@ -237,16 +266,19 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
         .map(([name, value]) => ({
             name,
             minutes: Math.round(value.minutes),
-            isPrivate: privateNames.has(name),
+            isPrivate: visibility.isPrivateNow(name),
+            allowanceMinutes: Math.round(value.allowanceMinutes),
         }))
         .sort((a, b) => b.minutes - a.minutes)
 
     return {
         allowanceMinutes: Math.round(allowanceMinutes),
         allowanceLimitMinutes: getAllowanceLimitMinutes(planName),
-        totalMinutes: Math.round(totalMinutes),
-        storageGigabyteHours: roundTo(storageGigabyteHours, 2),
-        netAmountUsd: roundTo(netAmountUsd, 2),
+        totalMinutes: Math.round(totals.minutes),
+        storageGigabyteHours: roundTo(totals.storageGigabyteHours, 2),
+        grossAmountUsd: roundTo(totals.grossAmountUsd, 2),
+        discountAmountUsd: roundTo(totals.discountAmountUsd, 2),
+        netAmountUsd: roundTo(totals.netAmountUsd, 2),
         repositories,
         periodStartsAt: startOfMonthUtc(now).toISOString(),
         resetsAt: startOfNextMonthUtc(now).toISOString(),
