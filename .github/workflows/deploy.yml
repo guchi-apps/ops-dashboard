@@ -297,7 +297,9 @@ jobs:
             # 画面に並べる順番（先頭がVPS、以降は識別子順）。秘密ではないため直接指定する
             update_env HOST_STATS_ORDER "vps"
             update_env SIGNALY_LOGIN_WEBHOOK_URL "$SIGNALY_LOGIN_WEBHOOK_URL"
-            update_env SIGNALY_ALERT_WEBHOOK_URL "$SIGNALY_ALERT_WEBHOOK_URL"
+            # secret未登録でもデプロイを落とさない（未設定なら通知しないだけ。#75）。
+            # このスクリプトは set -u の下で動くため、素の $VAR だと未登録の間は必ず失敗する
+            update_env SIGNALY_ALERT_WEBHOOK_URL "${SIGNALY_ALERT_WEBHOOK_URL:-}"
             update_env ANTHROPIC_OAUTH_REFRESH_TOKEN "$ANTHROPIC_OAUTH_REFRESH_TOKEN"
             update_env OPENAI_CHATGPT_REFRESH_TOKEN "$OPENAI_CHATGPT_REFRESH_TOKEN"
             update_env OPENAI_CHATGPT_ACCOUNT_ID "$OPENAI_CHATGPT_ACCOUNT_ID"

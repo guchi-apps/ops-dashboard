@@ -312,6 +312,12 @@ HOST_STATS_TIMERS=guchi@aide-zaim-sync,guchi@aide-zaim-keep-alive
 なる。**このとき通知は出さない。** 取得できていないものを異常として鳴らすと誤検知になるため、
 「ジョブが壊れている」と「状態が分からない」を分けている。
 
+**設置後の確認に `--print` を使わないこと。** `--print` はサンドボックスの外で走るため、
+timer 経由では読めないユニットでも手では読めてしまう（tmux で同じ壊れ方をした前例が
+[issue #65](https://github.com/guchi-apps/ops-dashboard/issues/65)）。
+`sudo systemctl start ops-dashboard-host-stats.service` で1回走らせ、画面に「取得できず」が
+出ていないかで確かめる。
+
 ダッシュボード側は受信のたびに判定し、次のいずれかを異常として扱う。
 
 | 状態 | 条件 |
