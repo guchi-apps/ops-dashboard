@@ -68,22 +68,6 @@ interface OrgRepository {
     private: boolean
 }
 
-/**
- * 月次の集計（`settings/billing/usage/summary`）。
- * 日次明細と違い、月の初日からの合計と、消費額・割引額・課金額がSKUごとに揃って返る。
- */
-interface UsageSummaryItem {
-    unitType: string
-    grossQuantity: number
-    grossAmount: number
-    discountAmount: number
-    netAmount: number
-}
-
-interface UsageSummaryResponse {
-    usageItems?: UsageSummaryItem[] | null
-}
-
 interface OrgResponse {
     plan?: { name?: string | null } | null
 }
@@ -155,33 +139,6 @@ async function fetchRepositoryVisibility(org: string, token: string): Promise<Ma
 }
 
 /**
- * 月次の集計を取る。日次明細は組織が新しい課金基盤へ移行した日以降しか返らないことがあり、
- * 月初からの合計や課金額はこちらでないと欠ける。
- *
- * 明細さえあれば合計は自前でも出せるため、ここで落ちてGitHubセクション全体を
- * エラーにするのは割に合わない。失敗しても例外にせず null を返す。
- */
-async function fetchActionsSummary(
-    org: string,
-    token: string,
-    year: number,
-    month: number
-): Promise<UsageSummaryItem[] | null> {
-    try {
-        const data = await githubFetch<UsageSummaryResponse>(
-            `/organizations/${encodeURIComponent(org)}/settings/billing/usage/summary` +
-                `?year=${year}&month=${month}&product=actions`,
-            token,
-            "課金レポートの集計"
-        )
-        return data.usageItems ?? []
-    } catch (error) {
-        console.warn("GitHub usage: 課金レポートの集計取得に失敗", describeError(error))
-        return null
-    }
-}
-
-/**
  * 無料枠の上限を引くための組織のプラン名を取得する。
  *
  * 上限はゲージの分母でしかなく、ここで落ちてGitHubセクション全体をエラーにするのは割に合わないため、
@@ -233,36 +190,13 @@ function getAllowanceLimitMinutes(planName: string | null): number {
     return FALLBACK_ALLOWANCE_MINUTES
 }
 
-/** 日次明細と月次集計のどちらから求めたかにかかわらず、月全体の合計として使う値 */
+/** 課金明細から積み上げた、その月のActions全体の合計 */
 interface ActionsTotals {
     minutes: number
     storageGigabyteHours: number
     grossAmountUsd: number
     discountAmountUsd: number
     netAmountUsd: number
-}
-
-/** 月次集計から月全体の合計を取り出す。分数とストレージは単位で見分ける */
-function totalsFromSummary(items: UsageSummaryItem[]): ActionsTotals {
-    const totals: ActionsTotals = {
-        minutes: 0,
-        storageGigabyteHours: 0,
-        grossAmountUsd: 0,
-        discountAmountUsd: 0,
-        netAmountUsd: 0,
-    }
-
-    for (const item of items) {
-        totals.grossAmountUsd += item.grossAmount
-        totals.discountAmountUsd += item.discountAmount
-        totals.netAmountUsd += item.netAmount
-
-        const unit = item.unitType.toLowerCase()
-        if (unit.includes("minute")) totals.minutes += item.grossQuantity
-        else if (unit.includes("gigabyte")) totals.storageGigabyteHours += item.grossQuantity
-    }
-
-    return totals
 }
 
 /**
@@ -279,14 +213,13 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
     const year = now.getUTCFullYear()
     const month = now.getUTCMonth() + 1
 
-    const [report, repoVisibility, summary, planName] = await Promise.all([
+    const [report, repoVisibility, planName] = await Promise.all([
         githubFetch<UsageReportResponse>(
             `/organizations/${encodeURIComponent(org)}/settings/billing/usage?year=${year}&month=${month}`,
             token,
             "課金レポート"
         ),
         fetchRepositoryVisibility(org, token),
-        fetchActionsSummary(org, token, year, month),
         fetchOrgPlanName(org, token),
     ])
 
@@ -295,7 +228,7 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
 
     const minutesByRepo = new Map<string, { minutes: number; allowanceMinutes: number }>()
     let allowanceMinutes = 0
-    const fromReport: ActionsTotals = {
+    const totals: ActionsTotals = {
         minutes: 0,
         storageGigabyteHours: 0,
         grossAmountUsd: 0,
@@ -304,12 +237,12 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
     }
 
     for (const item of items) {
-        fromReport.grossAmountUsd += item.grossAmount
-        fromReport.discountAmountUsd += item.discountAmount
-        fromReport.netAmountUsd += item.netAmount
+        totals.grossAmountUsd += item.grossAmount
+        totals.discountAmountUsd += item.discountAmount
+        totals.netAmountUsd += item.netAmount
 
         if (item.unitType === "GigabyteHours") {
-            fromReport.storageGigabyteHours += item.quantity
+            totals.storageGigabyteHours += item.quantity
             continue
         }
 
@@ -319,7 +252,7 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
         const wasPrivate = visibility.wasPrivateAt(repoName, new Date(item.date))
         const consumed = wasPrivate ? item.quantity * getRunnerMultiplier(item.sku) : 0
 
-        fromReport.minutes += item.quantity
+        totals.minutes += item.quantity
         allowanceMinutes += consumed
 
         const current = minutesByRepo.get(repoName) ?? { minutes: 0, allowanceMinutes: 0 }
@@ -328,9 +261,6 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
             allowanceMinutes: current.allowanceMinutes + consumed,
         })
     }
-
-    // 月次集計が取れたときはそちらを優先する。日次明細が月初まで遡れない組織でも合計が欠けないため
-    const totals = summary ? totalsFromSummary(summary) : fromReport
 
     const repositories: GitHubActionsRepoUsage[] = [...minutesByRepo.entries()]
         .map(([name, value]) => ({
