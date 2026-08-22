@@ -54,6 +54,10 @@ PORT=17096 NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co \
 **確認後は必ずそのルートを削除し、`.next` を消してから `npx tsc --noEmit` をやり直す**
 （消したルートの型定義が `.next/dev/types/` に残り、存在しないモジュールとして型エラーになる）。
 
+ダッシュボード本体（`DashboardShell`）は確認用ルートからでもそのまま描画できる。`DashboardDataProvider`
+に `initial={{ uptimeKuma: [], uptimeRobot: [] }}` を渡せば、実データが無くてもタブの構造まで
+HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
+
 ## マルチエージェント運用（GitHub Actions 無人実行）
 
 `@claude` コメントを起点に、計画提示〜実装〜develop向けPR作成までを GitHub Actions 上で無人実行する。
