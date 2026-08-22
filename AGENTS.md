@@ -58,6 +58,25 @@ PORT=17096 NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co \
 に `initial={{ uptimeKuma: [], uptimeRobot: [] }}` を渡せば、実データが無くてもタブの構造まで
 HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
 
+## GitHubの課金・使用量API
+
+**Actions無料枠の「消費した分」を直接返すAPIは存在しない。** 旧 `GET /orgs/{org}/settings/billing/actions`
+（`total_minutes_used` / `included_minutes` を返していた）と `.../shared-storage` は **HTTP 410 で廃止**され、
+`GET /organizations/{org}/settings/billing/usage`（日次明細）と `.../usage/summary`（月次集計）へ統合された。
+統合後のレスポンスには「無料枠を消費したか」を示す項目が無いため、ダッシュボードの無料枠ゲージは
+**明細から導出した推定値**である。次の点に注意する。
+
+- **無料枠を消費するのは非公開リポジトリの分だけ**だが、課金レポートは公開/非公開を返さない。
+  リポジトリ一覧と突き合わせるしかないが、**「今」の公開状態で判定すると、月の途中で公開へ
+  切り替えたリポジトリの非公開だった期間の分が丸ごと抜ける**（#151。実測で40%近くずれた）。
+  `src/lib/github-repo-visibility.ts` が公開状態を `.data/` に記録し、使用日時点の状態で判定する。
+  記録が始まる前の期間は `GH_USAGE_PRIVATE_UNTIL` で補う
+- **日次明細は月初まで遡れないことがある**（組織が新しい課金基盤へ移行した日以降しか返らない）。
+  月全体の合計と課金額は `usage/summary` から取る
+- `year` / `month` を付けずに叩くと、全リポジトリの合計が単一のリポジトリ名に束ねられて返る。
+  リポジトリ別の内訳を出すときは必ず指定する
+- 課金レポートのエンドポイントは **fine-grained PAT に非対応**。classic PAT（`repo` と `read:org`）を使う
+
 ## マルチエージェント運用（GitHub Actions 無人実行）
 
 `@claude` コメントを起点に、計画提示〜実装〜develop向けPR作成までを GitHub Actions 上で無人実行する。

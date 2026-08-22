@@ -12,8 +12,14 @@ export interface GitHubActionsRepoUsage {
     /**
      * public リポジトリのActionsは無制限に無料のため、無料枠を消費するのは private のみ。
      * 内訳を見たときに、なぜ合計と無料枠の消費量が一致しないのかが分かるように持たせる。
+     * ここに入るのは「今」の公開状態で、月の途中で切り替えた場合は下記と食い違う。
      */
     isPrivate: boolean
+    /**
+     * このリポジトリが無料枠を消費した分数。非公開だった期間の分だけが入る。
+     * 月の途中で公開へ切り替えたリポジトリは `isPrivate` が false でもここが 0 にならない。
+     */
+    allowanceMinutes: number
 }
 
 export interface GitHubActionsUsage {
@@ -25,6 +31,10 @@ export interface GitHubActionsUsage {
     totalMinutes: number
     /** 今月のストレージ消費（GB時間）。無料枠は容量(MB)基準のため割合は出せず、実績値のみ表示する */
     storageGigabyteHours: number
+    /** 今月の消費額（USD、割引前）。GitHubの画面の "consumed usage" にあたる */
+    grossAmountUsd: number
+    /** 今月の割引額（USD）。公開リポジトリの分と無料枠に収まった分が引かれる */
+    discountAmountUsd: number
     /** 今月の課金額（USD）。無料枠に収まっていれば 0 */
     netAmountUsd: number
     /** 実行時間の多い順 */

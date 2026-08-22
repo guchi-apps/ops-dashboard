@@ -68,7 +68,7 @@ function RepositoryBreakdown({ actions }: { actions: GitHubActionsUsage }) {
             ) : (
                 <>
                     <p className="text-[10px] sm:text-xs text-muted-foreground">
-                        公開リポジトリのActionsは無制限に無料のため、無料枠を消費しない
+                        公開リポジトリのActionsは無制限に無料。無料枠を消費するのは非公開だった期間の分だけ
                     </p>
                     <ul className="space-y-0.5 text-[10px] sm:text-xs">
                         {listed.map((repo) => (
@@ -76,7 +76,11 @@ function RepositoryBreakdown({ actions }: { actions: GitHubActionsUsage }) {
                                 <span className="min-w-0 truncate">
                                     {repo.name}
                                     {!repo.isPrivate && (
-                                        <span className="ml-1 opacity-70">公開</span>
+                                        <span className="ml-1 opacity-70">
+                                            {repo.allowanceMinutes > 0
+                                                ? `公開（無料枠 ${formatNumber(repo.allowanceMinutes)}分）`
+                                                : "公開"}
+                                        </span>
                                     )}
                                 </span>
                                 <span className="shrink-0 font-mono">{formatNumber(repo.minutes)}分</span>
@@ -126,6 +130,9 @@ function ActionsCard({ actions, now }: { actions: GitHubActionsUsage; now: numbe
 
             <CardFooter
                 rows={[
+                    // GitHubの課金画面と同じ「消費額 − 割引額 ＝ 課金額」を並べる
+                    { label: "消費額", value: `$${actions.grossAmountUsd.toFixed(2)}` },
+                    { label: "割引額", value: `-$${actions.discountAmountUsd.toFixed(2)}` },
                     { label: "今月の課金額", value: `$${actions.netAmountUsd.toFixed(2)}` },
                     // 無料枠は容量(MB)で決まるため割合は出せず、消費量の実績だけを添える
                     { label: "ストレージ", value: `${actions.storageGigabyteHours} GB時間` },
