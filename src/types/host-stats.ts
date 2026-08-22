@@ -16,6 +16,46 @@ export interface HostStatsService {
     active: boolean
 }
 
+/**
+ * 定期ジョブ（systemd timer）1本分の状態。
+ *
+ * `services` の `systemctl is-active` では oneshot のジョブを扱えない。実行していない間は
+ * ずっと `inactive` で、成功して終わったのか失敗して終わったのかを区別できないため、
+ * タイマーと .service の両方から「最後にいつ動いて、どう終わったか」を集めて別に持つ（#75）。
+ */
+export interface HostStatsTimer {
+    /** 設定に書かれたままの名前。ユーザー単位のユニットは `guchi@aide-zaim-sync` の形になる */
+    name: string
+    /** 実際に問い合わせた systemd ユニット名（`aide-zaim-sync.timer`） */
+    unit: string
+    /** ユーザー単位のユニットのときだけ入る、そのユーザー名 */
+    user?: string
+    /**
+     * 状態を取得できたか。
+     * false は「ジョブが壊れている」ではなく「エージェントから systemd に問い合わせられなかった」
+     * ことを表す。取得できていないものを異常として鳴らすと誤検知になるため、両者を区別する。
+     */
+    available: boolean
+    /** ユニットが存在するか（LoadState=loaded） */
+    loaded?: boolean
+    /** タイマーが起動しているか（ActiveState=active） */
+    active?: boolean
+    /** UnitFileState（enabled / disabled / static / masked など） */
+    enabled?: string
+    /** タイマーが最後に発火した時刻（ISO 8601） */
+    lastTriggerAt?: string
+    /** 次に発火する予定の時刻（ISO 8601）。予定を持たないタイマーでは undefined */
+    nextElapseAt?: string
+    /** 直近の実行結果（systemd の Result。success / exit-code / timeout など） */
+    result?: string
+    /** 直近の実行の終了ステータス */
+    exitStatus?: number
+    /** 直近の実行が終わった時刻（ISO 8601） */
+    lastFinishedAt?: string
+    /** いま実行中か。実行中は「予定を過ぎている」と数えない */
+    running?: boolean
+}
+
 /** 資源を食っている上位プロセス。CPU順とメモリ順で同じ形のものを別々に持つ */
 export interface HostStatsProcess {
     name: string
@@ -141,6 +181,11 @@ export interface HostStatsReport {
      */
     tmuxSessionTotal?: number
     services: HostStatsService[]
+    /**
+     * 定期ジョブ（systemd timer）の状態。
+     * `HOST_STATS_TIMERS` を設定していないホストは項目ごと送ってこないため undefined になる。
+     */
+    timers?: HostStatsTimer[]
 }
 
 /** 保管済みの最新レポート。鮮度判定にはサーバー側で打った receivedAt を使う */

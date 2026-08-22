@@ -9,11 +9,23 @@ import {
 } from "@/components/metric-card"
 import { SectionHeading } from "@/components/section-heading"
 import { Sparkline } from "@/components/sparkline"
-import { StatusBadge } from "@/components/status-badge"
+import { StatusBadge, type StatusTone } from "@/components/status-badge"
 import { formatAge, formatBytes, formatUptime } from "@/lib/host-stats/format"
 import { pickSeries as pick, sumSeries } from "@/lib/host-stats/history"
+import { describeTimer, evaluateTimers, type TimerState } from "@/lib/host-stats/timers"
 import { cn } from "@/lib/utils"
 import type { HostStatsHostView, HostStatsTmuxSession } from "@/types/host-stats"
+
+/** 定期ジョブの状態と色の対応。unknown は「壊れている」ではないので警告どまりにする */
+const TIMER_TONES: Record<TimerState, StatusTone> = {
+    ok: "ok",
+    running: "info",
+    failed: "danger",
+    overdue: "danger",
+    stopped: "danger",
+    missing: "danger",
+    unknown: "warn",
+}
 
 /** 温度グラフの縦軸の最小の幅（℃）。変動が小さいときに波形が暴れて見えないようにする */
 const MIN_TEMPERATURE_SPAN = 10
@@ -79,6 +91,8 @@ function HostSection({
     if (!latest.disks?.length || !latest.loadAverage) return null
 
     const services = latest.services ?? []
+    // 定期ジョブ。HOST_STATS_TIMERS を設定していないホストでは undefined で届く（#75）
+    const timerStatuses = evaluateTimers(latest.timers)
     const dimmed = !online
     const chartClass = "h-6 w-full"
     const historyLabelSuffix = `直近${historyHours}時間の推移`
@@ -284,6 +298,22 @@ function HostSection({
                     </StatusBadge>
                 )}
             </div>
+
+            {timerStatuses.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                    {timerStatuses.map((status) => (
+                        <StatusBadge
+                            key={status.timer.name}
+                            tone={TIMER_TONES[status.state]}
+                            withDot
+                        >
+                            <span className="opacity-50">job</span>
+                            {status.timer.name}
+                            <span className="opacity-70">{describeTimer(status)}</span>
+                        </StatusBadge>
+                    ))}
+                </div>
+            )}
 
             {tmuxSessions.length > 0 && (
                 <div className="flex flex-wrap gap-2">

@@ -29,12 +29,20 @@ function getDataDir(): string {
     return process.env.HOST_STATS_DATA_DIR || path.join(process.cwd(), ".data", "host-stats")
 }
 
+/**
+ * ホスト1台分の保存先。最新スナップショット・履歴・通知の抑止状態を同じ場所へ置く。
+ * `.data/` はデプロイの削除対象に入らないため、再デプロイをまたいでも消えない。
+ */
+export function getHostDataDir(id: string): string {
+    return path.join(getDataDir(), id)
+}
+
 function getSnapshotPath(id: string): string {
-    return path.join(getDataDir(), id, "latest.json")
+    return path.join(getHostDataDir(id), "latest.json")
 }
 
 function getHistoryPath(id: string): string {
-    return path.join(getDataDir(), id, "history.jsonl")
+    return path.join(getHostDataDir(id), "history.jsonl")
 }
 
 function readPositiveInt(name: string, fallback: number): number {
@@ -70,7 +78,7 @@ function serialize<T>(task: () => Promise<T>): Promise<T> {
     return run
 }
 
-async function writeFileAtomic(file: string, contents: string): Promise<void> {
+export async function writeFileAtomic(file: string, contents: string): Promise<void> {
     await fs.mkdir(path.dirname(file), { recursive: true })
 
     // 書き込み中に読まれても壊れないよう、一時ファイル経由で差し替える

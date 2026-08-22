@@ -221,6 +221,8 @@ sudo systemctl start ops-dashboard-host-stats.service
 
 並び順は `HOST_STATS_ORDER`（識別子をカンマ区切り、デプロイ時に `vps` を指定している）、オフライン判定のしきい値と履歴の長さは `HOST_STATS_OFFLINE_AFTER_SECONDS` / `HOST_STATS_HISTORY_HOURS` で変えられる。
 
+定期ジョブの通知を出すには `SIGNALY_ALERT_WEBHOOK_URL` を設定する（未設定なら画面表示だけが動き、通知は出ない）。1Passwordの `apps/ops-dashboard` アイテムの `alert-webhook-url` フィールドが正。判定のしきい値は `HOST_STATS_TIMER_GRACE_SECONDS`（既定3600）と `HOST_STATS_TIMER_FAILURE_THRESHOLD`（既定1）で変えられる。
+
 ### 各ホストへのエージェント設置
 
 `scripts/host-stats/` の3ファイルを配置する。エージェントはbashとcurlだけで動き、常駐しない（1分ごとに起動して終了する短命プロセス）。VPS・サブPCとも手順は同じで、設定ファイルの中身だけが違う。
@@ -285,6 +287,71 @@ Kumaの Accepted Status Codes に `401` を足せば「起動していればup�
 
 送信間隔を変えるときは `ops-dashboard-host-stats.timer` の `OnUnitActiveSec` を変更する。
 間隔を `HOST_STATS_OFFLINE_AFTER_SECONDS`（既定300秒）より長くすると常時OFFLINE表示になるため、合わせて調整すること。
+
+### 定期ジョブ（systemd timer）の監視と通知
+
+[issue #75](https://github.com/guchi-apps/ops-dashboard/issues/75)。`HOST_STATS_SERVICES` とは別枠で、
+`HOST_STATS_TIMERS` に監視したいタイマーをカンマ区切りで書く。`.timer` は省略してよい。
+
+```
+HOST_STATS_TIMERS=guchi@aide-zaim-sync,guchi@aide-zaim-keep-alive
+```
+
+**`systemctl is-active` では定期ジョブを見られないため、別の仕組みにしてある。** `Type=oneshot` の
+ジョブは実行していない間ずっと `inactive` で、それが正常な状態でもある。成功して終わったのか
+失敗して終わったのかを区別できない。そこでタイマー側から「最後の発火と次回予定」を、
+`.service` 側から `Result` / `ExecMainStatus` / `ExecMainExitTimestamp` を読み、両方を送っている。
+
+**`<ユーザー>@` を前置すると、ユーザー単位のユニット**（`~/.config/systemd/user/`）を指す。
+エージェントは root で動くため `systemctl --user` をそのまま呼べず、
+`systemctl --machine=<ユーザー>@.host --user` で当該ユーザーのマネージャに問い合わせる。
+`machinectl` / `systemd-container` は入っていなくてよい（同一ホストの `<ユーザー>@.host` は
+`/run/user/<UID>/bus` へ直接繋ぐだけ）。`ProtectHome=read-only` のままでも繋がる
+（読み取り専用マウントが弾くのは通常ファイル・ディレクトリ・シンボリックリンクへの書き込みで、
+ソケットへの `connect` は妨げられない）。**`Linger=yes`**（`loginctl show-user <ユーザー>`）で
+ユーザーマネージャが常駐していることが前提。
+
+収集にあたっては `systemctl` の癖が2つある。
+
+- **存在しないユニットでも `systemctl show` は `Result=success` / `ExecMainStatus=0` を返す。**
+  終了ステータスも0なので、コマンドの成否では区別できない。`LoadState` を併せて取り、
+  `loaded` のときだけ実行結果を読む（1行も返らないのは、問い合わせ自体に失敗したとき）
+- **`NextElapseUSecRealtime` が入るのは `OnCalendar` のタイマーだけ。** `OnUnitActiveSec` などの
+  単調時計のタイマーでは空になり、`NextElapseUSecMonotonic` は `5d 20h 47min` のような
+  人間向けの経過時間でそのままでは使えない。`systemctl list-timers --all -o json` の `next` は
+  どちらのタイマーでも epoch マイクロ秒で返るため、空のときはそこから補っている
+  （`--timestamp=unix` は `ExecMainExitTimestamp` には効くが、この2つには効かない）
+
+問い合わせ自体に失敗したユニットは `available: false` として送り、画面では「取得できず」（黄）に
+なる。**このとき通知は出さない。** 取得できていないものを異常として鳴らすと誤検知になるため、
+「ジョブが壊れている」と「状態が分からない」を分けている。
+
+**設置後の確認に `--print` を使わないこと。** `--print` はサンドボックスの外で走るため、
+timer 経由では読めないユニットでも手では読めてしまう（tmux で同じ壊れ方をした前例が
+[issue #65](https://github.com/guchi-apps/ops-dashboard/issues/65)）。
+`sudo systemctl start ops-dashboard-host-stats.service` で1回走らせ、画面に「取得できず」が
+出ていないかで確かめる。
+
+ダッシュボード側は受信のたびに判定し、次のいずれかを異常として扱う。
+
+| 状態 | 条件 |
+| --- | --- |
+| 失敗 | 直近の実行の `Result` が `success` 以外 |
+| 未実行 | 次回予定を `HOST_STATS_TIMER_GRACE_SECONDS`（既定3600秒）過ぎても発火していない |
+| タイマー停止 | タイマーが `inactive`、または `masked` |
+| ユニットが無い | `LoadState` が `loaded` でない |
+
+**「失敗していない壊れ方」を拾うのが目的の半分**なので、失敗だけでなく未実行・停止・消失も見る。
+タイマーを止めた場合は失敗ログが1行も出ないまま静かに止まるため、失敗より気づきにくい。
+
+**通知は状態が変わったときだけ送る。** 毎時のジョブが1日壊れれば24回失敗し、エージェントは毎分
+同じ状態を送ってくる。そのまま流すと通知が無視されるようになるため、最後に通知した状態を
+`.data/host-stats/<識別子>/timer-alerts.json` に持ち、異常になったときに1回・復旧したときに1回だけ
+鳴らす。この置き場はデプロイの削除対象に入らないので、再デプロイで鳴り直すことはない。
+
+`HOST_STATS_TIMER_FAILURE_THRESHOLD` を上げると、その回数だけ続けて失敗するまで通知を待つ。
+**数えるのは受信回数ではなく実行回数**（`ExecMainExitTimestamp` が変わった回数）で、
+同じ失敗を毎分受け取ってもしきい値は進まない。
 
 ### 受信APIの仕様
 

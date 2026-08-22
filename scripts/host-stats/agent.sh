@@ -13,6 +13,10 @@
 #   HOST_STATS_LABEL        任意。画面の見出しに使う表示名（既定: ホスト名）
 #   HOST_STATS_DISK_PATHS   任意。監視するマウントポイントをカンマ区切りで（既定: /）
 #   HOST_STATS_SERVICES     任意。死活を見る systemd サービスをカンマ区切りで
+#   HOST_STATS_TIMERS       任意。実行結果を見る systemd timer をカンマ区切りで。
+#                           `aide-zaim-sync` のようにシステム単位のユニット名を書くか、
+#                           `guchi@aide-zaim-sync` のように `<ユーザー>@` を前置してユーザー
+#                           単位のユニットを指す（`.timer` は省略してよい）
 #   HOST_STATS_TIMEOUT      任意。送信のタイムアウト秒（既定: 15）
 #   HOST_STATS_TMUX_SOCKET_ROOT
 #                           任意。tmuxのソケットを探すディレクトリ（既定: /tmp）
@@ -50,6 +54,7 @@ TMUX_SHELL_COMMANDS="bash zsh sh fish dash ksh csh tcsh"
 : "${HOST_STATS_TOKEN:?HOST_STATS_TOKEN が未設定です}"
 DISK_PATHS="${HOST_STATS_DISK_PATHS:-/}"
 SERVICES="${HOST_STATS_SERVICES:-}"
+TIMERS="${HOST_STATS_TIMERS:-}"
 TIMEOUT="${HOST_STATS_TIMEOUT:-15}"
 TMUX_SOCKET_ROOT="${HOST_STATS_TMUX_SOCKET_ROOT:-/tmp}"
 SESSION_STATE_SUBDIR="${HOST_STATS_SESSION_STATE_SUBDIR:-.local/state/issue-deck/sessions}"
@@ -191,6 +196,143 @@ collect_services() {
         first=0
         printf '{"name":"%s","state":"%s"}' "$(json_escape "$name")" "$(json_escape "$state")"
     done < <(printf '%s\n' "$SERVICES" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+    printf ']'
+}
+
+# systemctl show の出力から1つのプロパティを取り出す（値に = を含んでも壊れないようにする）
+show_value() {
+    printf '%s\n' "$2" | sed -n "s/^$1=//p" | head -1
+}
+
+# systemd の時刻表記（"Fri 2026-08-21 14:35:35 UTC" / "@1787322947"）をISO 8601へ直す。
+# 未実行・予定なしは空か "n/a" で返るため、その場合は何も出さない
+to_iso8601() {
+    case "${1:-}" in
+        "" | "n/a" | "0") return 0 ;;
+    esac
+    date -u -d "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || true
+}
+
+# `systemctl list-timers -o json` の結果をコンテキスト（システム / ユーザーごと）に1回だけ取る
+declare -A TIMER_LIST_CACHE=()
+
+timer_list_json() {
+    # 連想配列は空文字のキーを取れないため、システム単位も接頭辞付きのキーにする
+    local user="$1" key="ctx:$1"
+    if [ -z "${TIMER_LIST_CACHE[$key]+set}" ]; then
+        local -a ctx=()
+        [ -z "$user" ] || ctx=("--machine=${user}@.host" "--user")
+        TIMER_LIST_CACHE[$key]="$(systemctl "${ctx[@]}" list-timers --all -o json 2>/dev/null || true)"
+    fi
+    printf '%s' "${TIMER_LIST_CACHE[$key]}"
+}
+
+# NextElapseUSecRealtime が入るのは OnCalendar のタイマーだけで、OnUnitActiveSec のような
+# 単調時計のタイマーでは空になる。そこが空のままだと「予定を過ぎても実行されていない」を
+# 判定できないため、list-timers の `next`（epochマイクロ秒）から補う
+next_elapse_from_list() {
+    local user="$1" unit="$2" usec
+    usec="$(timer_list_json "$user" | tr '}' '\n' | grep -F "\"unit\":\"${unit}\"" |
+        sed -n 's/.*"next":\([0-9]\{1,\}\).*/\1/p' | head -1)" || usec=""
+    [ -n "$usec" ] && [ "$usec" != "0" ] || return 0
+    to_iso8601 "@$((usec / 1000000))"
+}
+
+# 定期ジョブ1本分の状態。
+#
+# `systemctl is-active` では oneshot のジョブを扱えない（実行していない間はずっと inactive で、
+# 成功したのか失敗したのかを区別できない）。タイマー側から「最後の発火と次回予定」を、
+# .service 側から「どう終わったか」を取り、両方を送る（#75）。
+#
+# ユーザー単位のユニットは root の systemctl からは見えないため `--machine=<user>@.host --user`
+# で当該ユーザーのマネージャに問い合わせる。問い合わせ自体に失敗したときは available:false とし、
+# 「ジョブが壊れている」と区別できるようにする（取得できないものを異常として鳴らさない）。
+timer_json() {
+    local name="$1" user="$2" unit="$3"
+    local service="${unit%.timer}.service"
+    local -a ctx=()
+    [ -z "$user" ] || ctx=("--machine=${user}@.host" "--user")
+
+    local timer_show service_show
+    timer_show="$(systemctl "${ctx[@]}" show "$unit" \
+        -p LoadState,ActiveState,UnitFileState,LastTriggerUSec,NextElapseUSecRealtime 2>/dev/null)" || timer_show=""
+
+    printf '{"name":"%s","unit":"%s"' "$(json_escape "$name")" "$(json_escape "$unit")"
+    [ -z "$user" ] || printf ',"user":"%s"' "$(json_escape "$user")"
+
+    # 問い合わせに失敗すると1行も返らない（存在しないユニットでも LoadState=not-found は返る）
+    if [ -z "$timer_show" ]; then
+        printf ',"available":false}'
+        return 0
+    fi
+    printf ',"available":true'
+
+    local load_state active_state unit_file_state last_trigger next_elapse
+    load_state="$(show_value LoadState "$timer_show")"
+    active_state="$(show_value ActiveState "$timer_show")"
+    unit_file_state="$(show_value UnitFileState "$timer_show")"
+    last_trigger="$(to_iso8601 "$(show_value LastTriggerUSec "$timer_show")")"
+    next_elapse="$(to_iso8601 "$(show_value NextElapseUSecRealtime "$timer_show")")"
+    [ -n "$next_elapse" ] || next_elapse="$(next_elapse_from_list "$user" "$unit")"
+
+    if [ "$load_state" = "loaded" ]; then printf ',"loaded":true'; else printf ',"loaded":false'; fi
+    if [ "$active_state" = "active" ]; then printf ',"active":true'; else printf ',"active":false'; fi
+    [ -z "$unit_file_state" ] || printf ',"enabled":"%s"' "$(json_escape "$unit_file_state")"
+    [ -z "$last_trigger" ] || printf ',"lastTriggerAt":"%s"' "$last_trigger"
+    [ -z "$next_elapse" ] || printf ',"nextElapseAt":"%s"' "$next_elapse"
+
+    service_show="$(systemctl "${ctx[@]}" show "$service" \
+        -p LoadState,Result,ExecMainStatus,ExecMainExitTimestamp,InactiveEnterTimestamp,ActiveState 2>/dev/null)" || service_show=""
+
+    # 存在しない .service でも systemd は Result=success / ExecMainStatus=0 を返す。
+    # そのまま送ると「消えたユニットが成功している」ことになるため、実在するときだけ読む
+    if [ -n "$service_show" ] && [ "$(show_value LoadState "$service_show")" = "loaded" ]; then
+        local result exit_status finished service_active
+        result="$(show_value Result "$service_show")"
+        exit_status="$(show_value ExecMainStatus "$service_show")"
+        # ExecMainExitTimestamp は主プロセスを持たないユニットで空になる。その場合は
+        # ユニットが非アクティブへ落ちた時刻で代用する
+        finished="$(to_iso8601 "$(show_value ExecMainExitTimestamp "$service_show")")"
+        [ -n "$finished" ] || finished="$(to_iso8601 "$(show_value InactiveEnterTimestamp "$service_show")")"
+        service_active="$(show_value ActiveState "$service_show")"
+
+        [ -z "$result" ] || printf ',"result":"%s"' "$(json_escape "$result")"
+        case "$exit_status" in
+            "" | *[!0-9]*) ;;
+            *) printf ',"exitStatus":%d' "$exit_status" ;;
+        esac
+        [ -z "$finished" ] || printf ',"lastFinishedAt":"%s"' "$finished"
+        case "$service_active" in
+            active | activating | reloading) printf ',"running":true' ;;
+            *) printf ',"running":false' ;;
+        esac
+    fi
+
+    printf '}'
+}
+
+# HOST_STATS_TIMERS に並べたユニットの状態。未設定なら何も返さず、項目ごと送らない
+collect_timers() {
+    local first=1 entry user unit
+    [ -n "$TIMERS" ] || return 0
+
+    printf '['
+    while IFS= read -r entry; do
+        [ -n "$entry" ] || continue
+
+        case "$entry" in
+            *@*) user="${entry%%@*}"; unit="${entry#*@}" ;;
+            *)   user=""; unit="$entry" ;;
+        esac
+        case "$unit" in
+            *.timer) ;;
+            *) unit="${unit}.timer" ;;
+        esac
+
+        [ "$first" -eq 1 ] || printf ','
+        first=0
+        timer_json "$entry" "$user" "$unit"
+    done < <(printf '%s\n' "$TIMERS" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
     printf ']'
 }
 
@@ -630,7 +772,7 @@ os_name() {
 }
 
 build_payload() {
-    local swap temperature tmux_output tmux_sessions tmux_total
+    local swap temperature tmux_output tmux_sessions tmux_total timers
     collect_samples
     swap="$(collect_swap)"
     temperature="$(collect_temperature)"
@@ -640,6 +782,9 @@ build_payload() {
     tmux_output="$(collect_tmux)"
     tmux_sessions="${tmux_output%%$'\n'*}"
     tmux_total="${tmux_output#*$'\n'}"
+
+    # HOST_STATS_TIMERS 未設定のホストでは空になり、項目ごと送らない
+    timers="$(collect_timers)"
 
     printf '{'
     printf '"version":%d,' "$PAYLOAD_VERSION"
@@ -665,6 +810,7 @@ build_payload() {
     [ -z "$tmux_sessions" ] || printf '"tmuxSessions":%s,' "$tmux_sessions"
     [ -z "$tmux_sessions" ] || printf '"tmuxSessionTotal":%d,' "$tmux_total"
     printf '"services":%s' "$(collect_services)"
+    [ -z "$timers" ] || printf ',"timers":%s' "$timers"
     printf '}'
 }
 
