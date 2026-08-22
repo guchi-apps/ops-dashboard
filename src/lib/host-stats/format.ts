@@ -34,3 +34,15 @@ export function formatRateShort(bytesPerSecond: number): string {
     const [value, unit] = formatBytes(bytesPerSecond).split(" ")
     return `${value}${unit === "B" ? "" : unit.charAt(0)}/s`
 }
+
+/**
+ * 「3時間後」のような、次に起きることまでの表示（定期ジョブの次回予定に使う）。
+ * すでに過ぎている場合は formatAge と同じ「〜前」で返し、予定超過が読めるようにする。
+ */
+export function formatEta(seconds: number): string {
+    if (seconds < 0) return formatAge(-seconds)
+    if (seconds < 60) return "まもなく"
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}分後`
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}時間後`
+    return `${Math.floor(seconds / 86400)}日後`
+}

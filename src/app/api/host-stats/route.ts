@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server"
 import { requireSessionOrApiToken } from "@/lib/session"
 import { HostStatsReportError, parseHostStatsReport } from "@/lib/host-stats/report"
 import { getHostStatsView, saveHostStatsReport } from "@/lib/host-stats/store"
+import { processTimerAlerts } from "@/lib/host-stats/timer-alerts"
 
 export const dynamic = "force-dynamic"
 
@@ -41,6 +42,19 @@ export async function POST(request: NextRequest) {
     try {
         const report = parseHostStatsReport(payload)
         const snapshot = await saveHostStatsReport(report)
+
+        // 定期ジョブの異常通知。判定は受信のたびに行うが、鳴るのは状態が変わったときだけ。
+        // 通知が落ちても受信は成功しているため、エージェントへは 200 を返す
+        try {
+            await processTimerAlerts({
+                hostId: report.id,
+                hostLabel: report.label || report.hostname,
+                timers: report.timers,
+            })
+        } catch (error) {
+            console.error("Timer alert error:", error)
+        }
+
         return NextResponse.json({ ok: true, receivedAt: snapshot.receivedAt })
     } catch (error) {
         if (error instanceof HostStatsReportError) {

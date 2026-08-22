@@ -6,6 +6,7 @@ import type {
     HostStatsReport,
     HostStatsService,
     HostStatsSessions,
+    HostStatsTimer,
     HostStatsTmuxSession,
     HostStatsUsage,
 } from "@/types/host-stats"
@@ -19,6 +20,7 @@ export const HOST_STATS_PAYLOAD_VERSION = 1
 /** 1レポートに載せられる件数の上限（壊れた・悪意あるペイロードで肥大させないため） */
 const MAX_DISKS = 8
 const MAX_SERVICES = 20
+const MAX_TIMERS = 20
 const MAX_PROCESSES = 5
 const MAX_SESSION_USERS = 10
 const MAX_TMUX_SESSIONS = 20
@@ -106,6 +108,41 @@ function parseServices(value: unknown): HostStatsService[] {
             active: state === "active",
         }
     })
+}
+
+/**
+ * 定期ジョブの状態。
+ * `HOST_STATS_TIMERS` を設定していないホストは項目ごと送ってこないため、undefined を通す。
+ * 状態を取得できなかったユニットも `available: false` として受け取り、異常とは区別する。
+ */
+function parseTimers(value: unknown): HostStatsTimer[] | undefined {
+    if (value === undefined || value === null) return undefined
+    if (!Array.isArray(value)) fail("timers が配列ではありません")
+
+    return value.slice(0, MAX_TIMERS).map((entry, index) => {
+        const record = asRecord(entry, `timers[${index}]`)
+        return {
+            name: asText(record.name, `timers[${index}].name`),
+            unit: asText(record.unit, `timers[${index}].unit`),
+            user: asOptionalText(record.user, `timers[${index}].user`),
+            available: record.available === true,
+            loaded: asOptionalBoolean(record.loaded),
+            active: asOptionalBoolean(record.active),
+            enabled: asOptionalText(record.enabled, `timers[${index}].enabled`),
+            lastTriggerAt: asOptionalText(record.lastTriggerAt, `timers[${index}].lastTriggerAt`),
+            nextElapseAt: asOptionalText(record.nextElapseAt, `timers[${index}].nextElapseAt`),
+            result: asOptionalText(record.result, `timers[${index}].result`),
+            exitStatus: asOptionalCount(record.exitStatus, `timers[${index}].exitStatus`),
+            lastFinishedAt: asOptionalText(record.lastFinishedAt, `timers[${index}].lastFinishedAt`),
+            running: asOptionalBoolean(record.running),
+        }
+    })
+}
+
+/** 送ってこない世代のエージェントと false を取り違えないよう、undefined を残す */
+function asOptionalBoolean(value: unknown): boolean | undefined {
+    if (value === undefined || value === null) return undefined
+    return value === true
 }
 
 function parseLoadAverage(value: unknown): [number, number, number] {
@@ -272,5 +309,6 @@ export function parseHostStatsReport(input: unknown): HostStatsReport & { id: st
         tmuxSessions: parseTmuxSessions(record.tmuxSessions),
         tmuxSessionTotal: asOptionalCount(record.tmuxSessionTotal, "tmuxSessionTotal"),
         services: parseServices(record.services),
+        timers: parseTimers(record.timers),
     }
 }
