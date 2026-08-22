@@ -30,6 +30,32 @@
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
+  /* タブをスワイプで切り替えたときの、新しい中身のスライドイン（#136） */
+  --animate-swipe-in-right: swipe-in-right 200ms ease-out;
+  --animate-swipe-in-left: swipe-in-left 200ms ease-out;
+}
+
+/* 切り替わった向きと同じ側から入れる。移動量は小さめにして、読む位置がぶれないようにする */
+@keyframes swipe-in-right {
+  from {
+    transform: translate3d(28px, 0, 0);
+    opacity: 0.4;
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+@keyframes swipe-in-left {
+  from {
+    transform: translate3d(-28px, 0, 0);
+    opacity: 0.4;
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
 }
 
 /*
