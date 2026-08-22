@@ -14,8 +14,24 @@ import type {
 
 const API_BASE = "https://api.github.com"
 
-/** Freeプランに含まれるActionsの実行時間（分/月）。private リポジトリの分だけがここを消費する */
-const DEFAULT_ALLOWANCE_MINUTES = 2000
+/**
+ * プランごとに含まれるActionsの実行時間（分/月）。private リポジトリの分だけがここを消費する。
+ * キーは `GET /orgs/{org}` の `plan.name`（小文字）で、`business` / `business_plus` は
+ * Enterprise Cloud の旧称。無料枠の残量を直接返すAPIが無いため、プラン名から引く。
+ */
+const PLAN_ALLOWANCE_MINUTES: Record<string, number> = {
+    free: 2000,
+    team: 3000,
+    business: 50000,
+    business_plus: 50000,
+    enterprise: 50000,
+}
+
+/**
+ * プランを判別できなかったときに使う既定値（Freeプラン相当）。
+ * `plan` は組織のオーナー権限を持つトークンでしか返らないため、権限が足りない場合はここに落ちる。
+ */
+const FALLBACK_ALLOWANCE_MINUTES = 2000
 
 const DEFAULT_CACHE_SECONDS = 300
 
@@ -44,6 +60,10 @@ interface UsageReportResponse {
 
 interface OrgRepository {
     name: string
+}
+
+interface OrgResponse {
+    plan?: { name?: string | null } | null
 }
 
 interface RateLimitResponse {
@@ -109,6 +129,26 @@ async function fetchPrivateRepositoryNames(org: string, token: string): Promise<
     return names
 }
 
+/**
+ * 無料枠の上限を引くための組織のプラン名を取得する。
+ *
+ * 上限はゲージの分母でしかなく、ここで落ちてGitHubセクション全体をエラーにするのは割に合わないため、
+ * 失敗しても例外にせず null を返す（呼び出し側が既定値へ落とす）。
+ */
+async function fetchOrgPlanName(org: string, token: string): Promise<string | null> {
+    try {
+        const data = await githubFetch<OrgResponse>(
+            `/orgs/${encodeURIComponent(org)}`,
+            token,
+            "組織情報"
+        )
+        return data.plan?.name?.toLowerCase() ?? null
+    } catch (error) {
+        console.warn("GitHub usage: 組織のプラン取得に失敗", describeError(error))
+        return null
+    }
+}
+
 function startOfMonthUtc(base: Date): Date {
     return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), 1))
 }
@@ -122,9 +162,23 @@ function roundTo(value: number, digits: number): number {
     return Math.round(value * factor) / factor
 }
 
-function getAllowanceLimitMinutes(): number {
+/**
+ * 無料枠の上限（分/月）を決める。優先順は 環境変数 > プラン名からの対応表 > 既定値。
+ * プラン名が対応表に無い（新プラン・権限不足で取得できない）場合は既定値へ落ちるため、
+ * そのときだけ環境変数で明示的に上書きすればよい。
+ */
+function getAllowanceLimitMinutes(planName: string | null): number {
     const configured = Number.parseInt(process.env.GH_ACTIONS_MINUTES_LIMIT ?? "", 10)
-    return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_ALLOWANCE_MINUTES
+    if (Number.isFinite(configured) && configured > 0) return configured
+
+    const byPlan = planName ? PLAN_ALLOWANCE_MINUTES[planName] : undefined
+    if (byPlan) return byPlan
+
+    console.warn(
+        `GitHub usage: プラン「${planName ?? "不明"}」に対応する無料枠が分からないため ` +
+            `${FALLBACK_ALLOWANCE_MINUTES}分を使います（GH_ACTIONS_MINUTES_LIMIT で上書きできます）`
+    )
+    return FALLBACK_ALLOWANCE_MINUTES
 }
 
 /**
@@ -137,13 +191,14 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
     const year = now.getUTCFullYear()
     const month = now.getUTCMonth() + 1
 
-    const [report, privateNames] = await Promise.all([
+    const [report, privateNames, planName] = await Promise.all([
         githubFetch<UsageReportResponse>(
             `/organizations/${encodeURIComponent(org)}/settings/billing/usage?year=${year}&month=${month}`,
             token,
             "課金レポート"
         ),
         fetchPrivateRepositoryNames(org, token),
+        fetchOrgPlanName(org, token),
     ])
 
     const items = (report.usageItems ?? []).filter((item) => item.product === "actions")
@@ -188,7 +243,7 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
 
     return {
         allowanceMinutes: Math.round(allowanceMinutes),
-        allowanceLimitMinutes: getAllowanceLimitMinutes(),
+        allowanceLimitMinutes: getAllowanceLimitMinutes(planName),
         totalMinutes: Math.round(totalMinutes),
         storageGigabyteHours: roundTo(storageGigabyteHours, 2),
         netAmountUsd: roundTo(netAmountUsd, 2),
