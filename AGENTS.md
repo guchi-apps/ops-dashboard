@@ -58,17 +58,6 @@ PORT=17096 NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co \
 に `initial={{ uptimeKuma: [], uptimeRobot: [] }}` を渡せば、実データが無くてもタブの構造まで
 HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
 
-## タブ本文のスワイプと横スクロールの共存
-
-スマホでタブを左右スワイプして切り替えられるようにしてある（`src/components/swipe-tabs.tsx`・#136）。
-本文を包む要素に `touch-action: pan-y`（Tailwindの `touch-pan-y`）を掛けているため、**タブ本文の
-内側に横スクロールする領域を足すときは、その要素へ `touch-auto` を付ける**。付け忘れると、その
-領域を指で横に動かしてもスクロールしない。
-
-スワイプ判定は横移動が縦移動の1.5倍を超えたときだけ成立し、`overflow-x` が `auto`/`scroll` で
-実際にはみ出している祖先から始まったタッチは無視する（ステータスチップ帯の横スクロールを
-奪わないため）。
-
 ## マルチエージェント運用（GitHub Actions 無人実行）
 
 `@claude` コメントを起点に、計画提示〜実装〜develop向けPR作成までを GitHub Actions 上で無人実行する。

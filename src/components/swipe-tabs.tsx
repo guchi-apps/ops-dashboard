@@ -8,6 +8,15 @@ import { cn } from "@/lib/utils"
  *
  * ライブラリは足さず、タッチイベントだけで組む。マウス・トラックパッドでは発火しないため、
  * PCでの操作は従来どおりタブのクリックだけになる。
+ *
+ * 判定の前提を3つ置いている。
+ *
+ * 1. 包む要素に `touch-action: pan-y` を掛け、横方向のブラウザ既定動作は抑える。この内側へ
+ *    横スクロールする領域を足すときは、その要素に `touch-auto` を付けないとスクロールしない
+ * 2. 画面の左右端から始まったタッチは拾わない。iOS Safari の戻る／進むジェスチャと取り合いになり、
+ *    どちらも中途半端に効くため（本文は画面端近くまで届いている）
+ * 3. 横スクロールできる祖先から始まったタッチも拾わない。いまタブ本文の内側に該当箇所は無いが、
+ *    足したときに本来のスクロールを黙って奪わないための保険
  */
 
 /** これ以上動かしたらタブを切り替える距離(px)。短すぎるとタップのブレで誤爆する */
@@ -24,6 +33,12 @@ const MAX_DRAG_PX = 48
 
 /** 切り替え後のスライドインの長さ(ms)。globals.css の --animate-swipe-in-* と揃える */
 const ENTER_ANIMATION_MS = 200
+
+/**
+ * 画面の左右端から内側へこの幅(px)は、スワイプの始点として扱わない。
+ * iOS Safari の戻る／進むジェスチャの持ち場で、ここを取り合うと双方が中途半端に効く
+ */
+const EDGE_GUARD_PX = 24
 
 /**
  * 触れた場所が横スクロールできる領域なら、スワイプとして扱わない。
@@ -93,6 +108,14 @@ export function SwipeTabs({
         }
 
         const touch = event.touches[0]
+        if (
+            touch.clientX < EDGE_GUARD_PX ||
+            touch.clientX > window.innerWidth - EDGE_GUARD_PX
+        ) {
+            gesture.current = null
+            return
+        }
+
         gesture.current = { startX: touch.clientX, startY: touch.clientY, horizontal: null }
     }, [])
 
