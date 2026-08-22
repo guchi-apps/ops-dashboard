@@ -1,4 +1,5 @@
 import { formatAge } from "@/lib/host-stats/format"
+import { summarizeTimers } from "@/lib/host-stats/timers"
 import { summarizeTmux, type TmuxSessionView } from "@/lib/host-stats/tmux"
 import type { UptimeKumaMonitor } from "@/lib/uptime-kuma"
 import type { UptimeRobotMonitor } from "@/lib/uptimerobot"
@@ -153,6 +154,25 @@ function onePasswordChip(snapshot: OnePasswordUsageSnapshot | null): SummaryChip
     }
 }
 
+/**
+ * 定期ジョブ（systemd timer）の異常（#75）。
+ *
+ * 正常なときは出さない。定期ジョブは普段ずっと正常で、常時1枠を占めるほどの情報量が無い。
+ * 「気づかないと壊れたままになる」ことが問題なので、異常が出たときだけ最上段に現れればよい。
+ */
+function timerChip(view: HostStatsView | null): SummaryChip | null {
+    const summary = summarizeTimers(view?.hosts ?? [])
+    if (!summary.available || summary.abnormalNames.length === 0) return null
+
+    return {
+        key: "timers",
+        label: "定期ジョブ",
+        value: `${summary.abnormalNames.length} / ${summary.total} 異常`,
+        note: summary.abnormalNames.join("・"),
+        tone: "danger",
+    }
+}
+
 function maintenanceChip(view: HostStatsView | null): SummaryChip | null {
     if (!view?.hosts.length) return null
 
@@ -206,6 +226,7 @@ export function buildSummaryChips(input: {
 }): SummaryChip[] {
     return [
         hostChip(input.hostStats),
+        timerChip(input.hostStats),
         monitorChip(input.uptimeKuma, input.uptimeRobot),
         tmuxChip(input.hostStats, input.tmuxSessions),
         aiChip(input.aiUsage),

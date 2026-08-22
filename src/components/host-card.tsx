@@ -2,9 +2,10 @@
 
 import { NEUTRAL_METRIC_COLORS, getTemperatureColor, getUsageColor } from "@/components/metric-card"
 import { Sparkline } from "@/components/sparkline"
-import { StatusBadge, StatusDot } from "@/components/status-badge"
+import { StatusBadge, StatusDot, type StatusTone } from "@/components/status-badge"
 import { formatAge, formatBytes, formatRateShort, formatUptime } from "@/lib/host-stats/format"
 import { pickSeries, sumSeries } from "@/lib/host-stats/history"
+import { describeTimer, evaluateTimers, type TimerState, type TimerStatus } from "@/lib/host-stats/timers"
 import { cn } from "@/lib/utils"
 import type { HostStatsHostView } from "@/types/host-stats"
 
@@ -73,6 +74,55 @@ function SecondaryFacts({ facts }: { facts: { label: string; value: string }[] }
                     {fact.label} <span className="font-mono text-foreground">{fact.value}</span>
                 </span>
             ))}
+        </div>
+    )
+}
+
+/** 定期ジョブの状態と色の対応。unknown は「壊れている」ではないので警告どまりにする */
+const TIMER_TONES: Record<TimerState, StatusTone> = {
+    ok: "ok",
+    running: "info",
+    failed: "danger",
+    overdue: "danger",
+    stopped: "danger",
+    missing: "danger",
+    unknown: "warn",
+}
+
+/**
+ * 定期ジョブ（systemd timer）の一覧。
+ *
+ * サービスのバッジと違い、oneshot のジョブは「いま動いているか」ではなく
+ * 「前回いつ動いて、どう終わったか」が知りたい情報なので、1行1ユニットで並べる。
+ * 異常なものは狭い画面でも隠さない（見に行かないと分からない異常を減らすのが目的のため）。
+ */
+function TimerList({ statuses }: { statuses: TimerStatus[] }) {
+    if (statuses.length === 0) return null
+
+    const hasAbnormal = statuses.some((status) => status.abnormal)
+
+    return (
+        <div className={cn("mt-2 gap-1", hasAbnormal ? "flex flex-col" : "hidden sm:flex sm:flex-col")}>
+            <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">定期ジョブ</div>
+            {statuses.map((status) => {
+                const detail = describeTimer(status)
+
+                return (
+                    <div
+                        key={status.timer.name}
+                        className={cn(
+                            "flex min-w-0 items-center gap-1.5 text-[10px]",
+                            !status.abnormal && "hidden sm:flex"
+                        )}
+                    >
+                        <StatusDot tone={TIMER_TONES[status.state]} />
+                        <span className="shrink-0 font-mono">{status.timer.name}</span>
+                        <span className="truncate text-muted-foreground" title={detail}>
+                            {detail}
+                        </span>
+                    </div>
+                )
+            })}
         </div>
     )
 }
@@ -158,6 +208,7 @@ export function HostCard({
     // 狭い画面の概要はグラフだけに畳むが、停止しているサービスだけは隠さない（#96）。
     // 更新・再起動待ちは画面上部の「メンテ」チップが拾うため、ここでは広い画面のみに出す
     const hasStoppedService = (latest.services ?? []).some((service) => !service.active)
+    const timerStatuses = evaluateTimers(latest.timers)
 
     return (
         <div className={cn("h-full rounded-xl border border-border bg-card p-3", !online && "opacity-70")}>
@@ -273,6 +324,8 @@ export function HostCard({
                     </StatusBadge>
                 )}
             </div>
+
+            <TimerList statuses={timerStatuses} />
         </div>
     )
 }
