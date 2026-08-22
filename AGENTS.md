@@ -58,6 +58,29 @@ PORT=17096 NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co \
 に `initial={{ uptimeKuma: [], uptimeRobot: [] }}` を渡せば、実データが無くてもタブの構造まで
 HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
 
+## GitHubの課金・使用量API
+
+**Actions無料枠の「消費した分」を直接返すAPIは存在しない。** 旧 `GET /orgs/{org}/settings/billing/actions`
+（`total_minutes_used` / `included_minutes` を返していた）と `.../shared-storage` は **HTTP 410 で廃止**され、
+`GET /organizations/{org}/settings/billing/usage`（日次明細）と `.../usage/summary`（月次集計）へ統合された。
+統合後のレスポンスには「無料枠を消費したか」を示す項目が無いため、ダッシュボードの無料枠ゲージは
+**明細から導出した推定値**である。次の点に注意する。
+
+- **無料枠を消費するのは非公開リポジトリの分だけ**だが、課金レポートは公開/非公開を返さない。
+  リポジトリ一覧と突き合わせるしかないが、**「今」の公開状態で判定すると、月の途中で公開へ
+  切り替えたリポジトリの非公開だった期間の分が丸ごと抜ける**（#151。実測で40%近くずれた）。
+  `src/lib/github-repo-visibility.ts` が公開状態を `.data/` に記録し、使用日時点の状態で判定する。
+  記録が始まる前の期間は `GH_USAGE_PRIVATE_UNTIL` で補う
+- **記録に残るのは「切り替えた日」ではなく「切り替え後に初めてダッシュボードを開いた日」。**
+  取得はリクエスト契機でしか走らず、サーバー側の定期実行は無い。開かない日が続くと、その期間は
+  切り替え前の状態で判定される（非公開→公開なら多めに出る）。精度は開く頻度に依存する
+- **月次集計 `usage/summary` を使う必要はない。** 同時刻に取れば分数も金額も日次明細の合計と一致する
+  （実測で 41,048分・$246.72 が一致）。さらに `product` で絞らないとGHASのライセンス料まで
+  混ざるうえ、明細とフィールド名（`quantity` と `grossQuantity`）も表記（`Minutes` と `minutes`）も違う
+- `year` / `month` を付けずに叩くと、全リポジトリの合計が単一のリポジトリ名に束ねられて返る。
+  リポジトリ別の内訳を出すときは必ず指定する
+- 課金レポートのエンドポイントは **fine-grained PAT に非対応**。classic PAT（`repo` と `read:org`）を使う
+
 ## マルチエージェント運用（GitHub Actions 無人実行）
 
 `@claude` コメントを起点に、計画提示〜実装〜develop向けPR作成までを GitHub Actions 上で無人実行する。
