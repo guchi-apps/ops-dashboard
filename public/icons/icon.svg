@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ops-dashboard のアプリアイコン（デザインの正）。#164
+  稼働監視のパルス。右端のコーラルの点が「いま生きている」ことを表す。
+  角丸あり・四隅は透過。PWAの purpose="any" とブラウザのファビコンに使う。
+  端末側がマスクを掛ける用途（Android のアダプティブアイコン・iOS のホーム画面）には
+  全面を地色で塗った icon-maskable.svg を使う。図形の定義はこの2ファイルで揃えること。
+  PNGの書き出しは scripts/generate-icons.sh。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#44609a"/>
+      <stop offset="1" stop-color="#243c70"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="118" fill="url(#bg)"/>
+  <path d="M 82 288 H 158 L 196 288 L 228 180 L 276 372 L 312 288 H 382"
+        fill="none" stroke="#f8fafc" stroke-width="40"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="412" cy="288" r="32" fill="#ff7f6a"/>
+</svg>
