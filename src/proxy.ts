@@ -77,6 +77,11 @@ export async function proxy(request: NextRequest) {
   return supabaseResponse;
 }
 
+// matcher から外したパスでは proxy 自体が動かない（＝未ログインでも素通りする）。
+// `public/` 配下のアイコンとWebアプリマニフェストは、ログイン画面のタブアイコン表示に必要で、
+// 中身は画像とマニフェストだけで秘密情報を含まないため除外する（#165）。
+// これらは静的配信なのでセッションのリフレッシュも不要で、除外すればアイコン取得のたびに
+// Supabaseへ問い合わせる無駄も無くなる。
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest).*)"],
 };

@@ -35,6 +35,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 Supabaseのセッションが無いと `/login` へリダイレクトされる。`.env.local` が無いworktree
 （GUIが無くOAuthを完了できない環境を含む）では、素の `curl` で画面を確認できない。
 
+**`public/` 配下の静的ファイルも proxy を通る。** Next.js が自動で除外するのは
+`_next/static` ・ `_next/image` などだけで、`public/` に置いたファイルは `config.matcher` の
+除外か `PUBLIC_PATH_PREFIXES` に載せない限り、未ログインだと `/login` へ307で飛ばされる
+（ログイン画面のファビコンが出なくなる。#165）。ログイン画面から参照される静的ファイルを
+足すときは `src/proxy.ts` の `config.matcher` の除外に追記する。
+
 ログイン不要な描画だけを確かめたい場合は、`PUBLIC_PATH_PREFIXES` に載っている `/login` 配下へ
 **一時的な確認用ルート**（例: `src/app/login/preview-xxx/page.tsx`）を置き、ダミーのSupabase
 環境変数を与えて `npm run dev` を起動すれば `curl` で描画結果を取得できる。
