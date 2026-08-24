@@ -668,6 +668,11 @@ op --version
 Androidのアダプティブアイコンに渡すと四隅が二重に削れて小さく見え、iOSに透過付きの画像を渡すと
 透過部分が黒く塗られる（#164）。
 
+**未ログイン状態では `/icons/*` と `/manifest.webmanifest` が `/login` へリダイレクト（307）される。**
+`public/`配下の静的ファイルも`src/proxy.ts`を通り、matcherが除外しているのは`_next/static`・
+`_next/image`・`favicon.ico`だけのため。ログイン画面でタブアイコンが出ないのはこれが理由で、
+`curl`でアイコンを取得する検証もそのままでは通らない（[#165](https://github.com/guchi-apps/ops-dashboard/issues/165)）。
+
 ## テスト
 
 ```bash
