@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  端末側がマスクを掛ける用途のアイコン。#164
+  地色を全面に敷き（透過部分を作らない）、図形を中央85%へ収める。
+  - Android のアダプティブアイコン（PWA の purpose="maskable"）: 中央80%の円で切り抜かれる
+  - iOS のホーム画面（apple-touch-icon）: 透過部分が黒く塗られるため角丸を付けない
+  図形は icon.svg と同じもの。片方だけ直さないこと。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#44609a"/>
+      <stop offset="1" stop-color="#243c70"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g transform="translate(38.4 38.4) scale(0.85)">
+    <path d="M 82 288 H 158 L 196 288 L 228 180 L 276 372 L 312 288 H 382"
+          fill="none" stroke="#f8fafc" stroke-width="40"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="412" cy="288" r="32" fill="#ff7f6a"/>
+  </g>
+</svg>

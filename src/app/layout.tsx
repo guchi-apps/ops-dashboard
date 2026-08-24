@@ -22,12 +22,15 @@ export const metadata: Metadata = {
     title: "ops-dashboard",
   },
   icons: {
+    // SVGを先に置く。対応ブラウザはタブの小さいサイズでも輪郭がぼやけない（#164）
     icon: [
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
       { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
+    // iOSは透過部分を黒で塗るため、角丸を付けず全面を地色で塗った画像を渡す
     apple: [
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
     ],
   },
 };
