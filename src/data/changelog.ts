@@ -14,6 +14,13 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.20.1",
+        date: "2026-08-24",
+        changes: [
+            "サーバー再起動時にまれに発生していた画面が表示できなくなる不具合（503エラー）を修正しました。",
+        ],
+    },
+    {
         version: "0.20.0",
         date: "2026-08-23",
         changes: [
