@@ -33,10 +33,12 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/login?error=forbidden`);
   }
 
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip");
-  await notifySignalyLogin(ip);
+  // 接続元IP・User-Agent は notifySignalyLogin がリクエストヘッダーから拾う
+  await notifySignalyLogin({
+    email: claims.email,
+    name: (claims.user_metadata?.full_name as string | undefined) ?? null,
+    provider: (claims.app_metadata?.provider as string | undefined) ?? null,
+  });
 
   return NextResponse.redirect(`${origin}${returnTo}`);
 }
