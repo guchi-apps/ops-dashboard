@@ -1,4 +1,7 @@
-const APP_NAME = "ops-dashboard"; // 通知タイトルに使うアプリ名。他アプリへ流用する場合はここだけ変更する
+// 通知タイトルに使うアプリ名。ログイン通知の `source`（送信元）にも使うため、値はリポジトリ名に
+// 揃える（CI・デプロイ通知はembedの `Repository` フィールドの末尾から送信元を作るため）。
+// 他アプリへ流用する場合はここだけ変更する
+const APP_NAME = "ops-dashboard";
 
 /** Discord の embed で使う色。異常は赤、復旧は緑、ログインは既存の青のまま */
 const COLOR_ALERT = 15548997;
@@ -15,6 +18,11 @@ interface SignalyField {
 async function postToSignaly(
   webhookUrl: string | undefined,
   embed: { title: string; description?: string; color: number; fields: SignalyField[] },
+  /**
+   * 送信元の識別子（リポジトリ名）。複数アプリで1つのチャンネルを共有する通知では、
+   * Signalyがこの値で送信元を見分ける（guchi-apps/signaly#192）。省略時は付けない。
+   */
+  source?: string,
 ): Promise<void> {
   if (!webhookUrl) return;
 
@@ -23,6 +31,7 @@ async function postToSignaly(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        ...(source ? { source } : {}),
         embeds: [
           {
             ...embed,
@@ -44,11 +53,15 @@ export async function notifySignalyLogin(ip: string | null): Promise<void> {
     fields.push({ name: "IP", value: ip });
   }
 
-  await postToSignaly(process.env.SIGNALY_LOGIN_WEBHOOK_URL, {
-    title: `🔐 ${APP_NAME} にログイン`,
-    color: COLOR_LOGIN,
-    fields,
-  });
+  await postToSignaly(
+    process.env.SIGNALY_LOGIN_WEBHOOK_URL,
+    {
+      title: `🔐 ${APP_NAME} にログイン`,
+      color: COLOR_LOGIN,
+      fields,
+    },
+    APP_NAME,
+  );
 }
 
 /**
