@@ -14,6 +14,13 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.22.1",
+        date: "2026-08-28",
+        changes: [
+            "デプロイ完了時のリリース通知を、日々のCI通知とは別のチャンネルへ届けられるようにしました。通知にはリリース内容の要約も添えられ、リリースの見落としを防ぎやすくなります。",
+        ],
+    },
+    {
         version: "0.22.0",
         date: "2026-08-26",
         changes: [
