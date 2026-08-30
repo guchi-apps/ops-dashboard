@@ -6,7 +6,7 @@ import {
 } from "@/lib/upstream"
 import { formatWindowLabel } from "@/lib/ai-usage/common"
 import { getAccessToken, type RefreshResult } from "@/lib/ai-usage/token-store"
-import type { AiProviderBilling, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
+import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
 /**
  * Claude Code の `/usage` が参照しているのと同じOAuthエンドポイントを叩く。
@@ -46,11 +46,27 @@ interface SpendAmount {
     exponent?: number | null
 }
 
+/**
+ * サブスク枠を超えた分の追加利用（クレジット枠）。金額は最小単位（USDならセント）で返る。
+ * 同じ内容が `spend` にも入っているが、Claude Code 本体が読んでいるのはこちら。
+ */
+interface ExtraUsageResponse {
+    is_enabled?: boolean | null
+    /** 月の上限。null なら上限なし */
+    monthly_limit?: number | null
+    used_credits?: number | null
+    utilization?: number | null
+    currency?: string | null
+    /** `monthly_limit` / `used_credits` の小数点以下の桁数（USDなら2） */
+    decimal_places?: number | null
+}
+
 interface OauthUsageResponse {
     five_hour?: UsageWindowResponse | null
     seven_day?: UsageWindowResponse | null
     seven_day_opus?: UsageWindowResponse | null
     seven_day_sonnet?: UsageWindowResponse | null
+    extra_usage?: ExtraUsageResponse | null
     spend?: {
         enabled?: boolean | null
         used?: SpendAmount | null
@@ -163,11 +179,9 @@ function toWindow(
     }
 }
 
-function formatAmount(amount: SpendAmount | null | undefined): string | null {
-    if (!amount || typeof amount.amount_minor !== "number") return null
-
-    const currency = amount.currency || "USD"
-    const value = amount.amount_minor / 10 ** (amount.exponent ?? 2)
+/** 最小単位（USDならセント）で返る金額を表示用の文字列にする */
+function formatMoney(minorUnits: number, currency: string, decimals: number): string {
+    const value = minorUnits / 10 ** decimals
 
     try {
         return new Intl.NumberFormat("ja-JP", { style: "currency", currency }).format(value)
@@ -176,16 +190,73 @@ function formatAmount(amount: SpendAmount | null | undefined): string | null {
     }
 }
 
-function toBilling(data: OauthUsageResponse): AiProviderBilling | undefined {
-    if (!data.spend?.enabled) return undefined
+/**
+ * 追加利用は月ごとにリセットされるが、リセット時刻はレスポンスに含まれない。
+ * Claude Code 本体と同じく翌月1日として扱う。
+ */
+function nextMonthStart(): string {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString()
+}
 
-    const amount = formatAmount(data.spend.used)
-    if (!amount) return undefined
+/**
+ * 同じ内容を返す旧い形（`spend`）を `extra_usage` と同じ形に読み替える。
+ * 現在はどちらも返ってくるが、片方が無くなっても表示が消えないようにしている。
+ */
+function extraUsageFromSpend(spend: OauthUsageResponse["spend"]): ExtraUsageResponse | null {
+    if (!spend || typeof spend.used?.amount_minor !== "number") return null
 
     return {
-        label: "追加利用クレジット",
-        amount,
-        limit: formatAmount(data.spend.limit) ?? undefined,
+        is_enabled: spend.enabled ?? false,
+        monthly_limit: typeof spend.limit?.amount_minor === "number" ? spend.limit.amount_minor : null,
+        used_credits: spend.used.amount_minor,
+        currency: spend.used.currency,
+        decimal_places: spend.used.exponent,
+    }
+}
+
+function toCredit(data: OauthUsageResponse): AiProviderCredit | undefined {
+    const source = data.extra_usage ?? extraUsageFromSpend(data.spend)
+    if (!source) return undefined
+
+    if (source.is_enabled !== true) {
+        return {
+            valueText: "未設定",
+            usedPercent: null,
+            detailText: "追加利用は有効になっていません",
+            resetsAt: null,
+        }
+    }
+
+    const currency = source.currency || "USD"
+    const decimals = typeof source.decimal_places === "number" ? source.decimal_places : 2
+    const used = source.used_credits
+
+    if (typeof source.monthly_limit !== "number") {
+        return {
+            valueText: "無制限",
+            usedPercent: null,
+            detailText:
+                typeof used === "number" ? `購入 ${formatMoney(used, currency, decimals)}` : null,
+            resetsAt: null,
+        }
+    }
+
+    if (typeof used !== "number") return undefined
+
+    const limit = source.monthly_limit
+    const utilization =
+        typeof source.utilization === "number"
+            ? source.utilization
+            : limit > 0
+              ? (used / limit) * 100
+              : 0
+
+    return {
+        valueText: `残り ${formatMoney(Math.max(0, limit - used), currency, decimals)}`,
+        usedPercent: clampPercent(utilization),
+        detailText: `購入 ${formatMoney(used, currency, decimals)} / 上限 ${formatMoney(limit, currency, decimals)}`,
+        resetsAt: nextMonthStart(),
     }
 }
 
@@ -209,10 +280,10 @@ export function parseClaudePlan(profile: ProfileResponse): string | null {
     return null
 }
 
-/** レスポンスから表示に使う制限枠と課金状況を取り出す */
+/** レスポンスから表示に使う制限枠とクレジット枠を取り出す */
 export function parseClaudeUsageResponse(data: OauthUsageResponse): {
     windows: AiUsageWindow[]
-    billing?: AiProviderBilling
+    credit?: AiProviderCredit
 } {
     const windows = [
         toWindow(FIVE_HOUR_SECONDS, data.five_hour),
@@ -221,7 +292,7 @@ export function parseClaudeUsageResponse(data: OauthUsageResponse): {
         toWindow(SEVEN_DAY_SECONDS, data.seven_day_sonnet, "Sonnet"),
     ].filter((window): window is AiUsageWindow => window !== null)
 
-    return { windows, billing: toBilling(data) }
+    return { windows, credit: toCredit(data) }
 }
 
 /** プランの取得に失敗しても使用状況の表示は続けたいので、失敗時は null を返す */
@@ -291,13 +362,13 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
             }
         }
 
-        const { windows, billing } = parseClaudeUsageResponse((await res.json()) as OauthUsageResponse)
+        const { windows, credit } = parseClaudeUsageResponse((await res.json()) as OauthUsageResponse)
 
         if (windows.length === 0) {
             return { ...base, status: "error", message: "使用状況のレスポンスを解釈できませんでした" }
         }
 
-        return { ...base, status: "ok", windows, billing }
+        return { ...base, status: "ok", windows, credit }
     } catch (error) {
         console.error("Claude usage: 取得に失敗", error)
         return { ...base, status: "error", message: "使用状況の取得に失敗しました" }
