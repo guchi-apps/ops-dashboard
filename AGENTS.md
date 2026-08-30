@@ -64,6 +64,26 @@ PORT=17096 NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co \
 に `initial={{ uptimeKuma: [], uptimeRobot: [] }}` を渡せば、実データが無くてもタブの構造まで
 HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
 
+## AI利用枠のクレジット（サブスク外）
+
+サブスクの制限枠とは別会計の「クレジット枠」は、**両方とも使用状況のレスポンスに同居している**。
+別のエンドポイントを探さないこと（2026-08-30に実レスポンスで確認）。
+
+- **Claude**（`GET /api/oauth/usage`）は同じ内容を `extra_usage` と `spend` の2箇所で返す。
+  読むのは **`extra_usage`**（`is_enabled` / `monthly_limit` / `used_credits` / `utilization` /
+  `currency` / `decimal_places`）。Claude Code 本体が読んでいるのがこちらで、金額は最小単位
+  （USDならセント）。`spend` は同じ値を `amount_minor` + `exponent` で持つ古い形で、
+  `src/lib/ai-usage/claude.ts` ではフォールバックとしてだけ残している。
+  **リセット時刻はレスポンスに無い**ため、Claude Code と同じく翌月1日として扱う
+- **ChatGPT**（`GET /backend-api/wham/usage`）は `credits`（`has_credits` / `unlimited` /
+  `balance` / `approx_local_messages`）。**`balance` は数値ではなく文字列**で返る。
+  購入した総量は返らないので**使用率（分母）を出せない**——バーではなく残高だけを出す。
+  ワークスペースの上限（`spend_control.individual_limit`）は個人アカウントでは `null`
+
+**画面確認は `/login` 配下の一時ルートから `parseClaudeUsageResponse` /
+`parseChatGptUsageResponse` に実レスポンスを流し込むのが早い。** どちらの提供元も
+リフレッシュトークンが要り、worktreeには `.env.local` が無いため実データを直接引けない。
+
 ## GitHubの課金・使用量API
 
 **Actions無料枠の「消費した分」を直接返すAPIは存在しない。** 旧 `GET /orgs/{org}/settings/billing/actions`
