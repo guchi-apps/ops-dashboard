@@ -182,15 +182,41 @@ collect_disks() {
     printf ']'
 }
 
+# socket activation されたサービス（Ubuntu 24.04 の ssh など）は、接続が来るまで .service が
+# inactive のままで、待ち受けは .socket が持つ。停止ではなく正常な状態のため、起動元
+# （TriggeredBy の .socket・.path）が active なら listening として送り、稼働中として扱う。
+#
+# .timer 起動の oneshot は対象にしない。実行していない間の inactive を稼働中にすると、
+# 前回の結果を見ずに緑になってしまうため。定期ジョブは timers として別に送っている（#75）。
+# failed は待ち受けの有無に関わらず failed のまま送る（起動を試みて落ちているため）。
+service_state() {
+    local name="$1" state trigger
+
+    # inactive・failed のときは終了ステータスが非0になるため、出力だけ拾う
+    state="$(systemctl is-active "$name" 2>/dev/null || true)"
+    [ -n "$state" ] || state="unknown"
+    [ "$state" = "inactive" ] || { printf '%s' "$state"; return; }
+
+    for trigger in $(systemctl show "$name" --property=TriggeredBy --value 2>/dev/null || true); do
+        case "$trigger" in
+            *.socket | *.path) ;;
+            *) continue ;;
+        esac
+        if [ "$(systemctl is-active "$trigger" 2>/dev/null || true)" = "active" ]; then
+            printf 'listening'
+            return
+        fi
+    done
+    printf '%s' "$state"
+}
+
 collect_services() {
     local first=1 name state
     printf '['
     while IFS= read -r name; do
         [ -n "$name" ] || continue
 
-        # inactive・failed のときは終了ステータスが非0になるため、出力だけ拾う
-        state="$(systemctl is-active "$name" 2>/dev/null || true)"
-        [ -n "$state" ] || state="unknown"
+        state="$(service_state "$name")"
 
         [ "$first" -eq 1 ] || printf ','
         first=0
