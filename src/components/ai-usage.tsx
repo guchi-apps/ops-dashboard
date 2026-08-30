@@ -5,7 +5,11 @@ import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
 import { formatRemaining, getElapsedPercent } from "@/lib/usage-format"
-import type { AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
+import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
+
+/** サブスク枠と区別が付くよう、クレジット枠の行にはこの補足を添える */
+const CREDIT_LABEL = "クレジット枠"
+const CREDIT_NOTE = "サブスク外"
 
 /** 制限枠の長さとリセット時刻から、枠のうち何割の時間が過ぎたかを出す */
 function getWindowElapsedPercent(usageWindow: AiUsageWindow, now: number): number | null {
@@ -26,6 +30,40 @@ function UsageWindowRow({ window: usageWindow, now }: { window: AiUsageWindow; n
             elapsedPercent={getWindowElapsedPercent(usageWindow, now)}
             remainingText={usageWindow.resetsAt ? formatRemaining(usageWindow.resetsAt, now) : null}
         />
+    )
+}
+
+/**
+ * サブスクとは別会計のクレジット枠。上限が分かるときは他の枠と同じバーで出し、
+ * 分かるのが残高だけのとき（ChatGPT）は割合を推測せず数値だけを出す。
+ */
+function CreditRow({ credit, now }: { credit: AiProviderCredit; now: number }) {
+    if (credit.usedPercent !== null) {
+        return (
+            <UsageBar
+                label={CREDIT_LABEL}
+                note={CREDIT_NOTE}
+                usedPercent={credit.usedPercent}
+                valueText={credit.valueText}
+                usedText={credit.detailText ?? undefined}
+                remainingText={credit.resetsAt ? formatRemaining(credit.resetsAt, now) : null}
+            />
+        )
+    }
+
+    return (
+        <div className="space-y-1">
+            <div className="flex items-baseline justify-between gap-2">
+                <span className="text-xs sm:text-sm font-medium">
+                    {CREDIT_LABEL}
+                    <span className="ml-1 text-[10px] sm:text-xs opacity-70">{CREDIT_NOTE}</span>
+                </span>
+                <span className="font-mono text-sm sm:text-base font-bold">{credit.valueText}</span>
+            </div>
+            {credit.detailText && (
+                <p className="text-[10px] sm:text-xs text-muted-foreground">{credit.detailText}</p>
+            )}
+        </div>
     )
 }
 
@@ -63,13 +101,9 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
                 </p>
             )}
 
-            {provider.billing && (
-                <div className="mt-auto flex items-baseline justify-between gap-2 border-t border-border pt-2 text-[10px] sm:text-xs text-muted-foreground">
-                    <span>{provider.billing.label}</span>
-                    <span className="font-mono">
-                        {provider.billing.amount}
-                        {provider.billing.limit && ` / ${provider.billing.limit}`}
-                    </span>
+            {provider.credit && (
+                <div className="mt-auto border-t border-border pt-2.5">
+                    <CreditRow credit={provider.credit} now={now} />
                 </div>
             )}
         </DashboardCard>

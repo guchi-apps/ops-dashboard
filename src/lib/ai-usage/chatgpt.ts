@@ -6,7 +6,7 @@ import {
 } from "@/lib/upstream"
 import { formatWindowLabel } from "@/lib/ai-usage/common"
 import { getAccessToken, type AccessToken, type RefreshResult } from "@/lib/ai-usage/token-store"
-import type { AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
+import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
 /**
  * Codex CLI が `/status` の表示に使っているのと同じエンドポイントを叩く。
@@ -27,6 +27,18 @@ interface RateLimitWindow {
     reset_at?: number
 }
 
+/**
+ * サブスクとは別に前払いで購入するクレジット。残高だけが返り、購入した総量は返らないため
+ * 使用率（分母）は出せない。`balance` は数値ではなく文字列で返る。
+ */
+interface CreditsResponse {
+    has_credits?: boolean | null
+    unlimited?: boolean | null
+    balance?: string | null
+    /** 残高で送れるメッセージ数の目安。[最小, 最大] */
+    approx_local_messages?: number[] | null
+}
+
 interface UsageResponse {
     plan_type?: string
     rate_limit?: {
@@ -35,6 +47,7 @@ interface UsageResponse {
         primary_window?: RateLimitWindow | null
         secondary_window?: RateLimitWindow | null
     } | null
+    credits?: CreditsResponse | null
 }
 
 interface TokenResponse {
@@ -122,6 +135,56 @@ function toWindow(source: RateLimitWindow | null | undefined): AiUsageWindow | n
         resetsAt,
         windowSeconds,
     }
+}
+
+/** 残高で送れるメッセージ数の目安。上下が同じなら1つだけ出す */
+function formatApproxMessages(range: number[] | null | undefined): string | null {
+    if (!Array.isArray(range) || range.length === 0) return null
+
+    const [min, max = min] = range
+    if (typeof min !== "number" || typeof max !== "number" || max <= 0) return null
+
+    return min === max ? `およそ ${max} メッセージ分` : `およそ ${min}〜${max} メッセージ分`
+}
+
+function toCredit(source: CreditsResponse | null | undefined): AiProviderCredit | undefined {
+    if (!source) return undefined
+
+    if (source.unlimited) {
+        return {
+            valueText: "無制限",
+            usedPercent: null,
+            detailText: "上限はありません",
+            resetsAt: null,
+        }
+    }
+
+    const balance = Number.parseFloat(source.balance ?? "")
+    if (!Number.isFinite(balance)) return undefined
+
+    // 購入した総量は返らないため分母を出せない。バーは使わず残高だけを出す
+    return {
+        valueText: `残り ${balance.toLocaleString("ja-JP")} クレジット`,
+        usedPercent: null,
+        detailText:
+            balance > 0
+                ? formatApproxMessages(source.approx_local_messages)
+                : "購入したクレジットはありません",
+        resetsAt: null,
+    }
+}
+
+/** レスポンスから表示に使う制限枠とクレジット枠を取り出す */
+export function parseChatGptUsageResponse(data: UsageResponse): {
+    windows: AiUsageWindow[]
+    credit?: AiProviderCredit
+} {
+    const windows = [
+        toWindow(data.rate_limit?.primary_window),
+        toWindow(data.rate_limit?.secondary_window),
+    ].filter((window): window is AiUsageWindow => window !== null)
+
+    return { windows, credit: toCredit(data.credits) }
 }
 
 function requestUsage(accessToken: string, accountId: string): Promise<Response> {
@@ -232,16 +295,13 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
         const planType = data.plan_type
         const plan = planType ? (PLAN_LABELS[planType] ?? planType) : base.plan
 
-        const windows = [
-            toWindow(data.rate_limit?.primary_window),
-            toWindow(data.rate_limit?.secondary_window),
-        ].filter((window): window is AiUsageWindow => window !== null)
+        const { windows, credit } = parseChatGptUsageResponse(data)
 
         if (windows.length === 0) {
             return { ...base, plan, status: "error", message: "使用状況のレスポンスを解釈できませんでした" }
         }
 
-        return { ...base, plan, status: "ok", windows }
+        return { ...base, plan, status: "ok", windows, credit }
     } catch (error) {
         console.error("ChatGPT usage: 取得に失敗", error)
         return { ...base, status: "error", message: "使用状況の取得に失敗しました" }
