@@ -80,6 +80,14 @@ HTMLに出るため、レイアウトやクラスの確認はこれで足りる�
   購入した総量は返らないので**使用率（分母）を出せない**——バーではなく残高だけを出す。
   ワークスペースの上限（`spend_control.individual_limit`）は個人アカウントでは `null`
 
+`/api/oauth/usage` の Claude `extra_usage` は前払い残高ではなく、月額上限と使用額を返す。
+Claudeの画面に表示される実際の前払い残高は、Claude Webの非公開API
+`GET https://claude.ai/api/organizations/{org}/prepaid/credits` の `amount`（最小単位）で取得する。
+このAPIはOAuth Bearerトークンではなく `sessionKey` cookieを要求するため、ダッシュボードで実残高を
+表示するには `ANTHROPIC_CLAUDE_SESSION_KEY` を設定し、`ANTHROPIC_CLAUDE_ORGANIZATION_ID` は未設定なら
+`/api/organizations` から `chat` capability の組織を自動選択する。取得に失敗した場合は
+`extra_usage` の上限差分へフォールバックする。
+
 **画面確認は `/login` 配下の一時ルートから `parseClaudeUsageResponse` /
 `parseChatGptUsageResponse` に実レスポンスを流し込むのが早い。** どちらの提供元も
 リフレッシュトークンが要り、worktreeには `.env.local` が無いため実データを直接引けない。
