@@ -112,7 +112,7 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 | CPU温度 | `/sys/class/thermal/thermal_zone*` → 無ければ `/sys/class/hwmon/hwmon*` | 取れないマシンではカードごと省かれる。詳細は下記 |
 | CPU上位プロセス | `ps -eo pcpu=,rss=,args= --sort=-pcpu` | 上位5件。カーネルスレッドは除く |
 | メモリ上位プロセス | `ps -eo pcpu=,rss=,args= --sort=-rss` | 上位5件。CPU順の一覧には犯人が出てこないメモリ枯渇を捕まえるために別で送る（[issue #54](https://github.com/guchi-apps/ops-dashboard/issues/54)） |
-| サービス死活 | `systemctl is-active <名前>` | 指定したサービスをバッジで表示 |
+| サービス死活 | `systemctl is-active <名前>` | 指定したサービスをバッジで表示。socket activation されたものは下記の扱い |
 | 再起動待ち | `/var/run/reboot-required` の有無 | Debian系のみ |
 | 未適用の更新 | `/var/lib/update-notifier/updates-available` | `update-notifier-common` が入っていれば表示される。ESM（有償の延長サポート）分は数えない |
 | ログイン中のセッション | `who` | セッション数とユーザー名 |
@@ -270,6 +270,16 @@ systemctl status ops-dashboard-host-stats.service
 `HOST_STATS_SERVICES` に書くのは表示用の名前ではなく、そのホストに実在する systemd ユニット名で、
 `systemctl is-active <名前>` にそのまま渡る（存在しない名前を書くと、常に `inactive` の赤バッジが出るだけ）。
 候補は `systemctl list-units --type=service --state=running` で確認する。
+
+**socket activation されたサービス（Ubuntu 24.04 の `ssh` など）は `.service` のままでよい。**
+この種のサービスは接続が来るまで `.service` が inactive で、待ち受けは `.socket` が持つ。エージェントは
+`inactive` のとき起動元（`TriggeredBy`）の `.socket`・`.path` を見にいき、それが active なら
+`listening` として送るため、稼働中（緑バッジ）になる。`.socket` の側を書く必要はない
+（[issue #187](https://github.com/guchi-apps/ops-dashboard/issues/187)）。なお `failed` は待ち受けの
+有無に関わらず `failed` のまま送る。
+
+タイマー起動の oneshot はこの対象外で、`inactive` のまま送る。実行していない間を稼働中にすると
+前回の実行結果を見ずに緑になってしまうためで、定期ジョブは下記の「定期ジョブ」として別に送っている。
 
 **Uptime Kuma の HTTP 監視と重複しないものだけを選ぶ**方針にしている。Uptime Kuma は「外から応答があるか」、
 systemd は「そのホストでプロセスが動いているか」を見るもので、HTTPの口を持たないもの（cron・fail2ban・DB）は

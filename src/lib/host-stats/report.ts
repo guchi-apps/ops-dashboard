@@ -95,6 +95,13 @@ function parseDisks(value: unknown): HostStatsDisk[] {
     }))
 }
 
+/**
+ * 稼働中として扱う state。socket activation されたサービスは接続が来るまで .service が
+ * inactive のままで、待ち受けは .socket が持つ。エージェントはその状態を listening として
+ * 送るため（`scripts/host-stats/agent.sh`）、ここでも稼働中に数える（#187）
+ */
+const ACTIVE_SERVICE_STATES = new Set(["active", "listening"])
+
 function parseServices(value: unknown): HostStatsService[] {
     if (value === undefined || value === null) return []
     if (!Array.isArray(value)) fail("services が配列ではありません")
@@ -105,7 +112,7 @@ function parseServices(value: unknown): HostStatsService[] {
         return {
             name: asText(record.name, `services[${index}].name`),
             state,
-            active: state === "active",
+            active: ACTIVE_SERVICE_STATES.has(state),
         }
     })
 }
