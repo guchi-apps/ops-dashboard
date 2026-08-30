@@ -14,6 +14,18 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.23.0",
+        date: "2026-08-30",
+        changes: [
+            "AI使用状況にサブスクとは別枠の「クレジット」残高を表示できるようになりました。",
+        ],
+        usage: [
+            "ダッシュボードの「AI Usage」カードを開く",
+            "Claude・ChatGPTそれぞれのカード下部に「クレジット枠（サブスク外）」の行が表示される",
+            "上限が分かる場合はバーと割合、残高しか分からない場合は残高の数値のみが表示されれば成功",
+        ],
+    },
+    {
         version: "0.22.2",
         date: "2026-08-30",
         changes: [
