@@ -141,7 +141,7 @@ export async function resolveClaudeAccessToken(): Promise<string | null> {
     const refreshToken = process.env.ANTHROPIC_OAUTH_REFRESH_TOKEN
     if (!refreshToken) return null
 
-    return getAccessToken("claude", refreshToken, refreshAccessToken)
+    return (await getAccessToken("claude", refreshToken, refreshAccessToken)).accessToken
 }
 
 const FIVE_HOUR_SECONDS = 5 * 60 * 60

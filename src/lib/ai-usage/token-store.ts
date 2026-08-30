@@ -29,6 +29,22 @@ export interface RefreshResult {
     expiresInSeconds?: number
 }
 
+export interface AccessToken {
+    accessToken: string
+    /** この呼び出しで更新して得たものなら true。保存済みの使い回しなら false */
+    refreshed: boolean
+}
+
+export interface GetAccessTokenOptions {
+    /**
+     * ここに渡したアクセストークンが保存済みのものと一致していれば、期限内でも更新する。
+     * アクセストークンは有効期限内でも失効することがある（別端末での再ログイン・ログアウトなど）ため、
+     * 401 を受けた呼び出し元がやり直すときに使う。
+     * 別の要求が先に更新していれば、そのトークンをそのまま返す。
+     */
+    invalidate?: string
+}
+
 /** 期限ぎりぎりのトークンで叩かないための猶予 */
 const EXPIRY_MARGIN_MS = 60_000
 
@@ -84,8 +100,9 @@ function isFresh(tokens: StoredTokens): boolean {
 export async function getAccessToken(
     provider: TokenProvider,
     envRefreshToken: string,
-    refresh: (refreshToken: string) => Promise<RefreshResult>
-): Promise<string> {
+    refresh: (refreshToken: string) => Promise<RefreshResult>,
+    { invalidate }: GetAccessTokenOptions = {}
+): Promise<AccessToken> {
     return serialize(async () => {
         const state = await readState()
         const stored = state[provider]
@@ -96,8 +113,10 @@ export async function getAccessToken(
                 ? stored
                 : { seededFrom: envRefreshToken, refreshToken: envRefreshToken }
 
-        if (isFresh(entry)) {
-            return entry.accessToken as string
+        const invalidated = invalidate !== undefined && entry.accessToken === invalidate
+
+        if (!invalidated && isFresh(entry)) {
+            return { accessToken: entry.accessToken as string, refreshed: false }
         }
 
         let result: RefreshResult
@@ -120,6 +139,6 @@ export async function getAccessToken(
         }
         await writeState(state)
 
-        return result.accessToken
+        return { accessToken: result.accessToken, refreshed: true }
     })
 }
