@@ -5,7 +5,7 @@ import {
     readErrorBody,
 } from "@/lib/upstream"
 import { formatWindowLabel } from "@/lib/ai-usage/common"
-import { getAccessToken, type RefreshResult } from "@/lib/ai-usage/token-store"
+import { getAccessToken, type AccessToken, type RefreshResult } from "@/lib/ai-usage/token-store"
 import type { AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
 /**
@@ -124,6 +124,45 @@ function toWindow(source: RateLimitWindow | null | undefined): AiUsageWindow | n
     }
 }
 
+function requestUsage(accessToken: string, accountId: string): Promise<Response> {
+    return fetchWithTimeout(USAGE_URL, {
+        headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "ChatGPT-Account-Id": accountId,
+            "User-Agent": "codex-cli",
+            Accept: "application/json",
+        },
+    })
+}
+
+/** レスポンス本文の `detail` を画面に出せる長さで取り出す */
+function readDetail(body: string): string | null {
+    try {
+        const parsed: unknown = JSON.parse(body)
+        if (!parsed || typeof parsed !== "object") return null
+
+        const detail = (parsed as { detail?: unknown }).detail
+        return typeof detail === "string" && detail.length > 0 ? detail.slice(0, 120) : null
+    } catch {
+        return null
+    }
+}
+
+/**
+ * 失敗の原因を画面から判別できるようにする。
+ * 401 はトークンを更新してもなお認証されなかったときにしか出ないため、再ログインを促す。
+ */
+function describeUsageError(status: number, body: string): string {
+    if (status === 401) {
+        return "認証されませんでした (401)。ChatGPTへ再ログインして OPENAI_CHATGPT_REFRESH_TOKEN を更新してください"
+    }
+
+    const detail = readDetail(body)
+    return detail
+        ? `使用状況を取得できませんでした (${status}): ${detail}`
+        : `使用状況を取得できませんでした (${status})`
+}
+
 export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
     const base: Omit<AiProviderUsage, "status"> = {
         id: "chatgpt",
@@ -143,9 +182,9 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
         }
     }
 
-    let accessToken: string
+    let token: AccessToken
     try {
-        accessToken = await getAccessToken("chatgpt", refreshToken, refreshAccessToken)
+        token = await getAccessToken("chatgpt", refreshToken, refreshAccessToken)
     } catch (error) {
         console.error("ChatGPT usage: トークン更新に失敗", error)
         return {
@@ -156,21 +195,36 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
     }
 
     try {
-        const res = await fetchWithTimeout(USAGE_URL, {
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                "ChatGPT-Account-Id": accountId,
-                "User-Agent": "codex-cli",
-                Accept: "application/json",
-            },
-        })
+        let res = await requestUsage(token.accessToken, accountId)
+
+        // アクセストークンは有効期限が残っていても失効することがある（別端末での再ログインや
+        // ログアウトなど）。期限だけを見て使い回すと、保存済みのトークンが失効した時点から
+        // 401 が返り続け、更新のきっかけが二度と来ない。Codex CLI も 401 を受けたら
+        // トークンを更新してやり直すので、同じ手順を踏む。
+        if (res.status === 401 && !token.refreshed) {
+            try {
+                token = await getAccessToken("chatgpt", refreshToken, refreshAccessToken, {
+                    invalidate: token.accessToken,
+                })
+            } catch (error) {
+                console.error("ChatGPT usage: 401 を受けたあとのトークン更新に失敗", error)
+                return {
+                    ...base,
+                    status: "error",
+                    message: `認証トークンを更新できませんでした: ${describeError(error)}`,
+                }
+            }
+
+            res = await requestUsage(token.accessToken, accountId)
+        }
 
         if (!res.ok) {
-            console.error("ChatGPT usage API error:", res.status, await readErrorBody(res))
+            const body = await readErrorBody(res)
+            console.error("ChatGPT usage API error:", res.status, body)
             return {
                 ...base,
                 status: "error",
-                message: `使用状況を取得できませんでした (${res.status})`,
+                message: describeUsageError(res.status, body),
             }
         }
 
