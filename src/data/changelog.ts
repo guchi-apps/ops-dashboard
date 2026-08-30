@@ -14,6 +14,19 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.22.2",
+        date: "2026-08-30",
+        changes: [
+            "ChatGPTの利用状況が401エラーのまま復帰しなくなる不具合と、ssh等の接続待ちサービスが「停止中」と誤表示される不具合を修正しました。",
+        ],
+        usage: [
+            "ダッシュボードの「サービス死活」カードを開く",
+            "ssh など socket activation で動くサービスの状態を確認する",
+            "接続待ちの状態でも赤バッジ（停止中）ではなく緑バッジ（稼働中）で表示されていれば成功",
+            "ChatGPTの利用状況カードが以前401エラーのまま止まっていた場合は、再読み込みすると自動的に復帰することを確認する",
+        ],
+    },
+    {
         version: "0.22.1",
         date: "2026-08-28",
         changes: [
