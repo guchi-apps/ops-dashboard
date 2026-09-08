@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { requireSessionOrApiToken } from "@/lib/session"
+import { requireSessionOrToken } from "@/lib/session"
 import {
     addUptimeKumaMonitor,
     isUptimeKumaAdminConfigured,
@@ -10,15 +10,20 @@ import {
 /**
  * Uptime Kuma へモニターを登録する。
  *
- * 画面の「モニター追加」からも、新規アプリ作成の手順から `OPS_API_TOKEN` を付けた
- * サーバー間の呼び出しとしても叩ける。同じURLのモニターが既にあれば作らずにそれを返すため、
- * 手順を何度実行しても重複しない。
+ * 画面の「モニター追加」からも、新規アプリ作成の手順から `UPTIMEKUMA_ADMIN_TOKEN` を
+ * 付けたサーバー間の呼び出しとしても叩ける。同じURLのモニターが既にあれば作らずにそれを
+ * 返すため、手順を何度実行しても重複しない。
+ *
+ * **読み取り用の `OPS_API_TOKEN` では通さない。** あれは「サーバー間参照向けの読み取りAPI」
+ * 用として配ってあるもので（README「サーバー間参照向けの読み取りAPI」）、相乗りさせると
+ * 読み取りのつもりで渡したトークンで本番の監視設定を書き換えられるようになる。
+ * `POST /api/host-stats` が `HOST_STATS_TOKEN` を持つのと同じく、専用トークンにしている。
  *
  * `/api/uptime-kuma` は src/proxy.ts の認証対象から外れており、この配下の保護は
  * ここだけが担う。Kumaへ書き込む唯一の経路なので、認証を外さないこと。
  */
 export async function POST(request: NextRequest) {
-    const { response } = await requireSessionOrApiToken(request)
+    const { response } = await requireSessionOrToken(request, process.env.UPTIMEKUMA_ADMIN_TOKEN)
     if (response) return response
 
     if (!isUptimeKumaAdminConfigured()) {

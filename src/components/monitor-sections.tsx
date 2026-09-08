@@ -27,7 +27,12 @@ export function MonitorSections({
 
     return (
         <div className="space-y-5">
-            {(uptimeKuma.length > 0 || canAddMonitor) && (
+            {/*
+              * 見出しと追加の入り口は、取得できたモニターの件数から切り離している。
+              * Kumaの取得に失敗したときも一覧は0件になるため（src/lib/uptime-kuma.ts）、
+              * 件数で囲うと「登録したい・Kumaを開きたい」状況でちょうど入り口が消える。
+              */}
+            {(canAddMonitor || addMonitorUrl !== null) && (
                 <section className="space-y-3">
                     {canAddMonitor ? (
                         <AddMonitorPanel />
@@ -49,11 +54,17 @@ export function MonitorSections({
                             }
                         />
                     )}
-                    <MonitorCardGrid count={uptimeKuma.length}>
-                        {uptimeKuma.map((monitor) => (
-                            <UptimeKumaDashboardCard key={monitor.id} monitor={monitor} />
-                        ))}
-                    </MonitorCardGrid>
+                    {uptimeKuma.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                            Uptime Kuma のモニターが取得できません。ステータスページの設定を確認してください。
+                        </p>
+                    ) : (
+                        <MonitorCardGrid count={uptimeKuma.length}>
+                            {uptimeKuma.map((monitor) => (
+                                <UptimeKumaDashboardCard key={monitor.id} monitor={monitor} />
+                            ))}
+                        </MonitorCardGrid>
+                    )}
                 </section>
             )}
 

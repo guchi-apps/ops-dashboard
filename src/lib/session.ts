@@ -98,13 +98,32 @@ export async function requireSessionOrApiToken(
 ): Promise<
   { caller: ApiCaller; response?: undefined } | { caller?: undefined; response: NextResponse }
 > {
+  return requireSessionOrToken(request, process.env.OPS_API_TOKEN);
+}
+
+/**
+ * ログインセッションか、指定した固定トークンのどちらかを求める。
+ *
+ * トークンは用途ごとに分けている（読み取り全般は `OPS_API_TOKEN`、ウィジェット中継は
+ * `WIDGET_TOKEN`、メトリクス受信は `HOST_STATS_TOKEN`）。1本を使い回すと、片方を失効
+ * させたときにもう片方が巻き添えで止まるうえ、**読み取り用に配ったトークンで書き込みが
+ * できてしまう**ためである。書き込みルートを足すときは、読み取り用の
+ * `requireSessionOrApiToken()` に相乗りせず、そのルート専用のトークンを渡すこと。
+ *
+ * 期待値が未設定ならトークン経路は常に不可となり、セッション必須になる。
+ */
+export async function requireSessionOrToken(
+  request: Request,
+  expectedToken: string | undefined,
+): Promise<
+  { caller: ApiCaller; response?: undefined } | { caller?: undefined; response: NextResponse }
+> {
   const session = await getSession();
   if (session) return { caller: { kind: "session", session } };
 
-  const apiToken = process.env.OPS_API_TOKEN;
   const authorization = request.headers.get("authorization");
-  if (apiToken && authorization?.startsWith("Bearer ")) {
-    if (tokenMatches(authorization.slice("Bearer ".length), apiToken)) {
+  if (expectedToken && authorization?.startsWith("Bearer ")) {
+    if (tokenMatches(authorization.slice("Bearer ".length), expectedToken)) {
       return { caller: { kind: "token" } };
     }
   }
