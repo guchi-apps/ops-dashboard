@@ -171,9 +171,12 @@ function Panel({
 export function DashboardShell({
     userEmail,
     addMonitorUrl,
+    canAddMonitor,
 }: {
     userEmail: string
     addMonitorUrl: string | null
+    /** Kumaの管理者認証情報が揃っていて、画面から直接モニターを登録できるか */
+    canAddMonitor: boolean
 }) {
     const data = useDashboardData()
     const {
@@ -455,7 +458,12 @@ export function DashboardShell({
                     </div>
                 )}
 
-                {activeTab === "monitors" && <MonitorSections addMonitorUrl={addMonitorUrl} />}
+                {activeTab === "monitors" && (
+                    <MonitorSections
+                        addMonitorUrl={addMonitorUrl}
+                        canAddMonitor={canAddMonitor}
+                    />
+                )}
             </SwipeTabs>
         </div>
     )
