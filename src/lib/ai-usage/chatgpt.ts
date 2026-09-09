@@ -1,11 +1,13 @@
-import {
-    clampPercent,
-    describeError,
-    fetchWithTimeout,
-    readErrorBody,
-} from "@/lib/upstream"
+import { clampPercent, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
 import { formatWindowLabel } from "@/lib/ai-usage/common"
-import { getAccessToken, type AccessToken, type RefreshResult } from "@/lib/ai-usage/token-store"
+import {
+    describeRefreshFailure,
+    getAccessToken,
+    isInvalidGrantResponse,
+    RefreshTokenRevokedError,
+    type AccessToken,
+    type RefreshResult,
+} from "@/lib/ai-usage/token-store"
 import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
 /**
@@ -15,6 +17,9 @@ import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/a
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 const TOKEN_URL = "https://auth.openai.com/oauth/token"
 const OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+
+/** 失効したときに画面へ出す、差し替える対象の環境変数名 */
+const REFRESH_TOKEN_ENV_KEY = "OPENAI_CHATGPT_REFRESH_TOKEN"
 
 /** リフレッシュのレスポンスに有効期限が入らないため、JWTから読めなかったときの既定値 */
 const FALLBACK_TOKEN_TTL_SECONDS = 15 * 60
@@ -99,7 +104,11 @@ async function refreshAccessToken(refreshToken: string): Promise<RefreshResult> 
     })
 
     if (!res.ok) {
-        throw new Error(`トークンの更新に失敗しました (${res.status}): ${await readErrorBody(res)}`)
+        const body = await readErrorBody(res)
+        if (isInvalidGrantResponse(res.status, body)) {
+            throw new RefreshTokenRevokedError("ChatGPT", REFRESH_TOKEN_ENV_KEY, body)
+        }
+        throw new Error(`トークンの更新に失敗しました (${res.status}): ${body}`)
     }
 
     const data = (await res.json()) as TokenResponse
@@ -217,7 +226,7 @@ function readDetail(body: string): string | null {
  */
 function describeUsageError(status: number, body: string): string {
     if (status === 401) {
-        return "認証されませんでした (401)。ChatGPTへ再ログインして OPENAI_CHATGPT_REFRESH_TOKEN を更新してください"
+        return `認証されませんでした (401)。ChatGPTへ再ログインして ${REFRESH_TOKEN_ENV_KEY} を更新してください`
     }
 
     const detail = readDetail(body)
@@ -234,14 +243,14 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
         windows: [],
     }
 
-    const refreshToken = process.env.OPENAI_CHATGPT_REFRESH_TOKEN
+    const refreshToken = process.env[REFRESH_TOKEN_ENV_KEY]
     const accountId = process.env.OPENAI_CHATGPT_ACCOUNT_ID
 
     if (!refreshToken || !accountId) {
         return {
             ...base,
             status: "unconfigured",
-            message: "OPENAI_CHATGPT_REFRESH_TOKEN / OPENAI_CHATGPT_ACCOUNT_ID が未設定です",
+            message: `${REFRESH_TOKEN_ENV_KEY} / OPENAI_CHATGPT_ACCOUNT_ID が未設定です`,
         }
     }
 
@@ -253,7 +262,7 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
         return {
             ...base,
             status: "error",
-            message: `認証トークンを更新できませんでした: ${describeError(error)}`,
+            message: describeRefreshFailure(error),
         }
     }
 
@@ -274,7 +283,7 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
                 return {
                     ...base,
                     status: "error",
-                    message: `認証トークンを更新できませんでした: ${describeError(error)}`,
+                    message: describeRefreshFailure(error),
                 }
             }
 
