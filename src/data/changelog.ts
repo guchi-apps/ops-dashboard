@@ -14,6 +14,19 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.24.0",
+        date: "2026-09-09",
+        changes: [
+            "監視タブから、Uptime Kumaの管理画面を開かなくても、モニターをその場で追加できるようになりました。",
+        ],
+        usage: [
+            "ダッシュボードの「監視」タブを開く",
+            "Uptime Kumaのセクションにある「モニター追加」ボタンを押す",
+            "表示されたフォームに「名前」と「URL」を入力し、「登録」ボタンを押す",
+            "「〇〇を追加しました。」と表示され、追加したモニターが一覧に並べば成功",
+        ],
+    },
+    {
         version: "0.23.5",
         date: "2026-09-09",
         changes: [
