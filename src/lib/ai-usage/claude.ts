@@ -1,11 +1,12 @@
-import {
-    clampPercent,
-    describeError,
-    fetchWithTimeout,
-    readErrorBody,
-} from "@/lib/upstream"
+import { clampPercent, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
 import { formatWindowLabel } from "@/lib/ai-usage/common"
-import { getAccessToken, type RefreshResult } from "@/lib/ai-usage/token-store"
+import {
+    describeRefreshFailure,
+    getAccessToken,
+    isInvalidGrantResponse,
+    RefreshTokenRevokedError,
+    type RefreshResult,
+} from "@/lib/ai-usage/token-store"
 import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
 /**
@@ -27,6 +28,9 @@ const TOKEN_URLS = [
 ]
 
 const OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+
+/** 失効したときに画面へ出す、差し替える対象の環境変数名 */
+const REFRESH_TOKEN_ENV_KEY = "ANTHROPIC_OAUTH_REFRESH_TOKEN"
 
 /**
  * このヘッダーが無いと 401 が返る。バージョン文字列が変わると無言で 401 になるため、
@@ -142,7 +146,11 @@ async function refreshAccessToken(refreshToken: string): Promise<RefreshResult> 
         }
 
         if (!res.ok) {
-            throw new Error(`トークンの更新に失敗しました (${res.status}): ${await readErrorBody(res)}`)
+            const body = await readErrorBody(res)
+            if (isInvalidGrantResponse(res.status, body)) {
+                throw new RefreshTokenRevokedError("Claude", REFRESH_TOKEN_ENV_KEY, body)
+            }
+            throw new Error(`トークンの更新に失敗しました (${res.status}): ${body}`)
         }
 
         const data = (await res.json()) as TokenResponse
@@ -167,7 +175,7 @@ async function refreshAccessToken(refreshToken: string): Promise<RefreshResult> 
  * `claude login` のフルOAuthで発行されるトークンだけなので、そのリフレッシュトークンを使う。
  */
 export async function resolveClaudeAccessToken(): Promise<string | null> {
-    const refreshToken = process.env.ANTHROPIC_OAUTH_REFRESH_TOKEN
+    const refreshToken = process.env[REFRESH_TOKEN_ENV_KEY]
     if (!refreshToken) return null
 
     return (await getAccessToken("claude", refreshToken, refreshAccessToken)).accessToken
@@ -391,7 +399,7 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
         return {
             ...base,
             status: "error",
-            message: `認証トークンを更新できませんでした: ${describeError(error)}`,
+            message: describeRefreshFailure(error),
         }
     }
 
@@ -399,7 +407,7 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
         return {
             ...base,
             status: "unconfigured",
-            message: "ANTHROPIC_OAUTH_REFRESH_TOKEN が未設定です",
+            message: `${REFRESH_TOKEN_ENV_KEY} が未設定です`,
         }
     }
 

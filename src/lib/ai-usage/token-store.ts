@@ -1,6 +1,8 @@
 import fs from "fs/promises"
 import path from "path"
 
+import { describeError } from "@/lib/upstream"
+
 /**
  * OAuth のリフレッシュトークンは使うたびにローテーションするため、
  * 環境変数（1Password 由来）の値をそのまま使い続けることができない。
@@ -43,6 +45,47 @@ export interface GetAccessTokenOptions {
      * 別の要求が先に更新していれば、そのトークンをそのまま返す。
      */
     invalidate?: string
+}
+
+/**
+ * リフレッシュトークン自体が失効している（提供元が `invalid_grant` を返した）ことを表す。
+ * 何度やり直しても復旧せず、利用者が再ログインしてトークンを差し替えるしかないため、
+ * 通信エラーや 5xx のような一時的な失敗とは区別して扱う。
+ */
+export class RefreshTokenRevokedError extends Error {
+    /** 提供元が返した本文。原因の切り分け用にログへ残す */
+    readonly detail: string
+
+    constructor(providerName: string, envKey: string, detail: string) {
+        super(
+            `リフレッシュトークンが失効しています。${providerName}へ再ログインして ${envKey} を更新してください`
+        )
+        this.name = "RefreshTokenRevokedError"
+        this.detail = detail
+    }
+}
+
+/**
+ * トークンエンドポイントの失敗が「リフレッシュトークンの失効」かを判定する。
+ * OAuth 2.0（RFC 6749 §5.2）では失効・取り消し・クライアント不一致がまとめて
+ * `invalid_grant` で返るため、本文の `error` を見るしかない。
+ */
+export function isInvalidGrantResponse(status: number, body: string): boolean {
+    if (status !== 400 && status !== 401) return false
+
+    try {
+        const parsed: unknown = JSON.parse(body)
+        if (!parsed || typeof parsed !== "object") return false
+        return (parsed as { error?: unknown }).error === "invalid_grant"
+    } catch {
+        return false
+    }
+}
+
+/** トークン更新の失敗を画面に出す文にする。失効なら次にやることが分かる文言をそのまま使う */
+export function describeRefreshFailure(error: unknown): string {
+    if (error instanceof RefreshTokenRevokedError) return error.message
+    return `認証トークンを更新できませんでした: ${describeError(error)}`
 }
 
 /** 期限ぎりぎりのトークンで叩かないための猶予 */
@@ -123,7 +166,12 @@ export async function getAccessToken(
         try {
             result = await refresh(entry.refreshToken)
         } catch (error) {
-            // ローテーション後のトークンを取りこぼしている可能性があるため、env の値でもう一度だけ試す
+            // 保存済みのトークンが「失効している」と分かったときだけ、ローテーション後の値を
+            // 取りこぼしている可能性を見て env の値でもう一度だけ試す。
+            // 通信エラーや 5xx では保存済みの値がまだ生きている公算が大きく、そこで使用済みの
+            // 古いトークンを送ると、提供元のトークン再利用検知（RFC 9700 §4.14.2）で
+            // 有効なトークンまで巻き添えに失効させられかねないため、やり直さない。
+            if (!(error instanceof RefreshTokenRevokedError)) throw error
             if (entry.refreshToken === envRefreshToken) throw error
             result = await refresh(envRefreshToken)
         }
