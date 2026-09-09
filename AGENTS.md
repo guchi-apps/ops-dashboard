@@ -64,6 +64,33 @@ PORT=17096 NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co \
 に `initial={{ uptimeKuma: [], uptimeRobot: [] }}` を渡せば、実データが無くてもタブの構造まで
 HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
 
+## Uptime Kuma へのモニター登録
+
+**Uptime Kuma にはモニターを作るREST APIが無い**（1.x・2.x とも）。公開されている
+`/api/status-page/*` は読み取り専用で、作成できるのは**管理者としてログインした socket.io
+セッションから `add` イベントを送る経路だけ**（v1.23.17 の `server/server.js:643`）。
+別のエンドポイントを探さないこと。`src/lib/uptime-kuma-admin.ts` がこの経路を実装している。
+公式に約束された仕様ではないので、Kumaを更新したらここが最初に壊れる。
+
+- **`add` だけではダッシュボードに出ない。** この画面はモニターを公開ステータスページ
+  （`/api/status-page/<slug>`）から読んでいるため、作成したあと `saveStatusPage` でその
+  ページへ載せるところまでやって初めて一覧に並ぶ
+- **`saveStatusPage` はグループとモニターの割り当てを丸ごと置き換える。** 送らなかった
+  グループは消えるので、いま公開されている `publicGroupList` を読み直し、末尾に1件足したものを
+  送り返す。差分だけを送る形にはできない
+- **ページの設定は公開APIではなく管理者socketの `getStatusPage` から取る。** 公開APIが返す
+  `config` には `domainNameList` が無く、それを渡して保存するとドメイン設定が消える
+- **`login` の応答は、2要素認証が有効だと `{ tokenRequired: true }` で `ok` を持たない**
+  （`server/server.js:377`）。`ok` だけを見ていると「拒否された」と誤って報告する
+- **モニターは画面が送るのと同じ形で渡す。** サーバー側は受け取ったオブジェクトを RedBean の
+  bean へ丸ごと import するだけで既定値を補完しない。`src/pages/EditMonitor.vue` の
+  `monitorDefaults` を写した定数を `uptime-kuma-admin.ts` に持たせてあるので、Kumaを
+  更新したときはそこを合わせ直す
+
+`UPTIMEKUMA_USERNAME` / `UPTIMEKUMA_PASSWORD` が未設定なら登録機能は無効になり、監視タブの
+「モニター追加」はKumaの `/add` を開くリンクへ戻る。設定を欠いたまま壊れないので、worktreeで
+そのまま動かしてよい。
+
 ## AI利用枠のクレジット（サブスク外）
 
 サブスクの制限枠とは別会計の「クレジット枠」は、**両方とも使用状況のレスポンスに同居している**。

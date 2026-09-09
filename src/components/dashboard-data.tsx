@@ -56,6 +56,11 @@ interface DashboardData extends DashboardInitialData {
     refreshState: RefreshState
     /** 連打を抑えている残り秒数。0 なら押せる */
     refreshCooldownSeconds: number
+    /**
+     * Uptime Kuma の一覧だけを取り直す。モニターを追加した直後に使う。
+     * ヘッダーの更新ボタンと違って全ソースを叩かないため、連打の抑制も掛けていない。
+     */
+    refreshUptimeKuma: () => Promise<boolean>
 }
 
 const DashboardDataContext = createContext<DashboardData | null>(null)
@@ -137,6 +142,12 @@ export function DashboardDataProvider({
     )
     const manualRefresh = useManualRefresh(refreshers)
 
+    const refreshUptimeKumaOnly = uptimeKuma.refresh
+    const refreshUptimeKuma = useCallback(
+        () => refreshUptimeKumaOnly(false),
+        [refreshUptimeKumaOnly]
+    )
+
     const value = useMemo<DashboardData>(
         () => ({
             hostStats: hostStats.value,
@@ -157,8 +168,10 @@ export function DashboardDataProvider({
             refresh: manualRefresh.refresh,
             refreshState: manualRefresh.state,
             refreshCooldownSeconds: manualRefresh.cooldownSeconds,
+            refreshUptimeKuma,
         }),
         [
+            refreshUptimeKuma,
             hostStats,
             aiUsage,
             githubUsage,

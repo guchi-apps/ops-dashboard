@@ -525,7 +525,9 @@ Authorization: Bearer <OPS_API_TOKEN>
 - **トークンを分けている理由**: 用途（読み取り全般 / ウィジェット中継 / メトリクス受信）が違うため、
   `WIDGET_TOKEN`・`HOST_STATS_TOKEN` とは別トークンにしている。1本を使い回すと、
   片方を失効させたときにもう片方が巻き添えで止まる
-- **`POST /api/host-stats` は対象外**。従来どおり `HOST_STATS_TOKEN` で認証する
+- **書き込みAPIは対象外**。`POST /api/host-stats` は従来どおり `HOST_STATS_TOKEN`、
+  `POST /api/uptime-kuma/monitors` は `UPTIMEKUMA_ADMIN_TOKEN` で認証する。
+  読み取り用として配ったトークンで本番の設定を書き換えられないよう、書き込みには相乗りさせない
 - **レスポンスの形は画面向けと同一**。AIDE側は既存の型（`src/types/host-stats.ts` ほか）を契約として
   実装しているため、**形を変える場合は aide#31 側の追随が要る**
 
@@ -697,6 +699,34 @@ Androidのアダプティブアイコンに渡すと四隅が二重に削れて�
 npm run lint
 npm run build
 ```
+
+## Uptime Kuma へのモニター登録
+
+監視タブの「モニター追加」と `POST /api/uptime-kuma/monitors` から、Uptime Kuma へモニターを登録できる（[issue #214](https://github.com/guchi-apps/ops-dashboard/issues/214)）。新規アプリを作ったときの監視登録を手作業にしないための口である。
+
+**Uptime Kuma にはモニターを作るREST APIが無い。** 公開されている `/api/status-page/*` は読み取り専用で、作成できるのは管理者としてログインした socket.io セッションから `add` イベントを送る経路だけである。`src/lib/uptime-kuma-admin.ts` がこの経路を実装しているが、公式に約束された仕様ではないため、Kumaを更新すると壊れうる。詳細な注意点は `AGENTS.md` の同名の節にまとめてある。
+
+```
+POST /api/uptime-kuma/monitors
+Authorization: Bearer <UPTIMEKUMA_ADMIN_TOKEN>
+Content-Type: application/json
+
+{ "name": "My App", "url": "https://my-app.example.com/", "interval": 60, "retries": 0 }
+```
+
+- **認証**: ログインセッション、または `UPTIMEKUMA_ADMIN_TOKEN`。**読み取り用の `OPS_API_TOKEN` では通らない**（用途で分ける方針。上記「サーバー間参照向けの読み取りAPI」を参照）
+- **何度呼んでも重複しない**。同じURLのモニターが既にあれば作らずにそれを返す（`created: false`）。末尾スラッシュの有無は同じものとして扱う
+- **ステータスページへの反映まで行う**。この画面はモニターを公開ステータスページから読んでいるため、作成しただけでは一覧に出ない
+- `UPTIMEKUMA_USERNAME` / `UPTIMEKUMA_PASSWORD` が未設定なら登録機能は無効になり、監視タブの「モニター追加」はKumaの `/add` を開くリンクへ戻る。**管理者アカウントに2要素認証が有効な場合も使えない**（Kumaの `login` がワンタイムコードを要求するため、理由付きのエラーを返す）
+
+| コード | 条件 |
+| --- | --- |
+| 201 | 新しく作成した |
+| 200 | 同じURLのモニターが既にあり、作成しなかった |
+| 400 | `name` / `url` が無い、または形式が不正 |
+| 401 | ログインセッションが無く、`Authorization` も一致しない |
+| 503 | 管理者認証情報が未設定 |
+| 502 | Kumaへ接続できない・ログインできない・Kumaが登録を拒否した |
 
 ## デプロイ
 
