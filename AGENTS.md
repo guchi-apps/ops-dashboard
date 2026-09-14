@@ -146,7 +146,7 @@ Claudeの画面に表示される実際の前払い残高は、Claude Webの非�
 
 `@claude` コメントを起点に、計画提示〜実装〜develop向けPR作成までを GitHub Actions 上で無人実行する。
 ワークフローの実体は `guchi-apps/issue-deck` にあり、このリポジトリの `.github/workflows/` には
-`uses:` で参照する薄い caller だけを置いている（現在は `@workflows/v23`）。**callerを追加・更新する
+`uses:` で参照する薄い caller だけを置いている。**callerを追加・更新する
 ときは、`uses:` のタグと `prompts-ref` をリポジトリ内の全callerで同じ値に揃える。**
 
 設計・運用の詳細は issue-deck 側を参照する。
@@ -245,6 +245,18 @@ Status = 今どこにいるか、Label = どんな性質・条件があるか、
 - 課金・決済
 - 大規模な依存関係の更新
 - `develop` → `main` のマージ
+
+**develop向けPRのClaude Codeレビューは、このリポジトリでは毎回走る**（#233）。共有ワークフローの既定は
+「リスクパスに該当」か「10ファイルまたは500行以上」のときだけ `claude-review` を実行し、それ以外を
+skipする（guchi-apps/issue-deck#992。コスト削減のため）。既定のままだと、トークン処理を変えた#223を
+含む小さなPRがすべてskipされていた。数行でも致命的になりうる変更はパスで列挙しきれないため、
+`.github/workflows/claude-review-develop.yml` で `review-file-threshold: "1"` にしてある。
+
+上のカテゴリのうちパス名から判別できないもの（認証・APIルート・トークンを扱うクライアント）は、
+同じcallerの `risk-paths` に列挙してある。**判定の対象はパスだけなので、トークンやセッションを
+扱うファイルを新しく足したら `risk-paths` にも足す**（足さなくてもレビューは走るが、`risk-check`
+ジョブのサマリー「Claude Review 実行判定」に該当理由が出ない）。`merge-policy` は既定の `relaxed` のままで、該当してもdevelopへのマージは
+止まらない（レビューが要修正と判定した場合だけ止まる）。
 
 ### 実装エージェントの禁止事項
 
