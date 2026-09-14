@@ -5,11 +5,21 @@ name: Claude Code Review (develop向けPR)
 # 持たず、issue-deckの再利用可能ワークフローを参照する
 # （guchi-apps/issue-deck#1078・#1090）。
 #
-# **このファイルはissue-deckの画面（設定＞フリート運用）から配布された雛形である**
-# （guchi-apps/issue-deck#1475）。`with:`はどのリポジトリでも同じ値で、このリポジトリ固有の
-# リスクパスは入っていない。認証・暗号化のように**パス名から判別できない領域**がある場合は、
-# issue-deck本体やdayspanのcallerを参考に`risk-paths`へ後から足す
-# （例: `^src/(proxy\.ts$|lib/(supabase|crypto)/)`）。
+# issue-deckの画面（設定＞フリート運用）から配布された雛形に、ops-dashboard固有の設定を
+# 足してある（guchi-apps/issue-deck#1475・#233）。
+#
+# **このリポジトリではdevelop向けPRを毎回レビューする**（#233）。再利用ワークフローの既定は
+# 「リスクパスに該当」か「10ファイルまたは500行以上」のときだけ`claude-review`を走らせる
+# （guchi-apps/issue-deck#992。コスト削減のため）が、既定のままだとトークン処理を変えた#223を
+# 含む直近のPRがすべてskipされていた。数行でも致命的になりうる変更（表示ロジックの破損で
+# 障害を正常と見せる、など）はパスで列挙できないため、`review-file-threshold`を1にして
+# 差分があれば必ず実行する（lockファイルだけの差分は数えないのでskipされる）。
+#
+# `risk-paths`には、AGENTS.md「自動マージ不可カテゴリ」のうちパス名から判別できないもの
+# （認証・APIルート・外部サービスのトークンを扱うクライアント）を足してある。レビューは
+# 閾値で毎回走るが、該当するとレビュー実行の理由に出てレビュー時の判断材料になる。
+# `merge-policy`は既定の`relaxed`のままなので、該当してもマージは止めない。
+# カテゴリに当たるファイルを増やしたときは、ここも合わせて更新する。
 #
 # 内蔵パターン（`.github/workflows/**`・`.env*`・`.shared-context/**`・
 # `prisma/migrations/**`・`**/auth/**`）は再利用ワークフロー側が常に判定するため書かない。
@@ -43,6 +53,8 @@ jobs:
   review:
     uses: guchi-apps/issue-deck/.github/workflows/reusable-claude-review-develop.yml@workflows/v34
     with:
+      # 差分があれば毎回レビューする（冒頭コメント参照。#233）。
+      review-file-threshold: "1"
       # 内蔵パターンでは拾えないもののうち、**どのリポジトリにも共通で置けるぶん**だけ。
       #
       # - `.env.tpl`は内蔵の`.env*`（`(^|/)\.env`）に当たらない
@@ -57,6 +69,13 @@ jobs:
         ^\.github/secrets-manifest\.tsv$ :: シークレット定義の変更 (.github/secrets-manifest.tsv)
         (^|/)requirements[^/]*\.txt$|(^|/)pyproject\.toml$|(^|/)Pipfile$ :: 依存関係の変更 (requirements*.txt, pyproject.toml, Pipfile)
         /package\.json$ :: ルート以外の依存関係の変更 (frontend/package.json など。dependency-checkはルートしか見ない)
+        # ここからops-dashboard固有（AGENTS.md「自動マージ不可カテゴリ」のうちパス名から判別できないもの）。
+        # `/api/*` はproxyの認証から外してあり（src/proxy.tsのPUBLIC_PATH_PREFIXES）、保護は
+        # src/lib/session.ts とルート側だけが担う
+        ^src/(proxy\.ts$|lib/(supabase/|allowed-emails\.ts$|session\.ts$)) :: 認証・セッション・許可ユーザー判定の変更 (src/proxy.ts, src/lib/supabase/**, src/lib/allowed-emails.ts, src/lib/session.ts)
+        ^src/app/api/ :: APIルートの変更 (src/app/api/**。proxyの認証対象外で、ルート側で認証する)
+        ^src/lib/(ai-usage/|claude-usage\.ts$|onepassword-usage\.ts$|uptimerobot\.ts$|uptime-kuma(-admin)?\.ts$|github-(usage|repo-visibility)\.ts$) :: 外部サービスのトークンを扱うAPIクライアントの変更 (AI利用枠・1Password・UptimeRobot・Uptime Kuma・GitHub)
+        ^scripts/sync-github-secrets\.sh$ :: シークレット同期スクリプトの変更 (scripts/sync-github-secrets.sh)
       # 上の uses: と同じタグを指定する。片方だけ上げると新しいワークフローで
       # 古いプロンプトが使われる。
       prompts-ref: workflows/v34
