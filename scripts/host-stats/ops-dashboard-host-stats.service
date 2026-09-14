@@ -22,3 +22,7 @@ PrivateTmp=no
 # 読めれば足りるので書き込みは許さない（ProtectSystem=strict も維持）
 ProtectHome=read-only
 ProtectSystem=strict
+# アプリ別のディスク使用量（du）を1時間ごとに測ってキャッシュする置き場（#226）。
+# ProtectSystem=strict のままでも /var/lib/ops-dashboard-host-stats だけは書ける。
+# これが無いとエージェントはキャッシュを書けず、毎分 du を走らせないようディスクの集計ごと諦める
+StateDirectory=ops-dashboard-host-stats
