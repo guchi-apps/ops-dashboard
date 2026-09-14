@@ -40,7 +40,20 @@ export function StatusStrip({ chips }: { chips: SummaryChip[] }) {
                                 chip.tone === "neutral" ? "text-foreground" : TEXT_TONES[chip.tone]
                             )}
                         >
-                            {chip.value}
+                            {chip.valueParts
+                                ? chip.valueParts.map((part, index) => (
+                                      <span
+                                          key={index}
+                                          className={
+                                              part.muted
+                                                  ? "text-[10px] font-normal text-muted-foreground"
+                                                  : undefined
+                                          }
+                                      >
+                                          {part.text}
+                                      </span>
+                                  ))
+                                : chip.value}
                         </span>
                         {chip.note && (
                             <span className="whitespace-nowrap text-[10px] text-muted-foreground">
