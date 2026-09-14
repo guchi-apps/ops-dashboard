@@ -1,9 +1,11 @@
+import { AIDE_SEVERITY_LABEL, formatAideDuration } from "@/lib/aide-status-format"
 import { formatAge } from "@/lib/host-stats/format"
 import { summarizeTimers } from "@/lib/host-stats/timers"
 import { summarizeTmux, type TmuxSessionView } from "@/lib/host-stats/tmux"
 import type { UptimeKumaMonitor } from "@/lib/uptime-kuma"
 import type { UptimeRobotMonitor } from "@/lib/uptimerobot"
 import type { AiProviderId, AiUsageSnapshot } from "@/types/ai-usage"
+import type { AideStatusSnapshot } from "@/types/aide-status"
 import type { GitHubUsageSnapshot } from "@/types/github-usage"
 import type { HostStatsView } from "@/types/host-stats"
 import type { OnePasswordUsageSnapshot } from "@/types/onepassword-usage"
@@ -244,6 +246,63 @@ function maintenanceChip(view: HostStatsView | null): SummaryChip | null {
     }
 }
 
+/** チップの注記は1行で出すため、長い文は途中で切る */
+function clip(text: string, max: number): string {
+    return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
+/**
+ * AIDE（MCPサーバー）の動作状況（#237）。
+ *
+ * 取得に失敗したときは消さずに「取得不可」を出す。AIDEが止まっているときこそ最上段で気づきたいため。
+ * 注意の文面は1行に収まらないので、原因がジョブならその名前だけを添える。
+ */
+function aideChip(snapshot: AideStatusSnapshot | null): SummaryChip | null {
+    if (!snapshot || snapshot.status === "unconfigured") return null
+
+    if (snapshot.status === "error" || !snapshot.health) {
+        return {
+            key: "aide",
+            label: "AIDE",
+            value: "取得不可",
+            note: snapshot.message ? clip(snapshot.message, 40) : undefined,
+            tone: "danger",
+        }
+    }
+
+    const { health } = snapshot
+    if (health.severity !== "warn" && health.severity !== "danger") {
+        return {
+            key: "aide",
+            label: "AIDE",
+            value: "正常",
+            note: `v${health.server.version || "?"} · 稼働 ${formatAideDuration(Math.round(health.server.uptimeSeconds / 60))}`,
+            tone: "ok",
+        }
+    }
+
+    const failed = health.jobs.filter((job) => job.lastRun && !job.lastRun.ok).map((job) => job.name)
+    const late = health.jobs
+        .filter((job) => job.lastRun?.ok && job.severity === "warn")
+        .map((job) => job.name)
+    const notes = [
+        failed.length > 0 ? `${failed.join("・")} が失敗` : null,
+        late.length > 0 ? `${late.join("・")} が遅れている` : null,
+    ].filter((note): note is string => note !== null)
+
+    const count = health.attention.length
+    const label = AIDE_SEVERITY_LABEL[health.severity]
+    const firstMessage = health.attention[0]?.message
+
+    return {
+        key: "aide",
+        label: "AIDE",
+        value: count > 0 ? `${label} ${count}` : label,
+        note: notes.length > 0 ? notes.join(" · ") : firstMessage ? clip(firstMessage, 40) : undefined,
+        tone: health.severity,
+    }
+}
+
 /**
  * 画面上部のサマリーを組み立てる。
  *
@@ -258,6 +317,7 @@ export function buildSummaryChips(input: {
     aiUsage: AiUsageSnapshot | null
     githubUsage: GitHubUsageSnapshot | null
     onepasswordUsage: OnePasswordUsageSnapshot | null
+    aideStatus: AideStatusSnapshot | null
 }): SummaryChip[] {
     return [
         hostChip(input.hostStats),
@@ -266,6 +326,8 @@ export function buildSummaryChips(input: {
         providerChip(input.aiUsage, "chatgpt", "ChatGPT"),
         githubChip(input.githubUsage),
         monitorChip(input.uptimeKuma, input.uptimeRobot),
+        // AIDEは監視と同じく「サービスが動いているか」を表すため、監視の隣に置く（#237）
+        aideChip(input.aideStatus),
         // Issue #227 に列挙の無いその他チップ（異常時のみ出る定期ジョブ・メンテと、常時出る1Password）
         // は「他対応が必要なもの」としてまとめて末尾に置く
         timerChip(input.hostStats),
