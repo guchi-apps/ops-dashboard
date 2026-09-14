@@ -68,7 +68,7 @@ export interface HostStatsProcess {
 export interface HostStatsApp {
     /** ディレクトリ名 */
     name: string
-    /** 作業ディレクトリがこのアプリ配下にあるプロセスの RSS 合計。共有ページは重複して数える */
+    /** 作業ディレクトリがこのアプリ配下にあるプロセスの PSS 合計（読めない環境では RSS で代用） */
     memoryBytes: number
     /** そのプロセス数。動いていないアプリは 0 */
     processes: number

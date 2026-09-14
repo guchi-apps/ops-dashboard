@@ -116,7 +116,7 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 | 再起動待ち | `/var/run/reboot-required` の有無 | Debian系のみ |
 | 未適用の更新 | `/var/lib/update-notifier/updates-available` | `update-notifier-common` が入っていれば表示される。ESM（有償の延長サポート）分は数えない |
 | ログイン中のセッション | `who` | セッション数とユーザー名 |
-| アプリ別メモリ | `/proc/<pid>/cwd` と `/proc/<pid>/statm` | `HOST_STATS_APPS_ROOT` 配下のディレクトリ単位でRSSを合計。詳細は下記「アプリ別リソース」 |
+| アプリ別メモリ | `/proc/<pid>/cwd` と `/proc/<pid>/smaps_rollup` | `HOST_STATS_APPS_ROOT` 配下のディレクトリ単位でPSSを合計。詳細は下記「アプリ別リソース」 |
 | アプリ別ディスク | `du -s -B1 -x <アプリのディレクトリ>` | 1時間ごとに測ってキャッシュする。詳細は下記「アプリ別リソース」 |
 | tmuxセッション | `tmux -S <ソケット> list-sessions` | セッション名・ウィンドウ数・作成からの経過時間・アタッチ有無をバッジで表示。送るのは20件までだが、切り捨てた分を含む総数も一緒に送る。tmuxが無いホストでは行ごと出ない |
 | オフライン判定 | 最終受信からの経過時間 | 既定5分で OFFLINE 表示（値は最後に受信したものを残す） |
@@ -146,7 +146,8 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 エージェントの `HOST_STATS_APPS_ROOT`（VPSは `/home/github-user/apps`）を設定したホストだけが送り、未設定のホストや古いエージェントからは項目ごと届かないためパネルも出ない。
 現在値だけを持ち、履歴には残さない。
 
-- **メモリはプロセス名ではなく作業ディレクトリで振り分ける。** 「メモリ上位」の一覧は `next-server` や `node` が並ぶだけでどのアプリか読めず、PM2 に聞く方法では user systemd で動く signaly・vps-status-api が漏れるため。`/proc/<pid>/cwd` が `HOST_STATS_APPS_ROOT/<アプリ>/…` にあるプロセスの RSS を合計する。cwd を別の場所にして起動しているプロセスは「アプリ以外」に入る。RSS は共有ページを重複して数えるため、合計が実際の使用量より多めに出ることがある（内訳バーは使用量で頭打ちにしている）
+- **メモリはプロセス名ではなく作業ディレクトリで振り分ける。** 「メモリ上位」の一覧は `next-server` や `node` が並ぶだけでどのアプリか読めず、PM2 に聞く方法では user systemd で動く signaly・vps-status-api が漏れるため。`/proc/<pid>/cwd` が `HOST_STATS_APPS_ROOT/<アプリ>/…` にあるプロセスのメモリを合計する。cwd を別の場所にして起動しているプロセスは「アプリ以外」に入る
+- **足し上げるのは RSS ではなく PSS（`smaps_rollup` の `Pss`）。** RSS は共有ライブラリなどのページをプロセスの数だけ重複して数え、Node のプロセスでは実測で RSS 211MB に対し PSS 108MB と約2倍に膨らむ。RSS の合計ではホスト全体の使用量（MemTotal − MemAvailable）を超え、「使用量 − アプリ合計」で出す「アプリ以外」が負になる。`smaps_rollup` は root でないと他ユーザーのプロセス分を読めないため、読めないときだけ RSS で代用する（内訳バーは使用量で頭打ちにしている）
 - **ディスクは1時間ごとにしか測らない。** `du` は node_modules まで辿るため毎分は重く、値もそう変わらない。測った結果はユニットの `StateDirectory=` が用意する `/var/lib/ops-dashboard-host-stats/app-disk.tsv` にキャッシュし、間隔は `HOST_STATS_APP_DISK_INTERVAL`（既定3600秒）で変えられる。**キャッシュを書けない古いユニットのままだと、ディスクは測らずメモリだけを送る**（毎分 `du` を走らせないため）
 - 横棒の長さは最大のアプリを基準にしている。1アプリはホスト全体の数%にしかならず、全体を分母にすると差が読めないため。全体に対する割合は右端の％で出す
 

@@ -409,13 +409,17 @@ low_priority() {
     fi
 }
 
-# アプリのディレクトリで動いているプロセスの常駐メモリ（RSS）を、アプリごとに合計する。
+# アプリのディレクトリで動いているプロセスのメモリを、アプリごとに合計する。
 # PM2・user systemd・uvicorn など起動の仕方を問わず拾えるよう、プロセス名ではなく
 # 作業ディレクトリ（/proc/<pid>/cwd）で振り分ける。プロセス名は next-server や node になり、
 # どのアプリのものか読めないため（#226）。
+#
+# 足し上げるのは RSS ではなく PSS（共有ページをプロセス数で割った値）。RSS は共有ライブラリなどを
+# プロセスの数だけ重複して数え、Node のプロセスでは実測で約2倍に膨らむ。合計がホスト全体の使用量を
+# 超え、「アプリ以外」が出せなくなるため。smaps_rollup を読めない（root 以外で実行した）ときだけ RSS で代用する。
 # 出力は1行1アプリの「M<TAB>アプリ名<TAB>バイト数<TAB>プロセス数」
 app_memory_tsv() {
-    local root="$1" page_size dir cwd app rss
+    local root="$1" page_size dir cwd app rss pss
     page_size="$(getconf PAGESIZE)"
 
     for dir in /proc/[0-9]*; do
@@ -428,6 +432,12 @@ app_memory_tsv() {
         app="${cwd#"$root"/}"
         app="${app%%/*}"
         case "$app" in .*) continue ;; esac
+
+        pss="$(awk '/^Pss:/ { print $2 * 1024; exit }' "$dir/smaps_rollup" 2>/dev/null || true)"
+        if [ -n "$pss" ]; then
+            printf '%s\t%s\n' "$app" "$pss"
+            continue
+        fi
 
         # statm の2列目が常駐ページ数
         read -r _ rss _ 2>/dev/null <"$dir/statm" || continue

@@ -63,7 +63,8 @@ function ResourceBlock({
     const [expanded, setExpanded] = useState(false)
 
     const appsBytes = rows.reduce((sum, row) => sum + row.bytes, 0)
-    // RSS は共有ページを重複して数えるため、アプリ合計が使用量を超えることがある。内訳バーは使用量で頭打ちにする
+    // エージェントが PSS を読めず RSS で代用したときは、共有ページの重複でアプリ合計が使用量を超えうる。
+    // 内訳バーは使用量で頭打ちにし、「アプリ以外」は0未満にしない
     const appsInUsage = Math.min(appsBytes, usage.usedBytes)
     const otherBytes = Math.max(0, usage.usedBytes - appsBytes)
     const freeBytes = Math.max(0, usage.totalBytes - usage.usedBytes)
@@ -234,7 +235,7 @@ export function AppResources({
             </div>
 
             <p className="border-t border-border pt-2.5 text-[10px] text-muted-foreground sm:text-[11px]">
-                メモリはアプリのディレクトリで動いているプロセスの常駐メモリ（RSS）の合計。ディスクは各アプリのディレクトリの使用量（node_modules・ビルド成果物を含む）。
+                メモリはアプリのディレクトリで動いているプロセスの使用メモリ（共有分をプロセス数で割ったPSS）の合計。ディスクは各アプリのディレクトリの使用量（node_modules・ビルド成果物を含む）。
             </p>
         </DashboardCard>
     )
