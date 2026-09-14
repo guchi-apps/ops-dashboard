@@ -2,6 +2,7 @@
 
 import { RefreshCw } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
+import { AideStatus } from "@/components/aide-status"
 import { AiUsage } from "@/components/ai-usage"
 import { useDashboardData, type RefreshState } from "@/components/dashboard-data"
 import { GitHubUsage } from "@/components/github-usage"
@@ -10,12 +11,14 @@ import { HostStats } from "@/components/host-stats"
 import { MonitorSections } from "@/components/monitor-sections"
 import { MonitorTiles, getMonitorStatusText } from "@/components/monitor-tiles"
 import { OnePasswordUsage } from "@/components/onepassword-usage"
+import { Panel } from "@/components/panel"
 import { StatusStrip } from "@/components/status-strip"
-import { StatusBadge } from "@/components/status-badge"
+import { StatusBadge, TEXT_TONES, type StatusTone } from "@/components/status-badge"
 import { SwipeTabs } from "@/components/swipe-tabs"
 import { TmuxLegend, TmuxSessionList, TmuxSessionTable } from "@/components/tmux-sessions"
 import { Button } from "@/components/ui/button"
 import { AiUsageCompact, GitHubUsageCompact } from "@/components/usage-compact"
+import { AIDE_SEVERITY_TONE } from "@/lib/aide-status-format"
 import { buildSummaryChips } from "@/lib/dashboard-summary"
 import { formatAge } from "@/lib/host-stats/format"
 import { collectTmuxSessions, summarizeTmux } from "@/lib/host-stats/tmux"
@@ -24,9 +27,10 @@ import { cn } from "@/lib/utils"
 /** 選んだタブは端末ごとに覚える。毎回「概要」に戻ると、見たい場所へ都度たどり直すことになる */
 const ACTIVE_TAB_STORAGE_KEY = "ops-dashboard:active-tab"
 
-type TabId = "overview" | "hosts" | "tmux" | "usage" | "monitors"
+type TabId = "overview" | "hosts" | "tmux" | "usage" | "monitors" | "aide"
 
-const TAB_IDS: TabId[] = ["overview", "hosts", "tmux", "usage", "monitors"]
+/** AIDEはAIDEへの接続設定がある環境でだけ出す（DashboardShell の aideConfigured） */
+const TAB_IDS: TabId[] = ["overview", "hosts", "tmux", "usage", "monitors", "aide"]
 
 /**
  * 選択中のタブ。localStorage はサーバー側に無いため、外部ストアとして読む。
@@ -62,6 +66,7 @@ const TAB_LABELS: Record<TabId, string> = {
     tmux: "tmux",
     usage: "AI・GitHub・1Password",
     monitors: "監視",
+    aide: "AIDE",
 }
 
 /**
@@ -145,38 +150,18 @@ function RefreshControl({
     )
 }
 
-/** 概要タブに並べるカードの外枠。見出しの高さを揃え、中身だけを差し替える */
-function Panel({
-    title,
-    trailing,
-    className,
-    children,
-}: {
-    title: string
-    trailing?: React.ReactNode
-    className?: string
-    children: React.ReactNode
-}) {
-    return (
-        <section className={cn("rounded-xl border border-border bg-card p-3", className)}>
-            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-                <h2 className="text-sm font-bold">{title}</h2>
-                {trailing}
-            </div>
-            {children}
-        </section>
-    )
-}
-
 export function DashboardShell({
     userEmail,
     addMonitorUrl,
     canAddMonitor,
+    aideConfigured,
 }: {
     userEmail: string
     addMonitorUrl: string | null
     /** Kumaの管理者認証情報が揃っていて、画面から直接モニターを登録できるか */
     canAddMonitor: boolean
+    /** AIDEの動作状況を読むトークンがあるか。無ければAIDEタブを出さない */
+    aideConfigured: boolean
 }) {
     const data = useDashboardData()
     const {
@@ -186,6 +171,7 @@ export function DashboardShell({
         onepasswordUsage,
         uptimeKuma,
         uptimeRobot,
+        aideStatus,
         now,
         updatedAt,
         refresh,
@@ -193,16 +179,25 @@ export function DashboardShell({
         refreshCooldownSeconds,
     } = data
 
-    const activeTab = useSyncExternalStore(subscribeActiveTab, getStoredTab, getInitialTab)
+    // AIDEへの接続設定が無い環境ではタブごと出さない。端末に保存した選択がAIDEだった場合は概要へ戻す
+    const tabIds = useMemo(
+        () => (aideConfigured ? TAB_IDS : TAB_IDS.filter((tab) => tab !== "aide")),
+        [aideConfigured]
+    )
+    const storedTab = useSyncExternalStore(subscribeActiveTab, getStoredTab, getInitialTab)
+    const activeTab: TabId = tabIds.includes(storedTab) ? storedTab : "overview"
 
     // スワイプで切り替えたときにタブ帯が動かないと、いまどこにいるのかが分からなくなる（#136）
     const tabListRef = useRef<HTMLDivElement>(null)
-    const activeIndex = TAB_IDS.indexOf(activeTab)
+    const activeIndex = tabIds.indexOf(activeTab)
 
-    const goToTabAt = useCallback((index: number) => {
-        const tab = TAB_IDS[index]
-        if (tab) storeActiveTab(tab)
-    }, [])
+    const goToTabAt = useCallback(
+        (index: number) => {
+            const tab = tabIds[index]
+            if (tab) storeActiveTab(tab)
+        },
+        [tabIds]
+    )
 
     const goPrevious = useCallback(() => goToTabAt(activeIndex - 1), [goToTabAt, activeIndex])
     const goNext = useCallback(() => goToTabAt(activeIndex + 1), [goToTabAt, activeIndex])
@@ -237,14 +232,32 @@ export function DashboardShell({
                 aiUsage,
                 githubUsage,
                 onepasswordUsage,
+                aideStatus,
             }),
-        [hostStats, tmuxSessions, uptimeKuma, uptimeRobot, aiUsage, githubUsage, onepasswordUsage]
+        [
+            hostStats,
+            tmuxSessions,
+            uptimeKuma,
+            uptimeRobot,
+            aiUsage,
+            githubUsage,
+            onepasswordUsage,
+            aideStatus,
+        ]
     )
+
+    const aideHealth = aideStatus?.status === "ok" ? aideStatus.health : null
 
     const counts: Partial<Record<TabId, number>> = {
         hosts: hosts.length,
         tmux: tmuxSummary.total,
         monitors: uptimeKuma.length + uptimeRobot.length,
+        aide: aideHealth?.attention.length,
+    }
+
+    // AIDEの数字は総数ではなく注意・異常の件数なので、他のタブと違って状態の色を付ける
+    const countTones: Partial<Record<TabId, StatusTone>> = {
+        aide: aideHealth ? AIDE_SEVERITY_TONE[aideHealth.severity] : undefined,
     }
 
     // ホストが2台以上なら3列（ホスト・ホスト・tmux）、1台なら2列で割り付ける
@@ -287,7 +300,7 @@ export function DashboardShell({
                 aria-label="表示の切り替え"
                 className="-mx-3 mb-2.5 mt-1.5 flex gap-1 overflow-x-auto border-b border-border px-3 sm:mx-0 sm:px-0"
             >
-                {TAB_IDS.map((tab) => (
+                {tabIds.map((tab) => (
                     <button
                         key={tab}
                         type="button"
@@ -306,7 +319,16 @@ export function DashboardShell({
                         <span className="sm:hidden">{TAB_SHORT_LABELS[tab] ?? TAB_LABELS[tab]}</span>
                         <span className="hidden sm:inline">{TAB_LABELS[tab]}</span>
                         {counts[tab] !== undefined && counts[tab]! > 0 && (
-                            <span className="ml-1.5 text-[10px] text-muted-foreground">{counts[tab]}</span>
+                            <span
+                                className={cn(
+                                    "ml-1.5 text-[10px]",
+                                    countTones[tab]
+                                        ? cn("font-bold", TEXT_TONES[countTones[tab]!])
+                                        : "text-muted-foreground"
+                                )}
+                            >
+                                {counts[tab]}
+                            </span>
                         )}
                     </button>
                 ))}
@@ -316,7 +338,7 @@ export function DashboardShell({
                 label={TAB_LABELS[activeTab]}
                 contentKey={activeTab}
                 canGoPrevious={activeIndex > 0}
-                canGoNext={activeIndex < TAB_IDS.length - 1}
+                canGoNext={activeIndex < tabIds.length - 1}
                 onPrevious={goPrevious}
                 onNext={goNext}
             >
@@ -464,6 +486,8 @@ export function DashboardShell({
                         canAddMonitor={canAddMonitor}
                     />
                 )}
+
+                {activeTab === "aide" && <AideStatus />}
             </SwipeTabs>
         </div>
     )

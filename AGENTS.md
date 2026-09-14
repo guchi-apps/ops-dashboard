@@ -64,6 +64,21 @@ PORT=17096 NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co \
 に `initial={{ uptimeKuma: [], uptimeRobot: [] }}` を渡せば、実データが無くてもタブの構造まで
 HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
 
+## AIDEの動作状況（AIDEタブ）
+
+AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/status`（guchi-apps/aide#276）から
+読んで出している（#237）。**状態はAIDEのプロセス内の値（稼働時間・MCPアクセスの記録・トークン数）から
+組み立てられるため、AIDEのデータファイルを直接読む形にはできない。**
+
+- **応答の形の正はAIDE側**（`src/core/views/health.ts` の `Health`）。`src/types/aide-status.ts` はその写しで、
+  AIDE側を変えたら合わせ直す。骨格が合わないときは画面ごと落とさず「取得不可」になる（`isStatusPayload`）
+- **トークンは `AIDE_STATUS_TOKEN`（AIDE側は `AIDE_STATUS_SECRET`）で、`OPS_API_TOKEN` とは別。**
+  `OPS_API_TOKEN` はAIDEがこちらを読む向きのもので、同じ値にすると片方が漏れたときに両方向とも読める。
+  AIDEの `AIDE_READ_SECRET` も流用しない（残高のAPIまで読めてしまう）
+- 取得に失敗したときのステータスで原因を切り分ける。401はトークンのずれ、503はAIDE側の未設定、
+  404はAIDEにAPIがまだ無い（デプロイ前）
+- `AIDE_STATUS_TOKEN` が未設定ならタブもチップも出ない。worktreeでそのまま動かしてよい
+
 ## Uptime Kuma へのモニター登録
 
 **Uptime Kuma にはモニターを作るREST APIが無い**（1.x・2.x とも）。公開されている
