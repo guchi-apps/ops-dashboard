@@ -64,6 +64,32 @@ export interface HostStatsProcess {
     memoryBytes?: number
 }
 
+/** アプリ1つ分の資源。アプリの置き場（HOST_STATS_APPS_ROOT）直下のディレクトリが1アプリ */
+export interface HostStatsApp {
+    /** ディレクトリ名 */
+    name: string
+    /** 作業ディレクトリがこのアプリ配下にあるプロセスの RSS 合計。共有ページは重複して数える */
+    memoryBytes: number
+    /** そのプロセス数。動いていないアプリは 0 */
+    processes: number
+    /** ディレクトリの使用量。まだ測っていない（キャッシュを置けない）ときは undefined */
+    diskBytes?: number
+}
+
+/**
+ * アプリ別のメモリ・ディスク使用量（#226）。
+ * `HOST_STATS_APPS_ROOT` を設定していないホストや、これを送らない世代のエージェントでは undefined。
+ */
+export interface HostStatsApps {
+    /** 集計したディレクトリ（例: /home/github-user/apps） */
+    root: string
+    items: HostStatsApp[]
+    /** 置き場のファイルシステムの使用量。ディスク内訳の分母に使う */
+    disk?: HostStatsUsage
+    /** ディスク使用量を測った時刻（ISO 8601）。du は重いため1時間ごとにしか測らない */
+    diskMeasuredAt?: string
+}
+
 /** 秒あたりの転送量。ネットワークとディスクI/Oで使う */
 export interface HostStatsRate {
     inBytesPerSecond: number
@@ -180,6 +206,7 @@ export interface HostStatsReport {
      * これを送らない世代のエージェントでは undefined。
      */
     tmuxSessionTotal?: number
+    apps?: HostStatsApps
     services: HostStatsService[]
     /**
      * 定期ジョブ（systemd timer）の状態。

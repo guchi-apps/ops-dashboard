@@ -23,6 +23,11 @@
 #   HOST_STATS_SESSION_STATE_SUBDIR
 #                           任意。issue-deckがセッションの状態を置く、ホームからの相対パス
 #                           （既定: .local/state/issue-deck/sessions）
+#   HOST_STATS_APPS_ROOT    任意。アプリを並べて置いているディレクトリ（例: /home/github-user/apps）。
+#                           直下のディレクトリを1アプリとして、メモリとディスクの使用量を集計する。
+#                           未設定なら集計せず、項目ごと送らない（#226）
+#   HOST_STATS_APP_DISK_INTERVAL
+#                           任意。アプリ別のディスク使用量を測り直す間隔の秒数（既定: 3600）
 #
 # `--print` を付けて実行すると、送信せずに組み立てたJSONを表示する（設置時の確認用）。
 
@@ -50,6 +55,9 @@ MAX_TMUX_COMMANDS=3
 # 稼働中とみなさないコマンド。プロンプトで止まっているだけのシェルはここに挙げる
 TMUX_SHELL_COMMANDS="bash zsh sh fish dash ksh csh tcsh"
 
+# アプリ別リソースで送るアプリ数の上限。ダッシュボード側の上限と合わせる
+MAX_APPS=30
+
 : "${OPS_DASHBOARD_URL:?OPS_DASHBOARD_URL が未設定です}"
 : "${HOST_STATS_TOKEN:?HOST_STATS_TOKEN が未設定です}"
 DISK_PATHS="${HOST_STATS_DISK_PATHS:-/}"
@@ -58,6 +66,10 @@ TIMERS="${HOST_STATS_TIMERS:-}"
 TIMEOUT="${HOST_STATS_TIMEOUT:-15}"
 TMUX_SOCKET_ROOT="${HOST_STATS_TMUX_SOCKET_ROOT:-/tmp}"
 SESSION_STATE_SUBDIR="${HOST_STATS_SESSION_STATE_SUBDIR:-.local/state/issue-deck/sessions}"
+APPS_ROOT="${HOST_STATS_APPS_ROOT:-}"
+APP_DISK_INTERVAL="${HOST_STATS_APP_DISK_INTERVAL:-3600}"
+# ディスク使用量のキャッシュの置き場。ユニットの StateDirectory= が STATE_DIRECTORY を渡してくる
+APP_DISK_CACHE_DIR="${STATE_DIRECTORY:-/var/lib/ops-dashboard-host-stats}"
 
 HOSTNAME_VALUE="$(hostname)"
 HOST_ID="${HOST_STATS_ID:-$(printf '%s' "$HOSTNAME_VALUE" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | sed 's/-*$//')}"
@@ -386,6 +398,125 @@ top_processes_json() {
             if (count >= max) exit
         }
         END { printf "%s", (count ? "]" : "[]") }'
+}
+
+# 他のプロセスの邪魔をしないよう、優先度を下げて実行する（ionice が無い環境では nice だけ）
+low_priority() {
+    if command -v ionice >/dev/null 2>&1; then
+        ionice -c 3 nice -n 19 "$@"
+    else
+        nice -n 19 "$@"
+    fi
+}
+
+# アプリのディレクトリで動いているプロセスの常駐メモリ（RSS）を、アプリごとに合計する。
+# PM2・user systemd・uvicorn など起動の仕方を問わず拾えるよう、プロセス名ではなく
+# 作業ディレクトリ（/proc/<pid>/cwd）で振り分ける。プロセス名は next-server や node になり、
+# どのアプリのものか読めないため（#226）。
+# 出力は1行1アプリの「M<TAB>アプリ名<TAB>バイト数<TAB>プロセス数」
+app_memory_tsv() {
+    local root="$1" page_size dir cwd app rss
+    page_size="$(getconf PAGESIZE)"
+
+    for dir in /proc/[0-9]*; do
+        # 読んでいる間に終了したプロセスや、カーネルスレッド（cwd が /）は飛ばす
+        cwd="$(readlink "$dir/cwd" 2>/dev/null)" || continue
+        case "$cwd" in
+            "$root"/?*) ;;
+            *) continue ;;
+        esac
+        app="${cwd#"$root"/}"
+        app="${app%%/*}"
+        case "$app" in .*) continue ;; esac
+
+        # statm の2列目が常駐ページ数
+        read -r _ rss _ 2>/dev/null <"$dir/statm" || continue
+        printf '%s\t%d\n' "$app" "$((rss * page_size))"
+    done | awk -F '\t' '
+        { bytes[$1] += $2; count[$1]++ }
+        END { for (app in bytes) printf "M\t%s\t%d\t%d\n", app, bytes[app], count[app] }
+    '
+}
+
+# アプリのディレクトリごとのディスク使用量。du は node_modules まで辿るため重いうえ、値も1分で
+# 変わるものではないので、APP_DISK_INTERVAL 秒ごとにだけ測ってキャッシュを返す。
+# キャッシュを書けない（StateDirectory= の無い古いユニット）ときは測らない。毎分 du を走らせないため。
+# 出力は「T<TAB>計測時刻（epoch秒）」の1行と、「D<TAB>アプリ名<TAB>バイト数」の行
+app_disk_tsv() {
+    local root="$1" cache="${APP_DISK_CACHE_DIR}/app-disk.tsv" now measured dir bytes
+    now="$(date +%s)"
+    measured="$(head -n 1 "$cache" 2>/dev/null || true)"
+
+    if ! [[ "$measured" =~ ^[0-9]+$ ]] || [ $((now - measured)) -ge "$APP_DISK_INTERVAL" ]; then
+        mkdir -p "$APP_DISK_CACHE_DIR" 2>/dev/null || true
+        if [ -d "$APP_DISK_CACHE_DIR" ] && [ -w "$APP_DISK_CACHE_DIR" ]; then
+            {
+                printf '%s\n' "$now"
+                for dir in "$root"/*/; do
+                    [ -d "$dir" ] || continue
+                    dir="${dir%/}"
+                    # 読めないファイルがあると du は非0で終わるが、読めた分の合計は出る
+                    bytes="$(low_priority du -s -B1 -x "$dir" 2>/dev/null | awk '{ total = $1 } END { print total + 0 }' || true)"
+                    printf '%s\t%s\n' "${dir##*/}" "${bytes:-0}"
+                done
+            } >"$cache.tmp" && mv "$cache.tmp" "$cache"
+        fi
+    fi
+
+    [ -f "$cache" ] || return 0
+    awk -F '\t' 'NR == 1 { printf "T\t%s\n", $1; next } NF >= 2 { printf "D\t%s\t%s\n", $1, $2 }' "$cache"
+}
+
+# アプリ別のメモリ・ディスク使用量（#226）。HOST_STATS_APPS_ROOT 未設定なら何も返さず、項目ごと送らない
+collect_apps() {
+    local root tsv items measured disk_fields
+    [ -n "$APPS_ROOT" ] || return 0
+    root="$(realpath -e "$APPS_ROOT" 2>/dev/null)" || return 0
+    [ -d "$root" ] || return 0
+
+    tsv="$({ app_memory_tsv "$root"; app_disk_tsv "$root"; } 2>/dev/null || true)"
+
+    # メモリの多い順（同じならディスクの多い順）に並べて上限で切る。mawk には asort が無いため自前で並べる
+    items="$(printf '%s\n' "$tsv" | awk -F '\t' -v max="$MAX_APPS" '
+        $1 == "M" { names[$2] = 1; memory[$2] = $3; processes[$2] = $4 }
+        $1 == "D" { names[$2] = 1; disk[$2] = $3; measured_disk[$2] = 1 }
+        END {
+            n = 0
+            for (name in names) {
+                i = ++n
+                while (i > 1 && (memory[order[i - 1]] + 0 < memory[name] + 0 ||
+                        (memory[order[i - 1]] + 0 == memory[name] + 0 && disk[order[i - 1]] + 0 < disk[name] + 0))) {
+                    order[i] = order[i - 1]
+                    i--
+                }
+                order[i] = name
+            }
+            printf "["
+            for (i = 1; i <= n && i <= max; i++) {
+                name = order[i]
+                label = name
+                gsub(/[\\"]/, "", label)
+                gsub(/[[:cntrl:]]/, "", label)
+                printf "%s{\"name\":\"%s\",\"memoryBytes\":%d,\"processes\":%d", (i > 1 ? "," : ""), label, memory[name], processes[name]
+                if (name in measured_disk) printf ",\"diskBytes\":%d", disk[name]
+                printf "}"
+            }
+            printf "]"
+        }
+    ')"
+    measured="$(printf '%s\n' "$tsv" | awk -F '\t' '$1 == "T" { print $2; exit }')"
+
+    printf '{"root":"%s","items":%s' "$(json_escape "$root")" "$items"
+
+    # 内訳バーの分母。アプリの置き場が / とは別のマウントにあってもずれないよう、置き場のファイルシステムで取る
+    if [ -n "$measured" ]; then
+        disk_fields="$(df -B1 -P "$root" 2>/dev/null | awk 'NR == 2 { print $2, $3 }')" || disk_fields=""
+        if [ -n "$disk_fields" ]; then
+            printf ',"disk":%s' "$(usage_json "${disk_fields##* }" "${disk_fields%% *}")"
+            printf ',"diskMeasuredAt":"%s"' "$(date -u -d "@$measured" +%Y-%m-%dT%H:%M:%SZ)"
+        fi
+    fi
+    printf '}'
 }
 
 # 再起動待ちと未適用の更新。いずれもファイルを見るだけで、apt を毎分叩いたりはしない
@@ -798,7 +929,7 @@ os_name() {
 }
 
 build_payload() {
-    local swap temperature tmux_output tmux_sessions tmux_total timers
+    local swap temperature tmux_output tmux_sessions tmux_total timers apps
     collect_samples
     swap="$(collect_swap)"
     temperature="$(collect_temperature)"
@@ -811,6 +942,9 @@ build_payload() {
 
     # HOST_STATS_TIMERS 未設定のホストでは空になり、項目ごと送らない
     timers="$(collect_timers)"
+
+    # HOST_STATS_APPS_ROOT 未設定のホストでは空になり、項目ごと送らない
+    apps="$(collect_apps)"
 
     printf '{'
     printf '"version":%d,' "$PAYLOAD_VERSION"
@@ -835,6 +969,7 @@ build_payload() {
     printf '"sessions":%s,' "$(collect_sessions)"
     [ -z "$tmux_sessions" ] || printf '"tmuxSessions":%s,' "$tmux_sessions"
     [ -z "$tmux_sessions" ] || printf '"tmuxSessionTotal":%d,' "$tmux_total"
+    [ -z "$apps" ] || printf '"apps":%s,' "$apps"
     printf '"services":%s' "$(collect_services)"
     [ -z "$timers" ] || printf ',"timers":%s' "$timers"
     printf '}'

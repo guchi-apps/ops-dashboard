@@ -1,5 +1,6 @@
 "use client"
 
+import { AppResources } from "@/components/app-resources"
 import { useDashboardData } from "@/components/dashboard-data"
 import {
     MetricCard,
@@ -274,6 +275,9 @@ function HostSection({
                     />
                 )}
             </div>
+
+            {/* HOST_STATS_APPS_ROOT を設定していないホスト・古いエージェントでは undefined で届く（#226） */}
+            {latest.apps && <AppResources apps={latest.apps} memory={latest.memory} dimmed={dimmed} />}
 
             <div className="flex flex-wrap gap-2">
                 {services.map((service) => (

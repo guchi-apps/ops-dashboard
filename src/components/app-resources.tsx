@@ -1,0 +1,241 @@
+"use client"
+
+import { useState } from "react"
+import { DashboardCard } from "@/components/dashboard-card"
+import { formatAge, formatBytes } from "@/lib/host-stats/format"
+import { cn } from "@/lib/utils"
+import type { HostStatsApps, HostStatsUsage } from "@/types/host-stats"
+
+/** 狭い画面で最初に出す件数。残りは「他 N件を表示」で開く */
+const COLLAPSED_ROWS = 6
+
+/** 「アプリ以外」の分に敷く斜線。色だけに頼らず、アプリの分と見分けられるようにする */
+const HATCH_STYLE = {
+    backgroundImage: "repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 5px)",
+}
+
+const HATCH_CLASS = "text-slate-400 dark:text-slate-500"
+
+interface ResourceRow {
+    name: string
+    bytes: number
+    /** ホバー時に添える補足（プロセス数など） */
+    note?: string
+}
+
+function percentOf(bytes: number, total: number): number {
+    return total > 0 ? (bytes / total) * 100 : 0
+}
+
+/** ディスクを測ってからの経過秒数。時刻が読めなければ undefined */
+function measuredAgeSeconds(measuredAt?: string): number | undefined {
+    if (!measuredAt) return undefined
+
+    const measured = Date.parse(measuredAt)
+    if (Number.isNaN(measured)) return undefined
+
+    return Math.max(0, Math.floor((Date.now() - measured) / 1000))
+}
+
+/**
+ * メモリかディスクの片方。上に「アプリ合計 / アプリ以外 / 空き」の内訳バー、
+ * 下にアプリごとの横棒を大きい順に並べる。
+ *
+ * 横棒の長さは最大のアプリを基準にする。1アプリはホスト全体の数%にしかならず、
+ * 全体を分母にすると棒がどれも短くて差が読めないため。全体に対する割合は右端の％で出す。
+ */
+function ResourceBlock({
+    label,
+    totalLabel,
+    rows,
+    usage,
+    stamp,
+    barClassName,
+}: {
+    label: string
+    /** ％の分母の呼び名（「メモリ総量」など） */
+    totalLabel: string
+    rows: ResourceRow[]
+    usage: HostStatsUsage
+    stamp?: string
+    barClassName: string
+}) {
+    const [expanded, setExpanded] = useState(false)
+
+    const appsBytes = rows.reduce((sum, row) => sum + row.bytes, 0)
+    // RSS は共有ページを重複して数えるため、アプリ合計が使用量を超えることがある。内訳バーは使用量で頭打ちにする
+    const appsInUsage = Math.min(appsBytes, usage.usedBytes)
+    const otherBytes = Math.max(0, usage.usedBytes - appsBytes)
+    const freeBytes = Math.max(0, usage.totalBytes - usage.usedBytes)
+    const largest = rows[0]?.bytes ?? 0
+    const hiddenCount = Math.max(0, rows.length - COLLAPSED_ROWS)
+
+    return (
+        <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    {label}
+                </span>
+                <span className="font-mono text-base font-bold tabular-nums">{formatBytes(appsBytes)}</span>
+                <span className="text-xs text-muted-foreground">
+                    アプリ合計 / {formatBytes(usage.totalBytes)}
+                </span>
+                {stamp && <span className="ml-auto text-[10px] text-muted-foreground">{stamp}</span>}
+            </div>
+
+            <div
+                className="flex h-3.5 gap-0.5 overflow-hidden rounded bg-muted"
+                role="img"
+                aria-label={`${totalLabel}の内訳: アプリ ${formatBytes(appsBytes)}、アプリ以外 ${formatBytes(otherBytes)}、空き ${formatBytes(freeBytes)}`}
+            >
+                <span
+                    className={cn("h-full", barClassName)}
+                    style={{ width: `${percentOf(appsInUsage, usage.totalBytes)}%` }}
+                />
+                {otherBytes > 0 && (
+                    <span
+                        className={cn("h-full", HATCH_CLASS)}
+                        style={{ ...HATCH_STYLE, width: `${percentOf(otherBytes, usage.totalBytes)}%` }}
+                    />
+                )}
+            </div>
+
+            <div className="flex flex-wrap gap-x-3.5 gap-y-1 text-[10px] text-muted-foreground sm:text-[11px]">
+                <span className="inline-flex items-center gap-1.5">
+                    <span className={cn("size-2.5 rounded-sm", barClassName)} />
+                    アプリ
+                    <span className="font-mono font-semibold text-foreground">
+                        {Math.round(percentOf(appsInUsage, usage.totalBytes))}%
+                    </span>
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                    <span
+                        className={cn("size-2.5 rounded-sm border border-current", HATCH_CLASS)}
+                        style={HATCH_STYLE}
+                    />
+                    アプリ以外
+                    <span className="font-mono font-semibold text-foreground">
+                        {Math.round(percentOf(otherBytes, usage.totalBytes))}%
+                    </span>
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                    <span className="size-2.5 rounded-sm border border-border bg-muted" />
+                    空き
+                    <span className="font-mono font-semibold text-foreground">{formatBytes(freeBytes)}</span>
+                </span>
+            </div>
+
+            <ul className="space-y-2 sm:space-y-1">
+                {rows.map((row, index) => {
+                    const percent = percentOf(row.bytes, usage.totalBytes)
+
+                    return (
+                        <li
+                            key={row.name}
+                            title={`${row.name}: ${formatBytes(row.bytes)}（${totalLabel}の${percent.toFixed(1)}%）${row.note ? ` · ${row.note}` : ""}`}
+                            className={cn(
+                                // 狭い画面では「名前・値・％」の1行目の下に棒を敷き、広い画面では1行に並べる
+                                "grid grid-cols-[minmax(0,1fr)_4.5rem_2.75rem] items-center gap-x-2 gap-y-1 rounded-md px-1 py-0.5 text-xs hover:bg-muted sm:grid-cols-[minmax(6rem,9.5rem)_minmax(0,1fr)_5rem_3rem] sm:gap-x-3",
+                                !expanded && index >= COLLAPSED_ROWS && "hidden sm:grid"
+                            )}
+                        >
+                            <span className="col-start-1 row-start-1 truncate font-medium sm:col-start-auto sm:row-start-auto">
+                                {row.name}
+                            </span>
+                            <span className="col-span-3 row-start-2 h-2.5 sm:col-span-1 sm:row-start-auto">
+                                <span
+                                    className={cn("block h-full min-w-0.5 rounded-r", barClassName)}
+                                    style={{ width: `${largest > 0 ? (row.bytes / largest) * 100 : 0}%` }}
+                                />
+                            </span>
+                            <span className="col-start-2 row-start-1 text-right font-mono font-semibold tabular-nums sm:col-start-auto sm:row-start-auto">
+                                {formatBytes(row.bytes)}
+                            </span>
+                            <span className="col-start-3 row-start-1 text-right font-mono text-[10px] text-muted-foreground tabular-nums sm:col-start-auto sm:row-start-auto">
+                                {percent.toFixed(1)}%
+                            </span>
+                        </li>
+                    )
+                })}
+            </ul>
+
+            {hiddenCount > 0 && (
+                <button
+                    type="button"
+                    onClick={() => setExpanded((value) => !value)}
+                    className="rounded-full border border-border px-3 py-0.5 text-[11px] text-muted-foreground hover:bg-muted sm:hidden"
+                >
+                    {expanded ? "閉じる" : `他 ${hiddenCount}件を表示`}
+                </button>
+            )}
+        </div>
+    )
+}
+
+/**
+ * アプリ別のメモリ・ディスク使用量（#226）。ホストタブの指標カードの下に置く。
+ *
+ * 「メモリ上位」のプロセス一覧は next-server や node が並ぶだけでどのアプリか読めないため、
+ * エージェントがアプリのディレクトリ単位で集計したものを別に描く。
+ */
+export function AppResources({
+    apps,
+    memory,
+    dimmed,
+}: {
+    apps: HostStatsApps
+    memory: HostStatsUsage
+    dimmed?: boolean
+}) {
+    const memoryRows: ResourceRow[] = apps.items
+        .filter((item) => item.memoryBytes > 0)
+        .map((item) => ({ name: item.name, bytes: item.memoryBytes, note: `${item.processes}プロセス` }))
+        .sort((a, b) => b.bytes - a.bytes)
+
+    const diskRows: ResourceRow[] = apps.items
+        .flatMap((item) => (item.diskBytes ? [{ name: item.name, bytes: item.diskBytes }] : []))
+        .sort((a, b) => b.bytes - a.bytes)
+
+    const showMemory = memoryRows.length > 0
+    const showDisk = apps.disk !== undefined && diskRows.length > 0
+    if (!showMemory && !showDisk) return null
+
+    const measuredAge = measuredAgeSeconds(apps.diskMeasuredAt)
+
+    return (
+        <DashboardCard className={cn("space-y-4 p-4 sm:p-5", dimmed && "opacity-60")}>
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h3 className="text-sm font-bold sm:text-base">アプリ別リソース</h3>
+                <span className="break-all font-mono text-[10px] text-muted-foreground sm:ml-auto">
+                    {apps.root} 配下をアプリ単位で集計
+                </span>
+            </div>
+
+            <div className={cn("grid gap-6", showMemory && showDisk && "lg:grid-cols-2 lg:gap-8")}>
+                {showMemory && (
+                    <ResourceBlock
+                        label="Memory · アプリ別"
+                        totalLabel="メモリ総量"
+                        rows={memoryRows}
+                        usage={memory}
+                        barClassName="bg-primary"
+                    />
+                )}
+                {showDisk && apps.disk && (
+                    <ResourceBlock
+                        label="Disk · アプリ別"
+                        totalLabel="ディスク容量"
+                        rows={diskRows}
+                        usage={apps.disk}
+                        stamp={measuredAge === undefined ? undefined : `計測 ${formatAge(measuredAge)}（1時間ごと）`}
+                        barClassName="bg-teal-600 dark:bg-teal-400"
+                    />
+                )}
+            </div>
+
+            <p className="border-t border-border pt-2.5 text-[10px] text-muted-foreground sm:text-[11px]">
+                メモリはアプリのディレクトリで動いているプロセスの常駐メモリ（RSS）の合計。ディスクは各アプリのディレクトリの使用量（node_modules・ビルド成果物を含む）。
+            </p>
+        </DashboardCard>
+    )
+}

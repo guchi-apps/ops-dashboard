@@ -1,4 +1,5 @@
 import type {
+    HostStatsApps,
     HostStatsDisk,
     HostStatsMaintenance,
     HostStatsProcess,
@@ -25,6 +26,7 @@ const MAX_PROCESSES = 5
 const MAX_SESSION_USERS = 10
 const MAX_TMUX_SESSIONS = 20
 const MAX_TMUX_COMMANDS = 4
+const MAX_APPS = 30
 const MAX_TEXT_LENGTH = 120
 
 /** ホスト識別子に使える文字。保存先のディレクトリ名になるため、パス区切りなどを通さない */
@@ -261,6 +263,32 @@ function parseTmuxCommands(value: unknown, index: number): string[] | undefined 
         )
 }
 
+/**
+ * アプリ別のメモリ・ディスク使用量（#226）。
+ * `HOST_STATS_APPS_ROOT` を設定していないホストは項目ごと送ってこないため、undefined を通す。
+ */
+function parseApps(value: unknown): HostStatsApps | undefined {
+    if (value === undefined || value === null) return undefined
+    const record = asRecord(value, "apps")
+    const items = record.items
+    if (!Array.isArray(items)) fail("apps.items が配列ではありません")
+
+    return {
+        root: asText(record.root, "apps.root"),
+        items: items.slice(0, MAX_APPS).map((entry, index) => {
+            const item = asRecord(entry, `apps.items[${index}]`)
+            return {
+                name: asText(item.name, `apps.items[${index}].name`),
+                memoryBytes: asOptionalCount(item.memoryBytes, `apps.items[${index}].memoryBytes`) ?? 0,
+                processes: asOptionalCount(item.processes, `apps.items[${index}].processes`) ?? 0,
+                diskBytes: asOptionalCount(item.diskBytes, `apps.items[${index}].diskBytes`),
+            }
+        }),
+        disk: record.disk === undefined || record.disk === null ? undefined : parseUsage(record.disk, "apps.disk"),
+        diskMeasuredAt: asOptionalText(record.diskMeasuredAt, "apps.diskMeasuredAt"),
+    }
+}
+
 /** ホスト名から保存先に使える識別子を作る（エージェントが id を送ってこない場合の保険） */
 function slugFromHostname(hostname: string): string {
     const slug = hostname
@@ -315,6 +343,7 @@ export function parseHostStatsReport(input: unknown): HostStatsReport & { id: st
         sessions: parseSessions(record.sessions),
         tmuxSessions: parseTmuxSessions(record.tmuxSessions),
         tmuxSessionTotal: asOptionalCount(record.tmuxSessionTotal, "tmuxSessionTotal"),
+        apps: parseApps(record.apps),
         services: parseServices(record.services),
         timers: parseTimers(record.timers),
     }
