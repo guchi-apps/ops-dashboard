@@ -60,6 +60,14 @@ PORT=17096 NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co \
 **確認後は必ずそのルートを削除し、`.next` を消してから `npx tsc --noEmit` をやり直す**
 （消したルートの型定義が `.next/dev/types/` に残り、存在しないモジュールとして型エラーになる）。
 
+**開発サーバーのPIDは `lsof -ti :<ポート>` ではなく `ss -ltnp` で引く。** `next dev` はIPv6の
+`*:<ポート>` で待ち受けており、このホストでは `lsof -ti` が空を返すことがある（#237）。空のまま
+止めたつもりになると、動き続けたサーバーが `.next/dev/types/` を書き戻し、上の型エラーが消えない。
+
+```bash
+ss -ltnp | grep ':17096 '   # users:(("next-server",pid=…)) のpidだけを kill する
+```
+
 ダッシュボード本体（`DashboardShell`）は確認用ルートからでもそのまま描画できる。`DashboardDataProvider`
 に `initial={{ uptimeKuma: [], uptimeRobot: [] }}` を渡せば、実データが無くてもタブの構造まで
 HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
