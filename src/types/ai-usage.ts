@@ -7,6 +7,24 @@ export type AiProviderId = "claude" | "chatgpt"
  */
 export type AiUsageStatus = "ok" | "unconfigured" | "error"
 
+/**
+ * 1日を超える制限枠（週間など）で、枠の中の「1日の終わり」に立てる区切り。
+ *
+ * 位置に使うのは時刻ではなく**その時点までの累計使用率**で、隣り合う区切りの間隔が
+ * その日に使った量になる。値は取得のたびに記録したものを読んでいるため、
+ * 一度も画面を開かなかった日の区切りは存在しない（配列から抜ける）。
+ */
+export interface AiUsageDayMark {
+    /** 枠の開始から数えて何日目の終わりか（1始まり） */
+    day: number
+    /** その時点までの累計使用率（0-100） */
+    usedPercent: number
+    /** 区切りの時刻（ISO 8601） */
+    at: string
+    /** この値を観測した時刻（ISO 8601）。区切りより前になるため、ズレの大きさが分かる */
+    observedAt: string
+}
+
 export interface AiUsageWindow {
     /** 制限枠の表示名（例: "5時間", "週間"） */
     label: string
@@ -18,6 +36,8 @@ export interface AiUsageWindow {
     windowSeconds: number | null
     /** 補足表示（例: "Opus"） */
     note?: string
+    /** 1日ごとの区切り。1日を超える枠でだけ入り、記録が無ければ空配列 */
+    dayMarks?: AiUsageDayMark[]
 }
 
 /**

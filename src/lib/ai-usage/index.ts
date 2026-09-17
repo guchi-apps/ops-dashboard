@@ -1,5 +1,6 @@
 import { fetchChatGptUsage } from "@/lib/ai-usage/chatgpt"
 import { fetchClaudeUsage } from "@/lib/ai-usage/claude"
+import { attachDayMarks } from "@/lib/ai-usage/day-marks"
 import { applyAiUsageHistory } from "@/lib/ai-usage/history"
 import {
     AI_MIN_FORCE_REFRESH_MS,
@@ -41,10 +42,12 @@ export async function getAiUsageSnapshot({
     }
 
     const [claude, chatgpt] = await Promise.all([fetchClaudeUsage(), fetchChatGptUsage()])
-    const snapshot: AiUsageSnapshot = {
+
+    // 取得のたびに観測を残し、週間枠に「1日ごとの区切り」を載せて返す（#243）
+    const snapshot = await attachDayMarks({
         providers: [claude, chatgpt],
         fetchedAt: new Date().toISOString(),
-    }
+    })
 
     // 終わった枠の実績はここでしか観測できない。キャッシュを返した回は記録しない
     // （同じ値を書き直すだけで、観測時刻だけが実態より新しくなってしまうため）

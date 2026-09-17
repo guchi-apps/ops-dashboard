@@ -1,3 +1,38 @@
+import type { AiUsageDayMark } from "@/types/ai-usage"
+
+/** 使用量バーに重ねる目盛り。位置は時間ではなく使用率（0-100）で指定する */
+export interface UsageBarMarker {
+    percent: number
+    /** ホバーで出す説明（例: "3日目 +5%（累計 26%）"） */
+    label: string
+}
+
+/**
+ * 1日ごとの区切りを使用量バーの目盛りにする。
+ * 位置はその日の終わりまでの累計使用率で、直前の区切りとの差がその日に使った量になる。
+ * 記録が無い日は配列から抜けるため、飛んだぶんは「2〜4日目」のようにまとめて表す。
+ */
+export function toDayMarkers(dayMarks: AiUsageDayMark[] | undefined): UsageBarMarker[] {
+    if (!dayMarks || dayMarks.length === 0) return []
+
+    let previousDay = 0
+    let previousPercent = 0
+
+    return dayMarks.map((mark) => {
+        const span =
+            previousDay + 1 === mark.day ? `${mark.day}日目` : `${previousDay + 1}〜${mark.day}日目`
+        const used = Math.round(Math.max(0, mark.usedPercent - previousPercent))
+
+        previousDay = mark.day
+        previousPercent = mark.usedPercent
+
+        return {
+            percent: mark.usedPercent,
+            label: `${span} +${used}%（累計 ${Math.round(mark.usedPercent)}%）`,
+        }
+    })
+}
+
 /** 制限枠のリセットまでの残り時間を表示文にする。時刻が読めなければ null */
 export function formatRemaining(resetsAt: string, now: number): string | null {
     const remainingMs = new Date(resetsAt).getTime() - now
