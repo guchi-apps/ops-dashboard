@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils"
+import type { UsageBarMarker } from "@/lib/usage-format"
 
 function getUsageBarColor(percent: number): string {
     if (percent >= 90) return "bg-red-400"
@@ -21,6 +22,27 @@ interface UsageBarProps {
     usedText?: string
     /** 右下に出すリセットまでの残り時間 */
     remainingText?: string | null
+    /** バーに重ねる細い目盛り。1日を超える枠で「1日の区切り」を出すのに使う */
+    markers?: UsageBarMarker[]
+}
+
+/** 目盛りの内訳。1px の線はホバーで狙えないため、説明はバー全体の title として出す */
+function markersTitle(markers: UsageBarMarker[]): string | undefined {
+    return markers.length > 0 ? markers.map((marker) => marker.label).join("\n") : undefined
+}
+
+/** 目盛りは見た目だけの線なので、読み上げには使用率と同じ場所から内訳を伝える */
+function ariaValueText(
+    usedPercent: number,
+    elapsedPercent: number | null,
+    markers: UsageBarMarker[]
+): string | undefined {
+    const parts = [
+        elapsedPercent === null ? null : `使用 ${usedPercent}%、経過 ${elapsedPercent}%`,
+        markers.length > 0 ? `日ごと: ${markers.map((marker) => marker.label).join("、")}` : null,
+    ].filter((part): part is string => part !== null)
+
+    return parts.length > 0 ? parts.join("。") : undefined
 }
 
 /**
@@ -35,6 +57,7 @@ export function UsageBar({
     valueText,
     usedText,
     remainingText,
+    markers = [],
 }: UsageBarProps) {
     return (
         <div className="space-y-1">
@@ -48,7 +71,7 @@ export function UsageBar({
                 </span>
             </div>
 
-            <div className="relative">
+            <div className="relative" title={markersTitle(markers)}>
                 <div
                     className="h-2 w-full overflow-hidden rounded-full bg-muted"
                     role="progressbar"
@@ -56,17 +79,30 @@ export function UsageBar({
                     aria-valuenow={Math.round(usedPercent)}
                     aria-valuemin={0}
                     aria-valuemax={100}
-                    aria-valuetext={
-                        elapsedPercent === null
-                            ? undefined
-                            : `使用 ${usedPercent}%、経過 ${elapsedPercent}%`
-                    }
+                    aria-valuetext={ariaValueText(usedPercent, elapsedPercent, markers)}
                 >
                     <div
                         className={cn("h-full rounded-full transition-all", getUsageBarColor(usedPercent))}
                         style={{ width: `${usedPercent}%` }}
                     />
                 </div>
+
+                {/*
+                 * 1日の区切り。位置はその日の終わりまでの累計使用率で、線と線の間隔がその日に使った量になる。
+                 * 経過時間の線（太い実線）と見分けが付くよう、細い点線にして上に重ねない。
+                 */}
+                {markers.map((marker) => (
+                    <span
+                        key={`${marker.percent}-${marker.label}`}
+                        aria-hidden
+                        className="pointer-events-none absolute inset-y-0 -my-0.5 w-px -translate-x-1/2 text-foreground/50"
+                        style={{
+                            left: `${marker.percent}%`,
+                            backgroundImage:
+                                "repeating-linear-gradient(to bottom, currentColor 0 2px, transparent 2px 4px)",
+                        }}
+                    />
+                ))}
 
                 {/* 時間の進み方との比較用。バーの塗りがこの線を越えていれば使うペースが速い */}
                 {elapsedPercent !== null && (
