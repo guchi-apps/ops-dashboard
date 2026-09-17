@@ -40,6 +40,16 @@ const UNDERSAMPLED_RATIO = 0.05
 const MIN_UNDERSAMPLED_TOLERANCE_MS = 10 * 60 * 1000
 const MAX_UNDERSAMPLED_TOLERANCE_MS = 60 * 60 * 1000
 
+/**
+ * 直前に記録した枠と同じ枠だとみなす、リセット時刻の進み幅（枠の長さに対する割合）。
+ *
+ * **リセット時刻の一致で同定してはいけない。** ChatGPTは `reset_at` を返さないことがあり、
+ * その場合 `src/lib/ai-usage/chatgpt.ts` が `Date.now() + reset_after_seconds` で組み立てるため、
+ * 同じ枠でも取得のたびに数秒ずれる。完全一致で見ると1取得ごとに別の枠として積み上がってしまう。
+ * 本当にリセットされたときはリセット時刻が枠1つぶん先へ飛ぶので、その半分を境にする。
+ */
+const SAME_WINDOW_RATIO = 0.5
+
 /** 枠1つぶんの観測結果。`resetsAt` が枠の識別子を兼ねる */
 interface StoredEntry {
     resetsAt: string
@@ -130,10 +140,15 @@ function mergeWindow(
     stored.note = usageWindow.note
     windows[key] = stored
 
-    const existing = stored.entries.find((entry) => entry.resetsAt === usageWindow.resetsAt)
-    if (existing) {
-        existing.usedPercent = Math.max(existing.usedPercent, usageWindow.usedPercent)
-        existing.observedAt = observedAt
+    // 観測は時系列に並ぶため、突き合わせる相手は常に最後に記録した枠だけでよい
+    const latest = stored.entries.at(-1)
+    const advanceMs = latest ? Date.parse(usageWindow.resetsAt) - Date.parse(latest.resetsAt) : 0
+
+    if (latest && advanceMs < usageWindow.windowSeconds * 1000 * SAME_WINDOW_RATIO) {
+        // 秒単位のぶれに追随させる。使用率は枠の中で増える一方なので大きいほうを残す
+        latest.resetsAt = usageWindow.resetsAt
+        latest.usedPercent = Math.max(latest.usedPercent, usageWindow.usedPercent)
+        latest.observedAt = observedAt
         return true
     }
 
@@ -142,7 +157,6 @@ function mergeWindow(
         usedPercent: usageWindow.usedPercent,
         observedAt,
     })
-    stored.entries.sort((a, b) => Date.parse(a.resetsAt) - Date.parse(b.resetsAt))
     stored.entries.splice(0, Math.max(0, stored.entries.length - MAX_STORED_ENTRIES))
 
     return true
