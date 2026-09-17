@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { requireSessionOrApiToken } from "@/lib/session"
+import { getAiUsageSnapshot } from "@/lib/ai-usage"
 import { HostStatsReportError, parseHostStatsReport } from "@/lib/host-stats/report"
 import { getHostStatsView, saveHostStatsReport } from "@/lib/host-stats/store"
 import { processTimerAlerts } from "@/lib/host-stats/timer-alerts"
@@ -54,6 +55,19 @@ export async function POST(request: NextRequest) {
         } catch (error) {
             console.error("Timer alert error:", error)
         }
+
+        // AI利用枠の「使い切り」は取得できた時点の値しか記録できず、ダッシュボードを開いていない
+        // 時間帯は観測が飛ぶ（#244）。エージェントからの受信はホストが動いている限り続くため、
+        // これを契機に取得も回して記録をつなぐ。
+        //
+        // **提供元への問い合わせは常時5分間隔になる**（これまでは画面を開いている間だけ）。
+        // エージェントは1分ごとに届くが、プロセス内キャッシュ（`AI_USAGE_CACHE_SECONDS`・既定300秒）
+        // を挟むため実際に取りにいくのは5分に1回で、Anthropicが推奨する180秒以上の間隔は保たれる。
+        // 受信の成否とは切り離したいので待たない（上流の遅延でエージェントのPOSTを詰まらせない）
+
+        void getAiUsageSnapshot().catch((error) => {
+            console.error("AI usage sample error:", error)
+        })
 
         return NextResponse.json({ ok: true, receivedAt: snapshot.receivedAt })
     } catch (error) {

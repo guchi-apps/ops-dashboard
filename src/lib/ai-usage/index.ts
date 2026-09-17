@@ -1,6 +1,7 @@
 import { fetchChatGptUsage } from "@/lib/ai-usage/chatgpt"
 import { fetchClaudeUsage } from "@/lib/ai-usage/claude"
 import { attachDayMarks } from "@/lib/ai-usage/day-marks"
+import { applyAiUsageHistory } from "@/lib/ai-usage/history"
 import {
     AI_MIN_FORCE_REFRESH_MS,
     isUsageCacheFresh,
@@ -47,6 +48,10 @@ export async function getAiUsageSnapshot({
         providers: [claude, chatgpt],
         fetchedAt: new Date().toISOString(),
     })
+
+    // 終わった枠の実績はここでしか観測できない。キャッシュを返した回は記録しない
+    // （同じ値を書き直すだけで、観測時刻だけが実態より新しくなってしまうため）
+    await applyAiUsageHistory(snapshot)
 
     const failed = snapshot.providers.some((provider) => provider.status === "error")
     cache = newUsageCacheEntry(snapshot, failed ? ERROR_CACHE_SECONDS * 1000 : getCacheTtlMs())
