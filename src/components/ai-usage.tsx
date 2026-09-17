@@ -1,6 +1,7 @@
 "use client"
 
 import { useDashboardData } from "@/components/dashboard-data"
+import { AiUsageHistory } from "@/components/ai-usage-history"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
@@ -111,6 +112,8 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
                     {provider.message ?? "使用状況を取得できませんでした"}
                 </p>
             )}
+
+            {provider.windowHistory && <AiUsageHistory history={provider.windowHistory} now={now} />}
 
             {provider.credit && (
                 <div className="mt-auto border-t border-border pt-2.5">

@@ -38,6 +38,37 @@ export interface AiProviderCredit {
     startsAt?: string | null
 }
 
+/**
+ * 制限枠1つぶんの実績。提供元は過去の枠を返さないため、
+ * ダッシュボード側で観測して積み上げた値になる（src/lib/ai-usage/history.ts）。
+ */
+export interface AiUsageWindowRecord {
+    /** 枠のリセット時刻（ISO 8601）。枠の識別子も兼ねる */
+    resetsAt: string
+    /** その枠で観測できた最大の使用率（0-100） */
+    usedPercent: number
+    /** まだ終わっていない枠か */
+    inProgress: boolean
+    /** 枠の終了間際に観測できておらず、実際より低い値で確定している可能性があるか */
+    undersampled: boolean
+}
+
+/** 制限枠の種類（5時間・週間 …）ごとの使い切り実績 */
+export interface AiUsageWindowHistory {
+    /** 枠の表示名（{@link AiUsageWindow.label} と同じ） */
+    label: string
+    note?: string
+    windowSeconds: number
+    /** リセット時刻の古い順。進行中の枠があれば末尾に入る */
+    records: AiUsageWindowRecord[]
+    /** 終わった枠の平均使い切り率（0-100）。終わった枠がまだ無ければ null */
+    averagePercent: number | null
+    /** 使い切った枠の数 */
+    fullCount: number
+    /** 平均・使い切り回数の母数（終わった枠の数） */
+    completedCount: number
+}
+
 export interface AiProviderUsage {
     id: AiProviderId
     name: string
@@ -48,6 +79,8 @@ export interface AiProviderUsage {
     message?: string
     windows: AiUsageWindow[]
     credit?: AiProviderCredit
+    /** 終わった枠の使い切り実績。記録がまだ無ければ省略される */
+    windowHistory?: AiUsageWindowHistory[]
 }
 
 export interface AiUsageSnapshot {
