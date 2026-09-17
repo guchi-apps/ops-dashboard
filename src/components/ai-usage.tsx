@@ -4,7 +4,7 @@ import { useDashboardData } from "@/components/dashboard-data"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
-import { formatRemaining, getElapsedPercent } from "@/lib/usage-format"
+import { formatRemaining, getElapsedPercent, toDayMarkers } from "@/lib/usage-format"
 import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
 /** サブスク枠と区別が付くよう、クレジット枠の行にはこの補足を添える */
@@ -29,6 +29,7 @@ function UsageWindowRow({ window: usageWindow, now }: { window: AiUsageWindow; n
             usedPercent={usageWindow.usedPercent}
             elapsedPercent={getWindowElapsedPercent(usageWindow, now)}
             remainingText={usageWindow.resetsAt ? formatRemaining(usageWindow.resetsAt, now) : null}
+            markers={toDayMarkers(usageWindow.dayMarks)}
         />
     )
 }

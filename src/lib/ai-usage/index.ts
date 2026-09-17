@@ -1,5 +1,6 @@
 import { fetchChatGptUsage } from "@/lib/ai-usage/chatgpt"
 import { fetchClaudeUsage } from "@/lib/ai-usage/claude"
+import { attachDayMarks } from "@/lib/ai-usage/day-marks"
 import {
     AI_MIN_FORCE_REFRESH_MS,
     isUsageCacheFresh,
@@ -40,10 +41,12 @@ export async function getAiUsageSnapshot({
     }
 
     const [claude, chatgpt] = await Promise.all([fetchClaudeUsage(), fetchChatGptUsage()])
-    const snapshot: AiUsageSnapshot = {
+
+    // 取得のたびに観測を残し、週間枠に「1日ごとの区切り」を載せて返す（#243）
+    const snapshot = await attachDayMarks({
         providers: [claude, chatgpt],
         fetchedAt: new Date().toISOString(),
-    }
+    })
 
     const failed = snapshot.providers.some((provider) => provider.status === "error")
     cache = newUsageCacheEntry(snapshot, failed ? ERROR_CACHE_SECONDS * 1000 : getCacheTtlMs())
