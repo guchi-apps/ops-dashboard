@@ -1,10 +1,11 @@
 "use client"
 
 import { useDashboardData } from "@/components/dashboard-data"
+import { AiUsageHistory } from "@/components/ai-usage-history"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
-import { formatRemaining, getElapsedPercent } from "@/lib/usage-format"
+import { formatRemaining, getElapsedPercent, toDayMarkers } from "@/lib/usage-format"
 import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
 /** サブスク枠と区別が付くよう、クレジット枠の行にはこの補足を添える */
@@ -29,8 +30,19 @@ function UsageWindowRow({ window: usageWindow, now }: { window: AiUsageWindow; n
             usedPercent={usageWindow.usedPercent}
             elapsedPercent={getWindowElapsedPercent(usageWindow, now)}
             remainingText={usageWindow.resetsAt ? formatRemaining(usageWindow.resetsAt, now) : null}
+            markers={toDayMarkers(usageWindow.dayMarks)}
         />
     )
+}
+
+function getCreditElapsedPercent(credit: AiProviderCredit, now: number): number | null {
+    if (!credit.startsAt || !credit.resetsAt) return null
+
+    const startsAtMs = new Date(credit.startsAt).getTime()
+    const resetsAtMs = new Date(credit.resetsAt).getTime()
+    if (Number.isNaN(startsAtMs) || Number.isNaN(resetsAtMs)) return null
+
+    return getElapsedPercent(startsAtMs, resetsAtMs, now)
 }
 
 /**
@@ -44,6 +56,7 @@ function CreditRow({ credit, now }: { credit: AiProviderCredit; now: number }) {
                 label={CREDIT_LABEL}
                 note={CREDIT_NOTE}
                 usedPercent={credit.usedPercent}
+                elapsedPercent={getCreditElapsedPercent(credit, now)}
                 valueText={credit.valueText}
                 usedText={credit.detailText ?? undefined}
                 remainingText={credit.resetsAt ? formatRemaining(credit.resetsAt, now) : null}
@@ -100,6 +113,8 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
                     {provider.message ?? "使用状況を取得できませんでした"}
                 </p>
             )}
+
+            {provider.windowHistory && <AiUsageHistory history={provider.windowHistory} now={now} />}
 
             {provider.credit && (
                 <div className="mt-auto border-t border-border pt-2.5">

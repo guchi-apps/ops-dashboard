@@ -7,6 +7,24 @@ export type AiProviderId = "claude" | "chatgpt"
  */
 export type AiUsageStatus = "ok" | "unconfigured" | "error"
 
+/**
+ * 1日を超える制限枠（週間など）で、枠の中の「1日の終わり」に立てる区切り。
+ *
+ * 位置に使うのは時刻ではなく**その時点までの累計使用率**で、隣り合う区切りの間隔が
+ * その日に使った量になる。値は取得のたびに記録したものを読んでいるため、
+ * 一度も画面を開かなかった日の区切りは存在しない（配列から抜ける）。
+ */
+export interface AiUsageDayMark {
+    /** 枠の開始から数えて何日目の終わりか（1始まり） */
+    day: number
+    /** その時点までの累計使用率（0-100） */
+    usedPercent: number
+    /** 区切りの時刻（ISO 8601） */
+    at: string
+    /** この値を観測した時刻（ISO 8601）。区切りより前になるため、ズレの大きさが分かる */
+    observedAt: string
+}
+
 export interface AiUsageWindow {
     /** 制限枠の表示名（例: "5時間", "週間"） */
     label: string
@@ -18,6 +36,8 @@ export interface AiUsageWindow {
     windowSeconds: number | null
     /** 補足表示（例: "Opus"） */
     note?: string
+    /** 1日ごとの区切り。1日を超える枠でだけ入り、記録が無ければ空配列 */
+    dayMarks?: AiUsageDayMark[]
 }
 
 /**
@@ -34,6 +54,39 @@ export interface AiProviderCredit {
     detailText: string | null
     /** 枠がリセットされる時刻（ISO 8601）。期限が無ければ null */
     resetsAt: string | null
+    /** 使用ペース比較の開始時刻（ISO 8601）。不明なら省略する */
+    startsAt?: string | null
+}
+
+/**
+ * 制限枠1つぶんの実績。提供元は過去の枠を返さないため、
+ * ダッシュボード側で観測して積み上げた値になる（src/lib/ai-usage/history.ts）。
+ */
+export interface AiUsageWindowRecord {
+    /** 枠のリセット時刻（ISO 8601）。枠の識別子も兼ねる */
+    resetsAt: string
+    /** その枠で観測できた最大の使用率（0-100） */
+    usedPercent: number
+    /** まだ終わっていない枠か */
+    inProgress: boolean
+    /** 枠の終了間際に観測できておらず、実際より低い値で確定している可能性があるか */
+    undersampled: boolean
+}
+
+/** 制限枠の種類（5時間・週間 …）ごとの使い切り実績 */
+export interface AiUsageWindowHistory {
+    /** 枠の表示名（{@link AiUsageWindow.label} と同じ） */
+    label: string
+    note?: string
+    windowSeconds: number
+    /** リセット時刻の古い順。進行中の枠があれば末尾に入る */
+    records: AiUsageWindowRecord[]
+    /** 終わった枠の平均使い切り率（0-100）。終わった枠がまだ無ければ null */
+    averagePercent: number | null
+    /** 使い切った枠の数 */
+    fullCount: number
+    /** 平均・使い切り回数の母数（終わった枠の数） */
+    completedCount: number
 }
 
 export interface AiProviderUsage {
@@ -46,6 +99,8 @@ export interface AiProviderUsage {
     message?: string
     windows: AiUsageWindow[]
     credit?: AiProviderCredit
+    /** 終わった枠の使い切り実績。記録がまだ無ければ省略される */
+    windowHistory?: AiUsageWindowHistory[]
 }
 
 export interface AiUsageSnapshot {
