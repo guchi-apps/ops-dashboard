@@ -137,6 +137,8 @@ Claudeの画面に表示される実際の前払い残高は、Claude Webの非�
 表示するには `ANTHROPIC_CLAUDE_SESSION_KEY` を設定し、`ANTHROPIC_CLAUDE_ORGANIZATION_ID` は未設定なら
 `/api/organizations` から `chat` capability の組織を自動選択する。取得に失敗した場合は
 `extra_usage` の上限差分へフォールバックする。
+前払い残高が取れた場合も、`extra_usage` の当月使用額・上限・月次進捗を捨てずに併記する。前払い残高だけで
+丸ごと置き換えると、実残高は出ても今月の使用状況が消える。
 
 **画面確認は `/login` 配下の一時ルートから `parseClaudeUsageResponse` /
 `parseChatGptUsageResponse` に実レスポンスを流し込むのが早い。** どちらの提供元も

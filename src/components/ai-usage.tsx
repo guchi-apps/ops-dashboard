@@ -33,6 +33,16 @@ function UsageWindowRow({ window: usageWindow, now }: { window: AiUsageWindow; n
     )
 }
 
+function getCreditElapsedPercent(credit: AiProviderCredit, now: number): number | null {
+    if (!credit.startsAt || !credit.resetsAt) return null
+
+    const startsAtMs = new Date(credit.startsAt).getTime()
+    const resetsAtMs = new Date(credit.resetsAt).getTime()
+    if (Number.isNaN(startsAtMs) || Number.isNaN(resetsAtMs)) return null
+
+    return getElapsedPercent(startsAtMs, resetsAtMs, now)
+}
+
 /**
  * サブスクとは別会計のクレジット枠。上限が分かるときは他の枠と同じバーで出し、
  * 分かるのが残高だけのとき（ChatGPT）は割合を推測せず数値だけを出す。
@@ -44,6 +54,7 @@ function CreditRow({ credit, now }: { credit: AiProviderCredit; now: number }) {
                 label={CREDIT_LABEL}
                 note={CREDIT_NOTE}
                 usedPercent={credit.usedPercent}
+                elapsedPercent={getCreditElapsedPercent(credit, now)}
                 valueText={credit.valueText}
                 usedText={credit.detailText ?? undefined}
                 remainingText={credit.resetsAt ? formatRemaining(credit.resetsAt, now) : null}
