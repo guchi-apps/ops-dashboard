@@ -145,8 +145,10 @@ Claudeの画面に表示される実際の前払い残高は、Claude Webの非�
 `deploy.yml` のシークレット受け渡し経路（`ssh-action` の `env:` / `with.envs:` ・リモートの `update_env`
 呼び出し）のどれにも行が無く、この経路では本番の `.env` に値が書き込まれない
 （ops-dashboard#250で判明。VPSの `.env` に別途手動で追記されていないかまでは、このリポジトリからは
-確認できない）。有効化するには `docs/knowledge/deployment.md` の「環境変数を1つ増やすときの4箇所
-チェックリスト」に沿って両方のキーを追加する必要がある。
+確認できない）。有効化するには共有知識リポジトリの
+[knowledge/deployment.md](https://github.com/guchi-apps/docs/blob/main/knowledge/deployment.md)
+にある「環境変数を1つ増やすとき、`appleboy/ssh-action` の `envs:` への追記を忘れやすい」に沿って
+両方のキーを追加する必要がある。
 
 **Claude.aiの「クレジット」画面が表示する購入総額（例: 「購入 - 2026年8月31日 +10.15クレジット」の
 積み上げ）は、月間上限（`monthly_limit`）とは別物で、`prepaid/credits` の `amount`（現在の残高）
