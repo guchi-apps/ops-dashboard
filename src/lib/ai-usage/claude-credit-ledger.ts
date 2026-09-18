@@ -219,22 +219,44 @@ export function describeLedger(state: LedgerState, now = new Date()): ClaudeCred
 
     const correction = state.correction
     let balanceText: string | null = null
+    let balanceMinor: number | null = null
     if (correction) {
         // 補正した日までの購入は、入力した残高に含まれているものとして扱う
         const purchasedAfter = state.purchases
             .filter((purchase) => purchase.date > correction.date)
             .reduce((sum, purchase) => sum + purchase.amountMinor, 0)
         const usedAfter = Math.max(0, state.usedTotalMinor - correction.usedTotalMinor)
-        balanceText = money(Math.max(0, correction.balanceMinor + purchasedAfter - usedAfter))
+        balanceMinor = Math.max(0, correction.balanceMinor + purchasedAfter - usedAfter)
+        balanceText = money(balanceMinor)
     }
 
     return {
         purchases,
         activePurchasedText: state.purchases.length > 0 ? money(activeMinor) : null,
         balanceText,
+        balanceMinor,
         correctedAt: correction?.at ?? null,
         correctedBalanceText: correction ? money(correction.balanceMinor) : null,
     }
+}
+
+/**
+ * 購入済みでまだ使っていない残高を、バー（月の上限を100%とする）の幅にしたもの。
+ * 使用済みの右隣に塗るため、上限の残りを超える分は切る（残高が上限より多いと右へはみ出すため）。
+ * 上限が無い・通貨が台帳と違う・残高がゼロのときは塗るものが無いので undefined
+ */
+export function getReservedPercent(
+    credit: AiProviderCredit,
+    balanceMinor: number | null
+): number | undefined {
+    const monthly = credit.monthly
+    if (balanceMinor === null || balanceMinor <= 0 || credit.usedPercent === null) return undefined
+    if (!monthly || monthly.limitMinor === null || monthly.limitMinor <= 0) return undefined
+    if (monthly.currency !== CURRENCY || monthly.decimals !== DECIMALS) return undefined
+
+    const balancePercent = (balanceMinor / monthly.limitMinor) * 100
+    const percent = Math.min(balancePercent, 100 - credit.usedPercent)
+    return percent > 0 ? Math.round(percent * 10) / 10 : undefined
 }
 
 function withLedger(
@@ -260,6 +282,7 @@ function withLedger(
         valueText: ledger.balanceText ? `残り ${ledger.balanceText}` : credit.valueText,
         detailText: [credit.detailText, purchasedText].filter(Boolean).join(" · ") || null,
         ledger,
+        reservedPercent: getReservedPercent(credit, ledger.balanceMinor),
     }
 }
 

@@ -58,6 +58,11 @@ export interface AiProviderCredit {
     monthly?: AiCreditMonthly
     /** 手入力の購入・残高の台帳（Claudeのみ）。画面から編集するための値 */
     ledger?: ClaudeCreditLedgerView
+    /**
+     * 購入済みでまだ使っていない残高が、月の上限の何割にあたるか（0-100）。使用済みの右隣に塗る。
+     * 上限か推定残高が分からないとき、残高がゼロのときは無い
+     */
+    reservedPercent?: number
 }
 
 /** 当月の追加利用。金額は最小単位（USDならセント） */
@@ -92,6 +97,8 @@ export interface ClaudeCreditLedgerView {
     activePurchasedText: string | null
     /** 推定残高（表示用）。補正をまだしていなければ null */
     balanceText: string | null
+    /** 推定残高（最小単位。USDならセント）。補正をまだしていなければ null */
+    balanceMinor: number | null
     /** 最後に補正した時刻（ISO 8601）と、そのときに入力した残高（表示用） */
     correctedAt: string | null
     correctedBalanceText: string | null

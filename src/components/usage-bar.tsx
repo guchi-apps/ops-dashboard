@@ -24,6 +24,11 @@ interface UsageBarProps {
     remainingText?: string | null
     /** バーに重ねる細い目盛り。1日を超える枠で「1日の区切り」を出すのに使う */
     markers?: UsageBarMarker[]
+    /**
+     * 使用済みの右隣に塗る「購入済み・未使用」の幅（0-100）。クレジット枠で残高がバーのどこまでかを示す。
+     * 使用済みとの合計が100を超えないよう、呼び出し側で上限に収めて渡す
+     */
+    reservedPercent?: number
 }
 
 /** 目盛りの内訳。1px の線はホバーで狙えないため、説明はバー全体の title として出す */
@@ -35,14 +40,36 @@ function markersTitle(markers: UsageBarMarker[]): string | undefined {
 function ariaValueText(
     usedPercent: number,
     elapsedPercent: number | null,
-    markers: UsageBarMarker[]
+    markers: UsageBarMarker[],
+    reservedPercent: number | undefined
 ): string | undefined {
     const parts = [
         elapsedPercent === null ? null : `使用 ${usedPercent}%、経過 ${elapsedPercent}%`,
+        reservedPercent === undefined ? null : `使用 ${usedPercent}%、購入済み・未使用 ${reservedPercent}%`,
         markers.length > 0 ? `日ごと: ${markers.map((marker) => marker.label).join("、")}` : null,
     ].filter((part): part is string => part !== null)
 
     return parts.length > 0 ? parts.join("。") : undefined
+}
+
+/** 「購入済み・未使用」の青が何を指すかを、バーの直下で示す */
+function ReservedLegend() {
+    return (
+        <div className="flex flex-wrap gap-x-3 text-[9px] leading-relaxed text-muted-foreground sm:text-[10px]">
+            <span className="inline-flex items-center gap-1">
+                <span className="size-2 rounded-[2px] bg-emerald-400" aria-hidden />
+                使用
+            </span>
+            <span className="inline-flex items-center gap-1">
+                <span className="size-2 rounded-[2px] bg-sky-400" aria-hidden />
+                購入済み・未使用
+            </span>
+            <span className="inline-flex items-center gap-1">
+                <span className="size-2 rounded-[2px] border border-border bg-muted" aria-hidden />
+                上限の残り
+            </span>
+        </div>
+    )
 }
 
 /**
@@ -58,6 +85,7 @@ export function UsageBar({
     usedText,
     remainingText,
     markers = [],
+    reservedPercent,
 }: UsageBarProps) {
     return (
         <div className="space-y-1">
@@ -67,24 +95,38 @@ export function UsageBar({
                     {note && <span className="ml-1 text-[10px] sm:text-xs opacity-70">{note}</span>}
                 </span>
                 <span className="font-mono text-sm sm:text-base font-bold">
+                    {reservedPercent !== undefined && (
+                        <span aria-hidden className="mr-1.5 inline-block size-2 rounded-[2px] bg-sky-400" />
+                    )}
                     {valueText ?? `残り ${Math.round(100 - usedPercent)}%`}
                 </span>
             </div>
 
             <div className="relative" title={markersTitle(markers)}>
                 <div
-                    className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                    className="flex h-2 w-full overflow-hidden rounded-full bg-muted"
                     role="progressbar"
                     aria-label={`${label}の使用率`}
                     aria-valuenow={Math.round(usedPercent)}
                     aria-valuemin={0}
                     aria-valuemax={100}
-                    aria-valuetext={ariaValueText(usedPercent, elapsedPercent, markers)}
+                    aria-valuetext={ariaValueText(usedPercent, elapsedPercent, markers, reservedPercent)}
                 >
                     <div
-                        className={cn("h-full rounded-full transition-all", getUsageBarColor(usedPercent))}
+                        className={cn(
+                            "h-full transition-all",
+                            reservedPercent === undefined ? "rounded-full" : "rounded-l-full",
+                            getUsageBarColor(usedPercent)
+                        )}
                         style={{ width: `${usedPercent}%` }}
                     />
+                    {/* 使用済みと見分けが付くよう、色を変えたうえでカードの地色の細い線で区切る */}
+                    {reservedPercent !== undefined && (
+                        <div
+                            className="h-full border-l-2 border-card bg-sky-400 transition-all"
+                            style={{ width: `${reservedPercent}%` }}
+                        />
+                    )}
                 </div>
 
                 {/*
@@ -113,6 +155,8 @@ export function UsageBar({
                     />
                 )}
             </div>
+
+            {reservedPercent !== undefined && <ReservedLegend />}
 
             <div className="flex flex-wrap items-center justify-between gap-x-2 text-[10px] sm:text-xs text-muted-foreground">
                 <span>
