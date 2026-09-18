@@ -140,6 +140,20 @@ Claudeの画面に表示される実際の前払い残高は、Claude Webの非�
 前払い残高が取れた場合も、`extra_usage` の当月使用額・上限・月次進捗を捨てずに併記する。前払い残高だけで
 丸ごと置き換えると、実残高は出ても今月の使用状況が消える。
 
+**`ANTHROPIC_CLAUDE_SESSION_KEY` / `ANTHROPIC_CLAUDE_ORGANIZATION_ID` は、2026-09-18時点で本番VPSに
+一切デプロイされていない。** `.env.example` には定義があるが、`.github/secrets-manifest.tsv`・
+`.github/workflows/deploy.yml` のシークレット受け渡し経路（`ssh-action` の `env:` / `with.envs:` ・
+リモートの `update_env` 呼び出し）のどれにも行が無いため、本番の `.env` に値が書き込まれることがない。
+前払い残高の取得は本番では常に未設定扱いで `extra_usage` へフォールバックしている。有効化するには
+`docs/knowledge/deployment.md` の「環境変数を1つ増やすときの4箇所チェックリスト」に沿って両方の
+キーを追加する必要がある（未対応。ops-dashboard#250で判明）。
+
+**Claude.aiの「クレジット」画面が表示する購入総額（例: 「購入 - 2026年8月31日 +10.15クレジット」の
+積み上げ）は、月間上限（`monthly_limit`）とは別物で、`prepaid/credits` の `amount`（現在の残高）
+だけからは求められない。** 購入は個別の履歴として積み上がり、月間上限に達していなくても購入総額が
+上限より少ないことがある。購入総額を正確に出すには、このAPIが購入履歴を返す構造かどうかの調査が
+別途必要（ops-dashboard#250であえて対応を見送った）。
+
 **画面確認は `/login` 配下の一時ルートから `parseClaudeUsageResponse` /
 `parseChatGptUsageResponse` に実レスポンスを流し込むのが早い。** どちらの提供元も
 リフレッシュトークンが要り、worktreeには `.env.local` が無いため実データを直接引けない。
