@@ -2,6 +2,7 @@
 
 import { useDashboardData } from "@/components/dashboard-data"
 import { AiUsageHistory } from "@/components/ai-usage-history"
+import { ClaudeCreditLedger } from "@/components/claude-credit-ledger"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
@@ -35,19 +36,11 @@ function UsageWindowRow({ window: usageWindow, now }: { window: AiUsageWindow; n
     )
 }
 
-function getCreditElapsedPercent(credit: AiProviderCredit, now: number): number | null {
-    if (!credit.startsAt || !credit.resetsAt) return null
-
-    const startsAtMs = new Date(credit.startsAt).getTime()
-    const resetsAtMs = new Date(credit.resetsAt).getTime()
-    if (Number.isNaN(startsAtMs) || Number.isNaN(resetsAtMs)) return null
-
-    return getElapsedPercent(startsAtMs, resetsAtMs, now)
-}
-
 /**
  * サブスクとは別会計のクレジット枠。上限が分かるときは他の枠と同じバーで出し、
  * 分かるのが残高だけのとき（ChatGPT）は割合を推測せず数値だけを出す。
+ * サブスク枠と違い経過率は出さない。「経過◯%」は時間の進みでしかなく、
+ * Issueで求められた「使用 $X / 上限 $Y」の金額内訳（detailText）のほうが実態を表す（#250）。
  */
 function CreditRow({ credit, now }: { credit: AiProviderCredit; now: number }) {
     if (credit.usedPercent !== null) {
@@ -56,7 +49,6 @@ function CreditRow({ credit, now }: { credit: AiProviderCredit; now: number }) {
                 label={CREDIT_LABEL}
                 note={CREDIT_NOTE}
                 usedPercent={credit.usedPercent}
-                elapsedPercent={getCreditElapsedPercent(credit, now)}
                 valueText={credit.valueText}
                 usedText={credit.detailText ?? undefined}
                 remainingText={credit.resetsAt ? formatRemaining(credit.resetsAt, now) : null}
@@ -117,8 +109,9 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
             {provider.windowHistory && <AiUsageHistory history={provider.windowHistory} now={now} />}
 
             {provider.credit && (
-                <div className="mt-auto border-t border-border pt-2.5">
+                <div className="mt-auto space-y-2 border-t border-border pt-2.5">
                     <CreditRow credit={provider.credit} now={now} />
+                    {provider.credit.ledger && <ClaudeCreditLedger ledger={provider.credit.ledger} />}
                 </div>
             )}
         </DashboardCard>

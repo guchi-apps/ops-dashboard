@@ -11,3 +11,14 @@ export function formatWindowLabel(seconds: number): string {
     const days = Math.round(hours / 24)
     return `${days}日間`
 }
+
+/** 最小単位（USDならセント）で持つ金額を表示用の文字列にする */
+export function formatMoney(minorUnits: number, currency: string, decimals: number): string {
+    const value = minorUnits / 10 ** decimals
+
+    try {
+        return new Intl.NumberFormat("ja-JP", { style: "currency", currency }).format(value)
+    } catch {
+        return `${value} ${currency}`
+    }
+}

@@ -1,5 +1,5 @@
 import { clampPercent, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
-import { formatWindowLabel } from "@/lib/ai-usage/common"
+import { formatMoney, formatWindowLabel } from "@/lib/ai-usage/common"
 import {
     describeRefreshFailure,
     getAccessToken,
@@ -14,9 +14,6 @@ import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/a
  * 公式に文書化されたAPIではないため、仕様変更で壊れうる前提で扱う。
  */
 export const CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
-
-/** Claudeの画面に表示される前払い残高を取得する非公開API */
-const CLAUDE_WEB_API_BASE_URL = "https://claude.ai/api"
 
 /** 契約プランは使用状況のレスポンスに含まれないため、プロフィールから取得する */
 const PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
@@ -97,16 +94,6 @@ interface TokenResponse {
     access_token?: string
     refresh_token?: string
     expires_in?: number
-}
-
-interface ClaudeWebOrganization {
-    uuid?: string
-    capabilities?: string[]
-}
-
-interface ClaudeWebPrepaidCreditsResponse {
-    amount?: number
-    currency?: string
 }
 
 function userAgent(): string {
@@ -200,78 +187,13 @@ function toWindow(
     }
 }
 
-/** 最小単位（USDならセント）で返る金額を表示用の文字列にする */
-function formatMoney(minorUnits: number, currency: string, decimals: number): string {
-    const value = minorUnits / 10 ** decimals
-
-    try {
-        return new Intl.NumberFormat("ja-JP", { style: "currency", currency }).format(value)
-    } catch {
-        return `${value} ${currency}`
-    }
-}
-
-/** ClaudeのWeb画面が返す前払いクレジット残高を取得する。設定が無ければ従来値へ戻す */
-async function fetchClaudeWebPrepaidCredit(): Promise<AiProviderCredit | undefined> {
-    const sessionKey = process.env.ANTHROPIC_CLAUDE_SESSION_KEY
-    if (!sessionKey) return undefined
-
-    try {
-        const organizationId = process.env.ANTHROPIC_CLAUDE_ORGANIZATION_ID || (await resolveClaudeWebOrganization())
-        if (!organizationId) return undefined
-
-        const res = await fetchWithTimeout(
-            `${CLAUDE_WEB_API_BASE_URL}/organizations/${encodeURIComponent(organizationId)}/prepaid/credits`,
-            {
-                headers: {
-                    Cookie: `sessionKey=${sessionKey}`,
-                    Accept: "application/json",
-                },
-            }
-        )
-        if (!res.ok) return undefined
-
-        const data = (await res.json()) as ClaudeWebPrepaidCreditsResponse
-        if (typeof data.amount !== "number" || !Number.isFinite(data.amount) || data.amount < 0) {
-            return undefined
-        }
-
-        const currency = data.currency?.trim().toUpperCase() || "USD"
-        return {
-            valueText: `残り ${formatMoney(data.amount, currency, 2)}`,
-            usedPercent: null,
-            detailText: "現在の前払いクレジット残高",
-            resetsAt: null,
-        }
-    } catch (error) {
-        console.error("Claude prepaid credits: 取得に失敗", error)
-        return undefined
-    }
-}
-
-async function resolveClaudeWebOrganization(): Promise<string | undefined> {
-    const sessionKey = process.env.ANTHROPIC_CLAUDE_SESSION_KEY
-    if (!sessionKey) return undefined
-
-    const res = await fetchWithTimeout(`${CLAUDE_WEB_API_BASE_URL}/organizations`, {
-        headers: { Cookie: `sessionKey=${sessionKey}`, Accept: "application/json" },
-    })
-    if (!res.ok) return undefined
-
-    const organizations = (await res.json()) as ClaudeWebOrganization[]
-    return organizations.find((organization) => organization.capabilities?.includes("chat"))?.uuid
-}
-
 /**
- * 追加利用は月ごとにリセットされるが、期間はレスポンスに含まれない。
- * Claude Code 本体と同じく実行環境の暦で月初から翌月1日までとして扱う。
+ * 追加利用は月ごとにリセットされるが、リセット時刻はレスポンスに含まれない。
+ * Claude Code 本体と同じく実行環境の暦で翌月1日として扱う。
  */
-function currentMonthPeriod(): { startsAt: string; resetsAt: string } {
+function currentMonthResetsAt(): string {
     const now = new Date()
-    return {
-        startsAt: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(),
-        resetsAt: new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString(),
-    }
+    return new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString()
 }
 
 /**
@@ -314,13 +236,16 @@ function toCredit(data: OauthUsageResponse): AiProviderCredit | undefined {
             detailText:
                 typeof used === "number" ? `使用 ${formatMoney(used, currency, decimals)}` : null,
             resetsAt: null,
+            monthly:
+                typeof used === "number"
+                    ? { usedMinor: used, limitMinor: null, currency, decimals }
+                    : undefined,
         }
     }
 
     if (typeof used !== "number") return undefined
 
     const limit = source.monthly_limit
-    const period = currentMonthPeriod()
     const utilization =
         typeof source.utilization === "number"
             ? source.utilization
@@ -329,21 +254,14 @@ function toCredit(data: OauthUsageResponse): AiProviderCredit | undefined {
               : 0
 
     return {
-        valueText: `残り ${formatMoney(Math.max(0, limit - used), currency, decimals)}`,
+        // 実際の残高（前払いクレジットの残り）ではなく、月の上限からの差額でしかないため
+        // 「残り」ではなく「上限まで」と表記する（#250 計画レビューで指摘）
+        valueText: `上限まで ${formatMoney(Math.max(0, limit - used), currency, decimals)}`,
         usedPercent: clampPercent(utilization),
         detailText: `使用 ${formatMoney(used, currency, decimals)} / 上限 ${formatMoney(limit, currency, decimals)}`,
-        ...period,
+        resetsAt: currentMonthResetsAt(),
+        monthly: { usedMinor: used, limitMinor: limit, currency, decimals },
     }
-}
-
-/** 前払い残高が取れる場合も、月次の使用状況と進捗表示を残す */
-function mergeClaudeCredits(
-    monthlyCredit: AiProviderCredit | undefined,
-    prepaidCredit: AiProviderCredit | undefined
-): AiProviderCredit | undefined {
-    if (!prepaidCredit || !monthlyCredit) return prepaidCredit ?? monthlyCredit
-
-    return { ...monthlyCredit, valueText: prepaidCredit.valueText }
 }
 
 /** プロフィールのレスポンスからプランの表示名を組み立てる */
@@ -426,10 +344,9 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
     }
 
     try {
-        const [res, detectedPlan, webCredit] = await Promise.all([
+        const [res, detectedPlan] = await Promise.all([
             fetchWithTimeout(CLAUDE_USAGE_URL, { headers: claudeApiHeaders(accessToken) }),
             fetchPlan(accessToken),
-            fetchClaudeWebPrepaidCredit(),
         ])
 
         // 環境変数を設定した場合はそちらを表示名として優先する
@@ -455,7 +372,7 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
             return { ...base, status: "error", message: "使用状況のレスポンスを解釈できませんでした" }
         }
 
-        return { ...base, status: "ok", windows, credit: mergeClaudeCredits(credit, webCredit) }
+        return { ...base, status: "ok", windows, credit }
     } catch (error) {
         console.error("Claude usage: 取得に失敗", error)
         return { ...base, status: "error", message: "使用状況の取得に失敗しました" }
