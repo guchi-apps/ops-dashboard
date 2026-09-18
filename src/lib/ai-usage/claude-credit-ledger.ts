@@ -265,21 +265,19 @@ function withLedger(
 
 /**
  * スナップショットのClaudeのクレジット枠へ台帳の値を載せる。
- * 台帳の編集をすぐ画面へ出すため、提供元の取得結果をキャッシュから返す回も毎回載せ直す。
+ * 台帳の編集をすぐ画面へ出すため、提供元の取得結果をキャッシュから返す回も毎回載せ直す
+ * （キャッシュ自体は書き換えず、コピーへ載せる）。提供元の取得に失敗した回も台帳の値と
+ * 記録フォームは出す。台帳は提供元に依存しないため。
  */
 export async function applyClaudeCreditLedger(snapshot: AiUsageSnapshot): Promise<AiUsageSnapshot> {
-    if (!snapshot.providers.some((provider) => provider.id === "claude" && provider.status === "ok")) {
-        return snapshot
-    }
+    if (!snapshot.providers.some((provider) => provider.id === "claude")) return snapshot
 
     const ledger = describeLedger(await readState())
 
     return {
         ...snapshot,
         providers: snapshot.providers.map((provider) =>
-            provider.id === "claude" && provider.status === "ok"
-                ? { ...provider, credit: withLedger(provider.credit, ledger) }
-                : provider
+            provider.id === "claude" ? { ...provider, credit: withLedger(provider.credit, ledger) } : provider
         ),
     }
 }
