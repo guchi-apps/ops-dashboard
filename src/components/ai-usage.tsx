@@ -51,6 +51,7 @@ function CreditRow({ credit, now }: { credit: AiProviderCredit; now: number }) {
                 usedPercent={credit.usedPercent}
                 valueText={credit.valueText}
                 usedText={credit.detailText ?? undefined}
+                reservedPercent={credit.reservedPercent}
                 remainingText={credit.resetsAt ? formatRemaining(credit.resetsAt, now) : null}
             />
         )
