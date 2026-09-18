@@ -82,6 +82,8 @@ export async function proxy(request: NextRequest) {
 // 中身は画像とマニフェストだけで秘密情報を含まないため除外する（#165）。
 // これらは静的配信なのでセッションのリフレッシュも不要で、除外すればアイコン取得のたびに
 // Supabaseへ問い合わせる無駄も無くなる。
+// `sw.js`（通知用のService Worker。#263）も外す。スクリプトの取得がリダイレクトされると、
+// ブラウザが登録を失敗させるため。中身は通知を出すだけの静的ファイル。
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icons/|manifest.webmanifest|sw.js).*)"],
 };

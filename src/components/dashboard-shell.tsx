@@ -18,6 +18,7 @@ import { SwipeTabs } from "@/components/swipe-tabs"
 import { TmuxLegend, TmuxSessionList, TmuxSessionTable } from "@/components/tmux-sessions"
 import { Button } from "@/components/ui/button"
 import { AiUsageCompact, GitHubUsageCompact } from "@/components/usage-compact"
+import { UsageNotifications } from "@/components/usage-notifications"
 import { AIDE_SEVERITY_TONE } from "@/lib/aide-status-format"
 import { buildSummaryChips } from "@/lib/dashboard-summary"
 import { formatAge } from "@/lib/host-stats/format"
@@ -84,11 +85,14 @@ const TAB_SHORT_LABELS: Partial<Record<TabId, string>> = {
  * 狭い画面でも時刻だけは出す（ボタンはアイコンのみにして幅を詰める）。
  */
 function RefreshControl({
+    leading,
     updatedAt,
     state,
     cooldownSeconds,
     onRefresh,
 }: {
+    /** 更新時刻と更新ボタンのあいだに置くもの（通知ボタン） */
+    leading?: React.ReactNode
     updatedAt: number | null
     state: RefreshState
     cooldownSeconds: number
@@ -128,6 +132,7 @@ function RefreshControl({
                     )}
                 </span>
             )}
+            {leading}
             <Button
                 variant="outline"
                 size="sm"
@@ -201,6 +206,28 @@ export function DashboardShell({
 
     const goPrevious = useCallback(() => goToTabAt(activeIndex - 1), [goToTabAt, activeIndex])
     const goNext = useCallback(() => goToTabAt(activeIndex + 1), [goToTabAt, activeIndex])
+
+    // 通知をタップして開いたときは、通知が指したタブ（利用枠）を出す（#263）。
+    // アプリが閉じていれば `?tab=` 付きで開き、開いていればService Workerからメッセージで届く
+    useEffect(() => {
+        const openTab = (tab: unknown) => {
+            if (typeof tab === "string" && tabIds.includes(tab as TabId)) storeActiveTab(tab as TabId)
+        }
+
+        const url = new URL(window.location.href)
+        if (url.searchParams.has("tab")) {
+            openTab(url.searchParams.get("tab"))
+            url.searchParams.delete("tab")
+            window.history.replaceState(null, "", url.pathname + url.search + url.hash)
+        }
+
+        const onMessage = (event: MessageEvent) => {
+            const data = event.data as { type?: string; tab?: unknown } | null
+            if (data?.type === "open-tab") openTab(data.tab)
+        }
+        navigator.serviceWorker?.addEventListener("message", onMessage)
+        return () => navigator.serviceWorker?.removeEventListener("message", onMessage)
+    }, [tabIds])
 
     useEffect(() => {
         const list = tabListRef.current
@@ -276,6 +303,7 @@ export function DashboardShell({
                         LIVE
                     </span>
                     <RefreshControl
+                        leading={<UsageNotifications />}
                         updatedAt={updatedAt}
                         state={refreshState}
                         cooldownSeconds={refreshCooldownSeconds}
