@@ -325,14 +325,16 @@ function toCredit(data: OauthUsageResponse): AiProviderCredit | undefined {
               : 0
 
     return {
-        valueText: `残り ${formatMoney(Math.max(0, limit - used), currency, decimals)}`,
+        // 実際の残高（前払いクレジットの残り）ではなく、月の上限からの差額でしかないため
+        // 「残り」ではなく「上限まで」と表記する（#250 計画レビューで指摘）
+        valueText: `上限まで ${formatMoney(Math.max(0, limit - used), currency, decimals)}`,
         usedPercent: clampPercent(utilization),
         detailText: `使用 ${formatMoney(used, currency, decimals)} / 上限 ${formatMoney(limit, currency, decimals)}`,
         resetsAt: currentMonthResetsAt(),
     }
 }
 
-/** 前払い残高が取れる場合も、月次の使用状況と進捗表示を残す */
+/** 前払い残高が取れる場合も、月次の使用額・上限（detailText）は残す */
 function mergeClaudeCredits(
     monthlyCredit: AiProviderCredit | undefined,
     prepaidCredit: AiProviderCredit | undefined
