@@ -1,3 +1,4 @@
+import { notifyUsageAlerts } from "@/lib/ai-usage/alerts"
 import { fetchChatGptUsage } from "@/lib/ai-usage/chatgpt"
 import { fetchClaudeUsage } from "@/lib/ai-usage/claude"
 import { applyClaudeCreditLedger, recordClaudeCreditUsage } from "@/lib/ai-usage/claude-credit-ledger"
@@ -57,6 +58,12 @@ export async function getAiUsageSnapshot({
     // クレジット残高の推定に使う使用額も、提供元から取れた回だけ積む（#252）
     const claudeMonthly = claude.status === "ok" ? claude.credit?.monthly : undefined
     if (claudeMonthly) await recordClaudeCreditUsage(claudeMonthly.usedMinor)
+
+    // 上限に近づいた枠を端末へ通知する（#263）。送信を待つと画面の応答が遅れるため待たない。
+    // キャッシュを返した回は値が変わっていないので判定しない
+    void notifyUsageAlerts(snapshot).catch((error) => {
+        console.error("AI usage alerts: 通知の判定・送信に失敗", error)
+    })
 
     const failed = snapshot.providers.some((provider) => provider.status === "error")
     cache = newUsageCacheEntry(snapshot, failed ? ERROR_CACHE_SECONDS * 1000 : getCacheTtlMs())
