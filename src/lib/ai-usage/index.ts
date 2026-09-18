@@ -1,5 +1,6 @@
 import { fetchChatGptUsage } from "@/lib/ai-usage/chatgpt"
 import { fetchClaudeUsage } from "@/lib/ai-usage/claude"
+import { applyClaudeCreditLedger, recordClaudeCreditUsage } from "@/lib/ai-usage/claude-credit-ledger"
 import { attachDayMarks } from "@/lib/ai-usage/day-marks"
 import { applyAiUsageHistory } from "@/lib/ai-usage/history"
 import {
@@ -38,7 +39,7 @@ export async function getAiUsageSnapshot({
 }: UsageFetchOptions = {}): Promise<AiUsageSnapshot> {
     const cached = cache
     if (cached && isUsageCacheFresh(cached, force, AI_MIN_FORCE_REFRESH_MS)) {
-        return cached.snapshot
+        return applyClaudeCreditLedger(cached.snapshot)
     }
 
     const [claude, chatgpt] = await Promise.all([fetchClaudeUsage(), fetchChatGptUsage()])
@@ -53,7 +54,11 @@ export async function getAiUsageSnapshot({
     // （同じ値を書き直すだけで、観測時刻だけが実態より新しくなってしまうため）
     await applyAiUsageHistory(snapshot)
 
+    // クレジット残高の推定に使う使用額も、提供元から取れた回だけ積む（#252）
+    const claudeMonthly = claude.status === "ok" ? claude.credit?.monthly : undefined
+    if (claudeMonthly) await recordClaudeCreditUsage(claudeMonthly.usedMinor)
+
     const failed = snapshot.providers.some((provider) => provider.status === "error")
     cache = newUsageCacheEntry(snapshot, failed ? ERROR_CACHE_SECONDS * 1000 : getCacheTtlMs())
-    return snapshot
+    return applyClaudeCreditLedger(snapshot)
 }

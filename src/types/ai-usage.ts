@@ -54,6 +54,47 @@ export interface AiProviderCredit {
     detailText: string | null
     /** 枠がリセットされる時刻（ISO 8601）。期限が無ければ null */
     resetsAt: string | null
+    /** 当月の追加利用の生の値（Claudeのみ）。台帳の使用額の積み上げに使う */
+    monthly?: AiCreditMonthly
+    /** 手入力の購入・残高の台帳（Claudeのみ）。画面から編集するための値 */
+    ledger?: ClaudeCreditLedgerView
+}
+
+/** 当月の追加利用。金額は最小単位（USDならセント） */
+export interface AiCreditMonthly {
+    usedMinor: number
+    /** 月の上限。null なら上限なし */
+    limitMinor: number | null
+    currency: string
+    decimals: number
+}
+
+/** 手入力したクレジット購入1件 */
+export interface ClaudeCreditPurchaseView {
+    id: string
+    /** 購入日（YYYY-MM-DD） */
+    date: string
+    /** 金額（USD） */
+    amount: number
+    /** 有効期限（YYYY-MM-DD）。購入日から1年 */
+    expiresOn: string
+    expired: boolean
+}
+
+/**
+ * Claudeのクレジット残高は claude.ai の非公開APIがCloudflareに阻まれて取れないため（#252）、
+ * 購入と「ある時点の残高」を手で登録し、そこからの使用額を差し引いて推定する。
+ */
+export interface ClaudeCreditLedgerView {
+    /** 新しい購入から順 */
+    purchases: ClaudeCreditPurchaseView[]
+    /** 有効期限内の購入の合計（表示用）。購入が無ければ null */
+    activePurchasedText: string | null
+    /** 推定残高（表示用）。補正をまだしていなければ null */
+    balanceText: string | null
+    /** 最後に補正した時刻（ISO 8601）と、そのときに入力した残高（表示用） */
+    correctedAt: string | null
+    correctedBalanceText: string | null
 }
 
 /**
