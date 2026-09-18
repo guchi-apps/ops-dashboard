@@ -263,15 +263,12 @@ async function resolveClaudeWebOrganization(): Promise<string | undefined> {
 }
 
 /**
- * 追加利用は月ごとにリセットされるが、期間はレスポンスに含まれない。
- * Claude Code 本体と同じく実行環境の暦で月初から翌月1日までとして扱う。
+ * 追加利用は月ごとにリセットされるが、リセット時刻はレスポンスに含まれない。
+ * Claude Code 本体と同じく実行環境の暦で翌月1日として扱う。
  */
-function currentMonthPeriod(): { startsAt: string; resetsAt: string } {
+function currentMonthResetsAt(): string {
     const now = new Date()
-    return {
-        startsAt: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(),
-        resetsAt: new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString(),
-    }
+    return new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString()
 }
 
 /**
@@ -320,7 +317,6 @@ function toCredit(data: OauthUsageResponse): AiProviderCredit | undefined {
     if (typeof used !== "number") return undefined
 
     const limit = source.monthly_limit
-    const period = currentMonthPeriod()
     const utilization =
         typeof source.utilization === "number"
             ? source.utilization
@@ -329,14 +325,16 @@ function toCredit(data: OauthUsageResponse): AiProviderCredit | undefined {
               : 0
 
     return {
-        valueText: `残り ${formatMoney(Math.max(0, limit - used), currency, decimals)}`,
+        // 実際の残高（前払いクレジットの残り）ではなく、月の上限からの差額でしかないため
+        // 「残り」ではなく「上限まで」と表記する（#250 計画レビューで指摘）
+        valueText: `上限まで ${formatMoney(Math.max(0, limit - used), currency, decimals)}`,
         usedPercent: clampPercent(utilization),
         detailText: `使用 ${formatMoney(used, currency, decimals)} / 上限 ${formatMoney(limit, currency, decimals)}`,
-        ...period,
+        resetsAt: currentMonthResetsAt(),
     }
 }
 
-/** 前払い残高が取れる場合も、月次の使用状況と進捗表示を残す */
+/** 前払い残高が取れる場合も、月次の使用額・上限（detailText）は残す */
 function mergeClaudeCredits(
     monthlyCredit: AiProviderCredit | undefined,
     prepaidCredit: AiProviderCredit | undefined

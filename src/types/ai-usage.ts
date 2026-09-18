@@ -54,8 +54,6 @@ export interface AiProviderCredit {
     detailText: string | null
     /** 枠がリセットされる時刻（ISO 8601）。期限が無ければ null */
     resetsAt: string | null
-    /** 使用ペース比較の開始時刻（ISO 8601）。不明なら省略する */
-    startsAt?: string | null
 }
 
 /**

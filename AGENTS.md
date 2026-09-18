@@ -137,8 +137,24 @@ Claudeの画面に表示される実際の前払い残高は、Claude Webの非�
 表示するには `ANTHROPIC_CLAUDE_SESSION_KEY` を設定し、`ANTHROPIC_CLAUDE_ORGANIZATION_ID` は未設定なら
 `/api/organizations` から `chat` capability の組織を自動選択する。取得に失敗した場合は
 `extra_usage` の上限差分へフォールバックする。
-前払い残高が取れた場合も、`extra_usage` の当月使用額・上限・月次進捗を捨てずに併記する。前払い残高だけで
-丸ごと置き換えると、実残高は出ても今月の使用状況が消える。
+前払い残高が取れた場合も、`extra_usage` の当月使用額・上限（detailText）は捨てずに併記する。前払い残高だけで
+丸ごと置き換えると、実残高は出ても今月の使用額が消える。
+
+**`ANTHROPIC_CLAUDE_SESSION_KEY` / `ANTHROPIC_CLAUDE_ORGANIZATION_ID` は、`.github/workflows/deploy.yml` の
+シークレット受け渡し経路には無い。** `.env.example` には定義があるが、`.github/secrets-manifest.tsv`・
+`deploy.yml` のシークレット受け渡し経路（`ssh-action` の `env:` / `with.envs:` ・リモートの `update_env`
+呼び出し）のどれにも行が無く、この経路では本番の `.env` に値が書き込まれない
+（ops-dashboard#250で判明。VPSの `.env` に別途手動で追記されていないかまでは、このリポジトリからは
+確認できない）。有効化するには共有知識リポジトリの
+[knowledge/deployment.md](https://github.com/guchi-apps/docs/blob/main/knowledge/deployment.md)
+にある「環境変数を1つ増やすとき、`appleboy/ssh-action` の `envs:` への追記を忘れやすい」に沿って
+両方のキーを追加する必要がある。
+
+**Claude.aiの「クレジット」画面が表示する購入総額（例: 「購入 - 2026年8月31日 +10.15クレジット」の
+積み上げ）は、月間上限（`monthly_limit`）とは別物で、`prepaid/credits` の `amount`（現在の残高）
+だけからは求められない。** 購入は個別の履歴として積み上がり、月間上限に達していなくても購入総額が
+上限より少ないことがある。購入総額を正確に出すには、このAPIが購入履歴を返す構造かどうかの調査が
+別途必要（ops-dashboard#250であえて対応を見送った）。
 
 **画面確認は `/login` 配下の一時ルートから `parseClaudeUsageResponse` /
 `parseChatGptUsageResponse` に実レスポンスを流し込むのが早い。** どちらの提供元も
