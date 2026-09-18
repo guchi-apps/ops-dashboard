@@ -70,6 +70,11 @@ interface DashboardData extends DashboardInitialData {
      * ヘッダーの更新ボタンと違って全ソースを叩かないため、連打の抑制も掛けていない。
      */
     refreshUptimeKuma: () => Promise<boolean>
+    /**
+     * AI使用状況だけを取り直す。クレジットの購入・残高を記録した直後に使う。
+     * サーバー側のキャッシュは飛ばさない（台帳の値はキャッシュを返す回も載せ直されるため）。
+     */
+    refreshAiUsage: () => Promise<boolean>
 }
 
 const DashboardDataContext = createContext<DashboardData | null>(null)
@@ -165,6 +170,9 @@ export function DashboardDataProvider({
         [refreshUptimeKumaOnly]
     )
 
+    const refreshAiUsageOnly = aiUsage.refresh
+    const refreshAiUsage = useCallback(() => refreshAiUsageOnly(false), [refreshAiUsageOnly])
+
     const value = useMemo<DashboardData>(
         () => ({
             hostStats: hostStats.value,
@@ -188,9 +196,11 @@ export function DashboardDataProvider({
             refreshState: manualRefresh.state,
             refreshCooldownSeconds: manualRefresh.cooldownSeconds,
             refreshUptimeKuma,
+            refreshAiUsage,
         }),
         [
             refreshUptimeKuma,
+            refreshAiUsage,
             hostStats,
             aiUsage,
             githubUsage,

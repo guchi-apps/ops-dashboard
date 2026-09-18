@@ -2,6 +2,7 @@
 
 import { useDashboardData } from "@/components/dashboard-data"
 import { AiUsageHistory } from "@/components/ai-usage-history"
+import { ClaudeCreditLedger } from "@/components/claude-credit-ledger"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
@@ -108,8 +109,9 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
             {provider.windowHistory && <AiUsageHistory history={provider.windowHistory} now={now} />}
 
             {provider.credit && (
-                <div className="mt-auto border-t border-border pt-2.5">
+                <div className="mt-auto space-y-2 border-t border-border pt-2.5">
                     <CreditRow credit={provider.credit} now={now} />
+                    {provider.credit.ledger && <ClaudeCreditLedger ledger={provider.credit.ledger} />}
                 </div>
             )}
         </DashboardCard>

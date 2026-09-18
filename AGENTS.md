@@ -130,31 +130,26 @@ AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/s
   購入した総量は返らないので**使用率（分母）を出せない**——バーではなく残高だけを出す。
   ワークスペースの上限（`spend_control.individual_limit`）は個人アカウントでは `null`
 
-`/api/oauth/usage` の Claude `extra_usage` は前払い残高ではなく、月額上限と使用額を返す。
-Claudeの画面に表示される実際の前払い残高は、Claude Webの非公開API
-`GET https://claude.ai/api/organizations/{org}/prepaid/credits` の `amount`（最小単位）で取得する。
-このAPIはOAuth Bearerトークンではなく `sessionKey` cookieを要求するため、ダッシュボードで実残高を
-表示するには `ANTHROPIC_CLAUDE_SESSION_KEY` を設定し、`ANTHROPIC_CLAUDE_ORGANIZATION_ID` は未設定なら
-`/api/organizations` から `chat` capability の組織を自動選択する。取得に失敗した場合は
-`extra_usage` の上限差分へフォールバックする。
-前払い残高が取れた場合も、`extra_usage` の当月使用額・上限（detailText）は捨てずに併記する。前払い残高だけで
-丸ごと置き換えると、実残高は出ても今月の使用額が消える。
+`/api/oauth/usage` の Claude `extra_usage` は前払い残高ではなく、月額上限と当月の使用額を返す。
 
-**`ANTHROPIC_CLAUDE_SESSION_KEY` / `ANTHROPIC_CLAUDE_ORGANIZATION_ID` は、`.github/workflows/deploy.yml` の
-シークレット受け渡し経路には無い。** `.env.example` には定義があるが、`.github/secrets-manifest.tsv`・
-`deploy.yml` のシークレット受け渡し経路（`ssh-action` の `env:` / `with.envs:` ・リモートの `update_env`
-呼び出し）のどれにも行が無く、この経路では本番の `.env` に値が書き込まれない
-（ops-dashboard#250で判明。VPSの `.env` に別途手動で追記されていないかまでは、このリポジトリからは
-確認できない）。有効化するには共有知識リポジトリの
-[knowledge/deployment.md](https://github.com/guchi-apps/docs/blob/main/knowledge/deployment.md)
-にある「環境変数を1つ増やすとき、`appleboy/ssh-action` の `envs:` への追記を忘れやすい」に沿って
-両方のキーを追加する必要がある。
+**Claude.aiの画面に出る前払い残高・購入履歴は、サーバーから取得できない。** Claude Webの非公開API
+（`GET https://claude.ai/api/organizations/{org}/prepaid/credits` など）は `sessionKey` cookieを要求するが、
+その手前のCloudflareのボット判定で、cookieの有無・User-Agent・curl/Nodeの別によらず
+**403（`cf-mitigated: challenge`）**が返る（#252でサブPCから確認）。sessionKeyを本番へ渡す経路を
+作っても効果は無いので、再挑戦しないこと。#250で入れたsessionKey経路は#252で削除した。
 
-**Claude.aiの「クレジット」画面が表示する購入総額（例: 「購入 - 2026年8月31日 +10.15クレジット」の
-積み上げ）は、月間上限（`monthly_limit`）とは別物で、`prepaid/credits` の `amount`（現在の残高）
-だけからは求められない。** 購入は個別の履歴として積み上がり、月間上限に達していなくても購入総額が
-上限より少ないことがある。購入総額を正確に出すには、このAPIが購入履歴を返す構造かどうかの調査が
-別途必要（ops-dashboard#250であえて対応を見送った）。
+代わりに `src/lib/ai-usage/claude-credit-ledger.ts` の**手入力の台帳**（`.data/claude-credit-ledger.json`）で出している。
+
+- 購入（日付・金額）と「ある時点の残高（補正値）」を画面の「購入・残高を記録」から登録する
+  （`POST/DELETE /api/ai-usage/claude-credits`。`/api/ai-usage` 配下はproxyの認証対象外なので、
+  ルート側でセッションを確かめている）
+- 推定残高 = 補正値 ＋ 補正日より後の購入 − 補正後の使用額。使用額は `extra_usage.used_credits` を
+  取得のたびに観測し、**値が減ったら月のリセットとみなしてその値を足す**累計で持つ（暦の月で区切ると、
+  提供元が月を切るタイムゾーンとずれて二重計上しうるため）。月末の最後の観測からリセットまでの分は
+  取りこぼすので、ずれたら補正し直す運用
+- 購入総額は購入日から1年以内（有効期限内）のものだけを合計する。期限切れで消えた残りの差し引きは再現しない
+- 台帳の値は提供元の取得をキャッシュから返す回も毎回載せ直す（`applyClaudeCreditLedger`）。
+  記録直後に画面へ出すため
 
 **画面確認は `/login` 配下の一時ルートから `parseClaudeUsageResponse` /
 `parseChatGptUsageResponse` に実レスポンスを流し込むのが早い。** どちらの提供元も

@@ -1,0 +1,285 @@
+import { randomUUID } from "node:crypto"
+import { promises as fs } from "node:fs"
+import path from "node:path"
+import { formatMoney } from "@/lib/ai-usage/common"
+import type {
+    AiProviderCredit,
+    AiUsageSnapshot,
+    ClaudeCreditLedgerView,
+    ClaudeCreditPurchaseView,
+} from "@/types/ai-usage"
+
+/**
+ * Claudeのクレジット購入と残高を手で記録する台帳（#252）。
+ *
+ * **claude.ai の非公開API（`/api/organizations/{org}/prepaid/credits` など）はサーバーから叩けない。**
+ * sessionKey cookie を付けても、cookie無しでも、Cloudflareのボット判定で 403
+ * （`cf-mitigated: challenge`）が返り、認証の手前で止まる。購入履歴も残高も取れないため、
+ * 購入（日付・金額）と「ある時点の残高」を画面から登録し、そこからの使用額を差し引いて残高を推定する。
+ *
+ * 使用額は `extra_usage.used_credits`（当月の累計）の観測から積み上げる。月が替わると値が
+ * 小さくなるので、減ったら「リセットされた」とみなしてその値をそのまま足す。暦の月で区切らないのは、
+ * 提供元がどのタイムゾーンで月を切っているかに依存させないため。
+ */
+
+/** Claudeのクレジットは1クレジット = 1USD として扱う */
+const CURRENCY = "USD"
+const DECIMALS = 2
+
+interface StoredPurchase {
+    id: string
+    /** 購入日（YYYY-MM-DD） */
+    date: string
+    amountMinor: number
+    recordedAt: string
+}
+
+interface StoredCorrection {
+    balanceMinor: number
+    /** 補正した時刻（ISO 8601） */
+    at: string
+    /** 補正した日（実行環境の暦で YYYY-MM-DD）。この日までの購入は残高に含まれているものとして扱う */
+    date: string
+    /** 補正した時点の使用額の累計 */
+    usedTotalMinor: number
+}
+
+interface LedgerState {
+    purchases: StoredPurchase[]
+    correction: StoredCorrection | null
+    /** 観測を始めてからの使用額の累計（最小単位） */
+    usedTotalMinor: number
+    /** 最後に観測した当月の使用額。リセットの検出に使う。未観測なら null */
+    lastObservedMinor: number | null
+}
+
+const EMPTY_STATE: LedgerState = {
+    purchases: [],
+    correction: null,
+    usedTotalMinor: 0,
+    lastObservedMinor: null,
+}
+
+function getStatePath(): string {
+    return (
+        process.env.CLAUDE_CREDIT_LEDGER_PATH ||
+        path.join(process.cwd(), ".data", "claude-credit-ledger.json")
+    )
+}
+
+async function readState(): Promise<LedgerState> {
+    try {
+        const parsed: unknown = JSON.parse(await fs.readFile(getStatePath(), "utf8"))
+        if (!parsed || typeof parsed !== "object") return { ...EMPTY_STATE }
+
+        const state = parsed as Partial<LedgerState>
+        return {
+            purchases: Array.isArray(state.purchases) ? state.purchases : [],
+            correction: state.correction ?? null,
+            usedTotalMinor: typeof state.usedTotalMinor === "number" ? state.usedTotalMinor : 0,
+            lastObservedMinor:
+                typeof state.lastObservedMinor === "number" ? state.lastObservedMinor : null,
+        }
+    } catch {
+        return { ...EMPTY_STATE }
+    }
+}
+
+async function writeState(state: LedgerState): Promise<void> {
+    const file = getStatePath()
+    await fs.mkdir(path.dirname(file), { recursive: true })
+
+    // 書き込み中に読まれても壊れないよう、一時ファイル経由で差し替える
+    const tempFile = `${file}.tmp`
+    await fs.writeFile(tempFile, `${JSON.stringify(state, null, 2)}\n`)
+    await fs.rename(tempFile, file)
+}
+
+/**
+ * ファイルへの read-modify-write を直列化する。
+ * PM2 は fork モード1プロセスで動かしているため、プロセス内の直列化で足りる。
+ */
+let queue: Promise<unknown> = Promise.resolve()
+
+function serialize<T>(task: () => Promise<T>): Promise<T> {
+    const run = queue.then(task, task)
+    queue = run.catch(() => undefined)
+    return run
+}
+
+/** 実行環境の暦で YYYY-MM-DD にする（`claude.ts` の月初リセットと同じ暦を使う） */
+function localDateKey(date: Date): string {
+    const month = String(date.getMonth() + 1).padStart(2, "0")
+    const day = String(date.getDate()).padStart(2, "0")
+    return `${date.getFullYear()}-${month}-${day}`
+}
+
+/** 購入したクレジットの有効期限は購入日から1年 */
+function expiresOn(date: string): string {
+    const [year, rest] = [Number(date.slice(0, 4)), date.slice(4)]
+    return `${year + 1}${rest}`
+}
+
+export function isValidDateKey(value: string): boolean {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    const parsed = new Date(`${value}T00:00:00Z`)
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
+}
+
+/** 画面で入力された金額（USD）を最小単位へ。負の値や桁の多すぎる値は受け付けない */
+export function toMinorUnits(amount: number): number | null {
+    if (!Number.isFinite(amount) || amount < 0 || amount > 1_000_000) return null
+    return Math.round(amount * 10 ** DECIMALS)
+}
+
+/** 取得のたびに当月の使用額を観測し、累計へ積む */
+export function recordClaudeCreditUsage(usedMinor: number): Promise<void> {
+    if (!Number.isFinite(usedMinor) || usedMinor < 0) return Promise.resolve()
+
+    return serialize(async () => {
+        const state = await readState()
+        const last = state.lastObservedMinor
+        if (last === usedMinor) return
+
+        // 減っていれば月が替わってリセットされた。前の月の取りこぼし（最後の観測から月末まで）は拾えない
+        state.usedTotalMinor += last === null ? 0 : usedMinor >= last ? usedMinor - last : usedMinor
+        state.lastObservedMinor = usedMinor
+        await writeState(state)
+    })
+}
+
+export function addClaudeCreditPurchase(date: string, amountMinor: number): Promise<void> {
+    return serialize(async () => {
+        const state = await readState()
+        state.purchases.push({
+            id: randomUUID(),
+            date,
+            amountMinor,
+            recordedAt: new Date().toISOString(),
+        })
+        await writeState(state)
+    })
+}
+
+/** 見つからなければ false */
+export function removeClaudeCreditPurchase(id: string): Promise<boolean> {
+    return serialize(async () => {
+        const state = await readState()
+        const next = state.purchases.filter((purchase) => purchase.id !== id)
+        if (next.length === state.purchases.length) return false
+
+        state.purchases = next
+        await writeState(state)
+        return true
+    })
+}
+
+/**
+ * Claude.aiの画面に出ている残高で推定をやり直す。
+ * 呼ぶ前に使用額を観測しておくこと（補正時点の累計を起点にするため）。
+ */
+export function correctClaudeCreditBalance(balanceMinor: number): Promise<void> {
+    return serialize(async () => {
+        const state = await readState()
+        const now = new Date()
+        state.correction = {
+            balanceMinor,
+            at: now.toISOString(),
+            date: localDateKey(now),
+            usedTotalMinor: state.usedTotalMinor,
+        }
+        await writeState(state)
+    })
+}
+
+function money(minor: number): string {
+    return formatMoney(minor, CURRENCY, DECIMALS)
+}
+
+/** 台帳から画面に出す値を組み立てる */
+export function describeLedger(state: LedgerState, now = new Date()): ClaudeCreditLedgerView {
+    const today = localDateKey(now)
+
+    const purchases: ClaudeCreditPurchaseView[] = [...state.purchases]
+        .sort((a, b) => b.date.localeCompare(a.date) || b.recordedAt.localeCompare(a.recordedAt))
+        .map((purchase) => {
+            const expires = expiresOn(purchase.date)
+            return {
+                id: purchase.id,
+                date: purchase.date,
+                amount: purchase.amountMinor / 10 ** DECIMALS,
+                expiresOn: expires,
+                expired: expires <= today,
+            }
+        })
+
+    const activeMinor = state.purchases
+        .filter((purchase) => expiresOn(purchase.date) > today)
+        .reduce((sum, purchase) => sum + purchase.amountMinor, 0)
+
+    const correction = state.correction
+    let balanceText: string | null = null
+    if (correction) {
+        // 補正した日までの購入は、入力した残高に含まれているものとして扱う
+        const purchasedAfter = state.purchases
+            .filter((purchase) => purchase.date > correction.date)
+            .reduce((sum, purchase) => sum + purchase.amountMinor, 0)
+        const usedAfter = Math.max(0, state.usedTotalMinor - correction.usedTotalMinor)
+        balanceText = money(Math.max(0, correction.balanceMinor + purchasedAfter - usedAfter))
+    }
+
+    return {
+        purchases,
+        activePurchasedText: state.purchases.length > 0 ? money(activeMinor) : null,
+        balanceText,
+        correctedAt: correction?.at ?? null,
+        correctedBalanceText: correction ? money(correction.balanceMinor) : null,
+    }
+}
+
+function withLedger(
+    credit: AiProviderCredit | undefined,
+    ledger: ClaudeCreditLedgerView
+): AiProviderCredit {
+    const purchasedText = ledger.activePurchasedText
+        ? `購入 ${ledger.activePurchasedText}（有効分）`
+        : null
+
+    if (!credit) {
+        return {
+            valueText: ledger.balanceText ? `残り ${ledger.balanceText}` : "未記録",
+            usedPercent: null,
+            detailText: purchasedText,
+            resetsAt: null,
+            ledger,
+        }
+    }
+
+    return {
+        ...credit,
+        valueText: ledger.balanceText ? `残り ${ledger.balanceText}` : credit.valueText,
+        detailText: [credit.detailText, purchasedText].filter(Boolean).join(" · ") || null,
+        ledger,
+    }
+}
+
+/**
+ * スナップショットのClaudeのクレジット枠へ台帳の値を載せる。
+ * 台帳の編集をすぐ画面へ出すため、提供元の取得結果をキャッシュから返す回も毎回載せ直す。
+ */
+export async function applyClaudeCreditLedger(snapshot: AiUsageSnapshot): Promise<AiUsageSnapshot> {
+    if (!snapshot.providers.some((provider) => provider.id === "claude" && provider.status === "ok")) {
+        return snapshot
+    }
+
+    const ledger = describeLedger(await readState())
+
+    return {
+        ...snapshot,
+        providers: snapshot.providers.map((provider) =>
+            provider.id === "claude" && provider.status === "ok"
+                ? { ...provider, credit: withLedger(provider.credit, ledger) }
+                : provider
+        ),
+    }
+}
