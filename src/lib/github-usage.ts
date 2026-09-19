@@ -1,6 +1,7 @@
 import { trackRepositoryVisibility } from "@/lib/github-repo-visibility"
 import { describeError, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
 import {
+    createSingleFlight,
     isUsageCacheFresh,
     newUsageCacheEntry,
     type UsageCacheEntry,
@@ -306,6 +307,7 @@ async function fetchRateLimit(token: string): Promise<GitHubRateLimit> {
  * 実行時間は数分単位でしか動かないため、プロセス内でスナップショットをキャッシュする。
  */
 let cache: UsageCacheEntry<GitHubUsageSnapshot> | null = null
+const singleFlight = createSingleFlight<GitHubUsageSnapshot>()
 
 function getCacheTtlMs(): number {
     const configured = Number.parseInt(process.env.GH_USAGE_CACHE_SECONDS ?? "", 10)
@@ -321,13 +323,14 @@ export async function getGitHubUsageSnapshot({
         return cached.snapshot
     }
 
-    const token = process.env.GH_USAGE_TOKEN
-    const org = process.env.GH_USAGE_ORG
-
-    const snapshot = await buildSnapshot(token, org)
-    const ttlMs = snapshot.status === "ok" ? getCacheTtlMs() : ERROR_CACHE_SECONDS * 1000
-    cache = newUsageCacheEntry(snapshot, ttlMs)
-    return snapshot
+    // 取得中に重なった要求は同じ取得へ相乗りさせる（#274）。課金レポートはリポジトリ数ぶんの
+    // リクエストになるため、重なると使用量APIのレート制限を余計に消費する
+    return singleFlight(async () => {
+        const snapshot = await buildSnapshot(process.env.GH_USAGE_TOKEN, process.env.GH_USAGE_ORG)
+        const ttlMs = snapshot.status === "ok" ? getCacheTtlMs() : ERROR_CACHE_SECONDS * 1000
+        cache = newUsageCacheEntry(snapshot, ttlMs)
+        return snapshot
+    })
 }
 
 async function buildSnapshot(
