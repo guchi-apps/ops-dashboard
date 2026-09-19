@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { clientIpFromForwardedFor } from "@/lib/client-ip";
 import { describeError, fetchWithTimeout, readErrorBody } from "@/lib/upstream";
 
 // 通知タイトルに使うアプリ名。ログイン通知の `source`（送信元）にも使うため、値はリポジトリ名に
@@ -115,9 +116,9 @@ export async function notifySignalyLogin(
   if (!webhookUrl) return;
 
   const headersList = await headers();
-  const ip =
-    headersList.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    headersList.get("x-real-ip");
+  // `X-Real-IP` は読まない。Apacheはこのヘッダーを付けないため、クライアントが送った値がそのまま
+  // 届くだけで、「見覚えのある接続元」を名乗る手段になる
+  const ip = clientIpFromForwardedFor(headersList.get("x-forwarded-for"));
   const userAgent = headersList.get("user-agent");
 
   // 値が取れない項目は「不明」と書かず、フィールドごと落とす。「不明」を並べると
