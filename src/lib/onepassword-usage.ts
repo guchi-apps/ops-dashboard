@@ -2,6 +2,7 @@ import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { describeError } from "@/lib/upstream"
 import {
+    createSingleFlight,
     isUsageCacheFresh,
     newUsageCacheEntry,
     type UsageCacheEntry,
@@ -92,6 +93,7 @@ async function fetchRateLimits(token: string, fetchedAtMs: number): Promise<OneP
 }
 
 let cache: UsageCacheEntry<OnePasswordUsageSnapshot> | null = null
+const singleFlight = createSingleFlight<OnePasswordUsageSnapshot>()
 
 function getCacheTtlMs(): number {
     const configured = Number.parseInt(process.env.OP_USAGE_CACHE_SECONDS ?? "", 10)
@@ -107,10 +109,13 @@ export async function getOnePasswordUsageSnapshot({
         return cached.snapshot
     }
 
-    const snapshot = await buildSnapshot(process.env.OP_SERVICE_ACCOUNT_TOKEN)
-    const ttlMs = snapshot.status === "ok" ? getCacheTtlMs() : ERROR_CACHE_SECONDS * 1000
-    cache = newUsageCacheEntry(snapshot, ttlMs)
-    return snapshot
+    // 取得中に重なった要求は同じ取得へ相乗りさせる（#274）
+    return singleFlight(async () => {
+        const snapshot = await buildSnapshot(process.env.OP_SERVICE_ACCOUNT_TOKEN)
+        const ttlMs = snapshot.status === "ok" ? getCacheTtlMs() : ERROR_CACHE_SECONDS * 1000
+        cache = newUsageCacheEntry(snapshot, ttlMs)
+        return snapshot
+    })
 }
 
 async function buildSnapshot(token: string | undefined): Promise<OnePasswordUsageSnapshot> {
