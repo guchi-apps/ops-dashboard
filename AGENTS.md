@@ -69,8 +69,24 @@ ss -ltnp | grep ':17096 '   # users:(("next-server",pid=…)) のpidだけを ki
 ```
 
 ダッシュボード本体（`DashboardShell`）は確認用ルートからでもそのまま描画できる。`DashboardDataProvider`
-に `initial={{ uptimeKuma: [], uptimeRobot: [] }}` を渡せば、実データが無くてもタブの構造まで
+に `initial={{ uptimeKuma: { monitors: [], error: null }, uptimeRobot: { monitors: [], error: null } }}` を渡せば、実データが無くてもタブの構造まで
 HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
+
+## 監視（Kuma・UptimeRobot）の取得失敗
+
+`fetchUptimeKumaDashboardMonitors` / `fetchUptimeRobotMonitorsServer` は `MonitorFeed`
+（`src/lib/monitor-feed.ts`、`{ monitors, error }`）を返す（#276）。**失敗と「モニター0件」を区別するため、
+失敗を `[]` で返す形に戻さないこと。** 区別が無いと、Kumaが落ちたとき監視チップが黙って消え、
+片方だけ落ちたときは残りの件数で「すべて正常」と出る。
+
+- `error` は画面に出す短い理由（`HTTP 500`・`接続できません`・`応答の形式が想定と異なります`・
+  `APIエラー: <type>`）。トークンやURLなど秘匿値を含めない
+- **未設定（ベースURL・スラッグ・APIキーが無い）は失敗ではなく `error: null`・0件**。未設定の系統は
+  チップにも数えず、worktreeでそのまま動かしてよい
+- 失敗はチップ（`monitorChip`）・概要タブの見出しとタイル・監視タブのカードで `danger` として出す。
+  片方だけ失敗したときは、チップの値を「一部 取得不可」にして残りの件数は注記へ回す
+- `GET /api/uptime-kuma`・`GET /api/monitors` は失敗でも200で `{ monitors: [], error }` を返す。
+  `monitors` は残してあるので、それだけを読む呼び出し元（AIDE）は変わらず動く。`error` を見るかは呼び出し元次第
 
 ## AIDEの動作状況（AIDEタブ）
 

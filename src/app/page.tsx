@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic"
 export default async function Home() {
     const session = await requireSessionForPage()
 
-    // 初回描画で監視の枠が空にならないよう、サーバー側で取った値を初期値として渡す
+    // 初回描画で監視の枠が空にならないよう、サーバー側で取った値（取得失敗の理由を含む）を初期値として渡す
     const [uptimeKuma, uptimeRobot] = await Promise.all([
         fetchUptimeKumaDashboardMonitors(),
         fetchUptimeRobotMonitorsServer(),

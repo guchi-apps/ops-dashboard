@@ -31,8 +31,9 @@ export function MonitorSections({
               * 見出しと追加の入り口は、取得できたモニターの件数から切り離している。
               * Kumaの取得に失敗したときも一覧は0件になるため（src/lib/uptime-kuma.ts）、
               * 件数で囲うと「登録したい・Kumaを開きたい」状況でちょうど入り口が消える。
+              * 失敗の理由（error）もここに出すため、取得に失敗したときは入り口が無くても残す。
               */}
-            {(canAddMonitor || addMonitorUrl !== null) && (
+            {(canAddMonitor || addMonitorUrl !== null || uptimeKuma.error !== null) && (
                 <section className="space-y-3">
                     {canAddMonitor ? (
                         <AddMonitorPanel />
@@ -54,13 +55,15 @@ export function MonitorSections({
                             }
                         />
                     )}
-                    {uptimeKuma.length === 0 ? (
+                    {uptimeKuma.error !== null ? (
+                        <FetchError source="Uptime Kuma" error={uptimeKuma.error} />
+                    ) : uptimeKuma.monitors.length === 0 ? (
                         <p className="text-sm text-muted-foreground">
-                            Uptime Kuma のモニターが取得できません。ステータスページの設定を確認してください。
+                            Uptime Kuma のモニターがありません。ステータスページの設定を確認してください。
                         </p>
                     ) : (
-                        <MonitorCardGrid count={uptimeKuma.length}>
-                            {uptimeKuma.map((monitor) => (
+                        <MonitorCardGrid count={uptimeKuma.monitors.length}>
+                            {uptimeKuma.monitors.map((monitor) => (
                                 <UptimeKumaDashboardCard key={monitor.id} monitor={monitor} />
                             ))}
                         </MonitorCardGrid>
@@ -70,13 +73,15 @@ export function MonitorSections({
 
             <section className="space-y-3">
                 <SectionHeading title="UptimeRobot" />
-                {uptimeRobot.length === 0 ? (
+                {uptimeRobot.error !== null ? (
+                    <FetchError source="UptimeRobot" error={uptimeRobot.error} />
+                ) : uptimeRobot.monitors.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                        UptimeRobot のモニターが取得できません。APIキーを確認してください。
+                        UptimeRobot のモニターがありません。APIキーを確認してください。
                     </p>
                 ) : (
-                    <MonitorCardGrid count={uptimeRobot.length}>
-                        {uptimeRobot.map((monitor) => {
+                    <MonitorCardGrid count={uptimeRobot.monitors.length}>
+                        {uptimeRobot.monitors.map((monitor) => {
                             const status = getUptimeRobotStatusInfo(monitor.status)
                             const ratio = parseFloat(
                                 (monitor.custom_uptime_ratio || monitor.uptime_ratio || "0").split("-")[0]
@@ -97,6 +102,15 @@ export function MonitorSections({
                 )}
             </section>
         </div>
+    )
+}
+
+/** 取得に失敗した系統。モニターが無いだけの状態と見分けられるよう、警告の色で理由まで出す（#276） */
+function FetchError({ source, error }: { source: string; error: string }) {
+    return (
+        <p role="alert" className="text-sm text-destructive">
+            {source} を取得できません（{error}）。監視が止まっている可能性があります。
+        </p>
     )
 }
 

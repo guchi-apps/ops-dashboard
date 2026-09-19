@@ -7,6 +7,7 @@ export async function GET(request: NextRequest) {
     const { response } = await requireSessionOrApiToken(request)
     if (response) return response
 
-    const monitors = await fetchUptimeRobotMonitorsServer()
-    return NextResponse.json({ monitors })
+    // { monitors, error }。取得に失敗しても200で返し、失敗は `error` で伝える
+    const feed = await fetchUptimeRobotMonitorsServer()
+    return NextResponse.json(feed)
 }

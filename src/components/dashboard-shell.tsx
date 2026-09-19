@@ -276,13 +276,15 @@ export function DashboardShell({
     const counts: Partial<Record<TabId, number>> = {
         hosts: hosts.length,
         tmux: tmuxSummary.total,
-        monitors: uptimeKuma.length + uptimeRobot.length,
+        monitors: uptimeKuma.monitors.length + uptimeRobot.monitors.length,
         aide: aideHealth?.attention.length,
     }
 
     // AIDEの数字は総数ではなく注意・異常の件数なので、他のタブと違って状態の色を付ける
     const countTones: Partial<Record<TabId, StatusTone>> = {
         aide: aideHealth ? AIDE_SEVERITY_TONE[aideHealth.severity] : undefined,
+        // 監視の取得が止まっているときは、件数が0でも見過ごさないよう色を付ける（#276）
+        monitors: monitorStatus.failed ? "danger" : undefined,
     }
 
     // ホストが2台以上なら3列（ホスト・ホスト・tmux）、1台なら2列で割り付ける
@@ -439,9 +441,14 @@ export function DashboardShell({
                                     {monitorStatus.down > 0 && (
                                         <StatusBadge tone="danger">DOWN {monitorStatus.down}</StatusBadge>
                                     )}
-                                    <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-                                        {monitorStatus.text}
-                                    </span>
+                                    {monitorStatus.failed && (
+                                        <StatusBadge tone="danger">取得不可</StatusBadge>
+                                    )}
+                                    {monitorStatus.text !== null && (
+                                        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                                            {monitorStatus.text}
+                                        </span>
+                                    )}
                                 </>
                             }
                         >
