@@ -75,7 +75,7 @@ export type ApiCaller = { kind: "session"; session: Session } | { kind: "token" 
  * だけを応答時間・エラーの有無から切り分けられてしまう。先にSHA-256で固定長（32バイト）へ
  * 畳んでおくことで、長さが違っても同じ経路を通り、期待値の長さを推測させない。
  */
-function tokenMatches(provided: string, expected: string): boolean {
+export function tokenMatches(provided: string, expected: string): boolean {
   const providedDigest = createHash("sha256").update(provided).digest();
   const expectedDigest = createHash("sha256").update(expected).digest();
   return timingSafeEqual(providedDigest, expectedDigest);

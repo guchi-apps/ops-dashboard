@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { requireSessionOrApiToken } from "@/lib/session"
+import { requireSessionOrApiToken, tokenMatches } from "@/lib/session"
 import { getAiUsageSnapshot } from "@/lib/ai-usage"
 import { HostStatsReportError, parseHostStatsReport } from "@/lib/host-stats/report"
 import { getHostStatsView, saveHostStatsReport } from "@/lib/host-stats/store"
@@ -24,7 +24,12 @@ const MAX_BODY_BYTES = 32_768
  */
 export async function POST(request: NextRequest) {
     const token = process.env.HOST_STATS_TOKEN
-    if (!token || request.headers.get("authorization") !== `Bearer ${token}`) {
+    const authorization = request.headers.get("authorization")
+    if (
+        !token ||
+        !authorization?.startsWith("Bearer ") ||
+        !tokenMatches(authorization.slice("Bearer ".length), token)
+    ) {
         return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     }
 
