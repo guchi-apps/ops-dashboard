@@ -1,5 +1,6 @@
 import { clampPercent, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
 import { formatMoney, formatWindowLabel } from "@/lib/ai-usage/common"
+import { getProviderEntry, type ProviderCacheEntry, type ProviderFetchResult } from "@/lib/ai-usage/provider-cache"
 import {
     describeRefreshFailure,
     getAccessToken,
@@ -330,7 +331,7 @@ async function fetchPlan(accessToken: string): Promise<string | null> {
     }
 }
 
-export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
+async function fetchClaudeUsage(): Promise<ProviderFetchResult> {
     const base: Omit<AiProviderUsage, "status"> = {
         id: "claude",
         name: "Claude",
@@ -344,17 +345,18 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
     } catch (error) {
         console.error("Claude usage: トークン更新に失敗", error)
         return {
-            ...base,
-            status: "error",
-            message: describeRefreshFailure(error),
+            usage: { ...base, status: "error", message: describeRefreshFailure(error) },
+            permanent: error instanceof RefreshTokenRevokedError,
         }
     }
 
     if (!token) {
         return {
-            ...base,
-            status: "unconfigured",
-            message: `${REFRESH_TOKEN_ENV_KEY} が未設定です`,
+            usage: {
+                ...base,
+                status: "unconfigured",
+                message: `${REFRESH_TOKEN_ENV_KEY} が未設定です`,
+            },
         }
     }
 
@@ -373,9 +375,8 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
             } catch (error) {
                 console.error("Claude usage: 401 を受けたあとのトークン更新に失敗", error)
                 return {
-                    ...base,
-                    status: "error",
-                    message: describeRefreshFailure(error),
+                    usage: { ...base, status: "error", message: describeRefreshFailure(error) },
+                    permanent: error instanceof RefreshTokenRevokedError,
                 }
             }
 
@@ -388,26 +389,45 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
         if (!res.ok) {
             console.error("Claude usage API error:", res.status, await readErrorBody(res))
             return {
-                ...base,
-                status: "error",
-                message:
-                    res.status === 429
-                        ? "レート制限中のため取得できませんでした"
-                        : res.status === 403
-                          ? "トークンに user:profile スコープがありません（`claude login` で発行したものを使う必要があります）"
-                          : `使用状況を取得できませんでした (${res.status})`,
+                usage: {
+                    ...base,
+                    status: "error",
+                    message:
+                        res.status === 429
+                            ? "レート制限中のため取得できませんでした"
+                            : res.status === 403
+                              ? "トークンに user:profile スコープがありません（`claude login` で発行したものを使う必要があります）"
+                              : `使用状況を取得できませんでした (${res.status})`,
+                },
             }
         }
 
-        const { windows, credit } = parseClaudeUsageResponse((await res.json()) as OauthUsageResponse)
-
-        if (windows.length === 0) {
-            return { ...base, status: "error", message: "使用状況のレスポンスを解釈できませんでした" }
+        const data: unknown = await res.json()
+        if (!data || typeof data !== "object" || Array.isArray(data)) {
+            return { usage: { ...base, status: "error", message: "使用状況のレスポンスを解釈できませんでした" } }
         }
 
-        return { ...base, status: "ok", windows, credit }
+        const raw = data as Record<string, unknown>
+        const { windows, credit } = parseClaudeUsageResponse(raw as OauthUsageResponse)
+
+        if (windows.length === 0) {
+            return {
+                usage: { ...base, status: "error", message: "使用状況のレスポンスを解釈できませんでした" },
+                raw,
+            }
+        }
+
+        return { usage: { ...base, status: "ok", windows, credit }, raw }
     } catch (error) {
         console.error("Claude usage: 取得に失敗", error)
-        return { ...base, status: "error", message: "使用状況の取得に失敗しました" }
+        return { usage: { ...base, status: "error", message: "使用状況の取得に失敗しました" } }
     }
+}
+
+/**
+ * Claudeの使用状況を、提供元ごとのキャッシュを通して返す。
+ * ダッシュボードとウィジェットの両方がここを通るため、同じエンドポイントを別々に叩かない（#273）
+ */
+export function getClaudeUsageEntry(force = false): Promise<ProviderCacheEntry> {
+    return getProviderEntry("claude", fetchClaudeUsage, force)
 }
