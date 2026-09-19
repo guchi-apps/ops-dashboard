@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { describeError, fetchWithTimeout, readErrorBody } from "@/lib/upstream";
 
 // 通知タイトルに使うアプリ名。ログイン通知の `source`（送信元）にも使うため、値はリポジトリ名に
 // 揃える（CI・デプロイ通知はembedの `Repository` フィールドの末尾から送信元を作るため）。
@@ -15,7 +16,36 @@ interface SignalyField {
   inline?: boolean;
 }
 
-/** Webhookへ1件投げる。URL未設定・送信失敗のどちらでも呼び出し元は止めない */
+/**
+ * WebhookへJSONを1件投げ、届いたかどうかを返す。例外は投げない（呼び出し元は止めない）。
+ *
+ * **`fetch` は5xxでも例外を投げない**ため、`res.ok` を見ないと「Signaly側が受け取れなかった」
+ * ことが分からず、失敗がログにも残らない。応答しない相手にも待たされないよう、タイムアウトを付ける
+ * （エージェントの `POST /api/host-stats` やログインの完了が、この送信の完了を待っているため）。
+ */
+async function postWebhook(webhookUrl: string, body: unknown, label: string): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return true;
+
+    // URLがWebhookの認証を兼ねるため、ログにはURLを出さずステータスと本文だけを残す
+    console.error(`[signaly] ${label}の送信が拒否されました: ${res.status} ${await readErrorBody(res)}`);
+  } catch (error) {
+    console.error(`[signaly] ${label}の送信に失敗しました:`, describeError(error));
+  }
+  return false;
+}
+
+/**
+ * アラート用のWebhookへ1件投げる。届いたら `true`。
+ *
+ * URL未設定は通知が無効なだけなので `true`（送るものが無い）を返す。`false` にすると、呼び出し元が
+ * 「送れていないから再送する」と毎回やり直し続けてしまう。
+ */
 async function postToSignaly(
   webhookUrl: string | undefined,
   embed: { title: string; description?: string; color: number; fields: SignalyField[] },
@@ -24,26 +54,22 @@ async function postToSignaly(
    * Signalyがこの値で送信元を見分ける（guchi-apps/signaly#192）。省略時は付けない。
    */
   source?: string,
-): Promise<void> {
-  if (!webhookUrl) return;
+): Promise<boolean> {
+  if (!webhookUrl) return true;
 
-  try {
-    await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...(source ? { source } : {}),
-        embeds: [
-          {
-            ...embed,
-            fields: embed.fields.map((field) => ({ inline: false, ...field })),
-          },
-        ],
-      }),
-    });
-  } catch (error) {
-    console.error("Signaly notification failed:", error);
-  }
+  return postWebhook(
+    webhookUrl,
+    {
+      ...(source ? { source } : {}),
+      embeds: [
+        {
+          ...embed,
+          fields: embed.fields.map((field) => ({ inline: false, ...field })),
+        },
+      ],
+    },
+    "アラート通知",
+  );
 }
 
 // ログイン通知の色。他アプリと1本のチャンネルを共有するため、Discord の10進数ではなく
@@ -108,22 +134,18 @@ export async function notifySignalyLogin(
   fields.push({ name: "日時", value: jstTimestamp(), inline: false });
   push("User-Agent", userAgent, false);
 
-  try {
-    await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        // 集約先のチャンネルではチャンネルで送信元を見分けられないため、必ず載せる
-        source: APP_NAME,
-        title: `🔐 ${APP_NAME} ログイン`,
-        level: "info",
-        color: LOGIN_COLOR,
-        fields,
-      }),
-    });
-  } catch (error) {
-    console.error("[signaly] ログイン通知の送信に失敗しました:", error);
-  }
+  await postWebhook(
+    webhookUrl,
+    {
+      // 集約先のチャンネルではチャンネルで送信元を見分けられないため、必ず載せる
+      source: APP_NAME,
+      title: `🔐 ${APP_NAME} ログイン`,
+      level: "info",
+      color: LOGIN_COLOR,
+      fields,
+    },
+    "ログイン通知",
+  );
 }
 
 /**
@@ -132,6 +154,9 @@ export async function notifySignalyLogin(
  * ログイン通知とはチャンネルを分ける（`SIGNALY_ALERT_WEBHOOK_URL`）。ログインは日常的に流れる
  * 記録で、こちらは「気づかないと壊れたままになるもの」だけを流す場所にしたいため。
  * 未設定なら何もしない（通知だけが無効になり、画面表示はそのまま動く）。
+ *
+ * **届いたかどうかを返す**。呼び出し元が「通知済み」を記録するのは、`true` のときだけにすること。
+ * 送れなかったのに記録すると、その通知は二度と再送されない。
  */
 export async function notifySignalyAlert(input: {
   /** 「Zaim同期が失敗」のような、通知一覧で読める見出し */
@@ -141,10 +166,10 @@ export async function notifySignalyAlert(input: {
   fields?: SignalyField[];
   /** 異常の発生か、復旧か */
   kind: "alert" | "recovery";
-}): Promise<void> {
+}): Promise<boolean> {
   const timestamp = new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 
-  await postToSignaly(process.env.SIGNALY_ALERT_WEBHOOK_URL, {
+  return postToSignaly(process.env.SIGNALY_ALERT_WEBHOOK_URL, {
     title: `${input.kind === "alert" ? "🚨" : "✅"} ${input.title}`,
     description: input.description,
     color: input.kind === "alert" ? COLOR_ALERT : COLOR_RECOVERY,
