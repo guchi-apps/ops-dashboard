@@ -10,6 +10,7 @@ import type { AiProviderUsage, AiUsageSnapshot } from "@/types/ai-usage"
 
 /**
  * 提供元の取得結果はそれぞれのキャッシュ（`provider-cache.ts`）が持ち、TTLも提供元ごとに決まる（#273）。
+ * `provider-cache.ts` 側で取得中の要求を1つに相乗りさせているため（#274 の考え方を提供元単位にしたもの）、
  * ここでは取り直された結果だけを記録（日の区切り・使い切りの実績・クレジット・通知）へ回し、
  * 記録を載せた結果を提供元ごとに覚えておく。
  */
