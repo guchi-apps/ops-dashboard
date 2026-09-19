@@ -141,10 +141,30 @@ interface KumaPublicGroup {
 }
 
 /**
+ * モニター登録の直列化キュー（PM2は1プロセスで動かしている）。
+ *
+ * 登録は「一覧を読む → 足す → 丸ごと保存する」の read-modify-write で、並行して走ると
+ * 次の2つが起きる。他のファイル記録（`push/web-push.ts` など）と同じ `serialize` で直列化する。
+ *
+ * - 両方が同じ `publicGroupList` を読み、後から保存した側がもう片方のモニターをページから外す
+ * - 両方が `findMonitorByUrl` で未登録と判断し、同じURLのモニターを2つ作る
+ *
+ * 画面の「モニター追加」と、`UPTIMEKUMA_ADMIN_TOKEN` によるサーバー間の呼び出しは同じ
+ * プロセスの同じ関数に入るため、ここで待たせれば重ならない。
+ */
+let queue: Promise<unknown> = Promise.resolve()
+
+function serialize<T>(task: () => Promise<T>): Promise<T> {
+    const run = queue.then(task, task)
+    queue = run.catch(() => undefined)
+    return run
+}
+
+/**
  * モニターを1件登録し、ダッシュボードのステータスページへ載せる。
  *
  * 同じURLのモニターが既にあれば作らずにそれを使う（アプリ作成の手順から何度呼んでも
- * 重複が増えないようにするため）。
+ * 重複が増えないようにするため）。**同時に呼ばれても順番に処理する**（`serialize`）。
  */
 export async function addUptimeKumaMonitor(
     input: AddUptimeKumaMonitorInput
@@ -174,6 +194,14 @@ export async function addUptimeKumaMonitor(
         throw new UptimeKumaAdminError("再試行回数は0〜10で指定してください")
     }
 
+    // 入力の検証は待たせない。Kumaへ触る部分だけを1件ずつ通す
+    return serialize(() => registerMonitor(config, { name, url, interval, retries }))
+}
+
+async function registerMonitor(
+    config: AdminConfig,
+    { name, url, interval, retries }: { name: string; url: string; interval: number; retries: number }
+): Promise<AddUptimeKumaMonitorResult> {
     const socket = io(config.baseUrl, {
         transports: ["websocket"],
         forceNew: true,
@@ -292,7 +320,13 @@ async function ensureOnStatusPage(
 
 /** 公開ステータスページの現在の内容。`saveStatusPage` へ返せる形で取り出す */
 async function fetchPublicGroupList(baseUrl: string, slug: string): Promise<KumaPublicGroup[]> {
-    const res = await fetch(`${baseUrl}/api/status-page/${slug}`, { cache: "no-store" })
+    // 管理者socketにはグループ一覧を返すイベントが無く（`getStatusPage` が返すのは設定だけ）、
+    // 公開APIから読むしかない。Kumaはこの応答を数分キャッシュすることがあり、古い一覧を
+    // 読むと直前に足したモニターを外して保存してしまう。キャッシュのキーはクエリ文字列を
+    // 含むため、毎回違う値を付けて必ず最新を読ませる（Kuma側はクエリを見ない）
+    const res = await fetch(`${baseUrl}/api/status-page/${slug}?_=${Date.now()}`, {
+        cache: "no-store",
+    })
     if (!res.ok) {
         throw new UptimeKumaAdminError(
             `ステータスページ（${slug}）を取得できませんでした: ${res.status}`
