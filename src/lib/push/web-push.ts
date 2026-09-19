@@ -19,6 +19,12 @@ const DEFAULT_SUBJECT = "https://github.com/guchi-apps/ops-dashboard"
 /** 端末がオフラインのときにプッシュサービスが保持する時間。枠の通知は数時間で意味を失う */
 const PUSH_TTL_SECONDS = 60 * 60
 
+/**
+ * 配信の優先度。既定（normal）だと、iPhoneでは省電力のために配信が後回しにされることがある。
+ * 利用枠の通知はリセットまでの数時間で意味を失うため、すぐ届けてもらう（#297）
+ */
+const PUSH_URGENCY = "high"
+
 export interface PushMessage {
     title: string
     body: string
@@ -28,8 +34,21 @@ export interface PushMessage {
     url?: string
 }
 
+/** 送信1回ぶんの結果 */
+export interface PushSendResult {
+    /** 届いた（プッシュサービスが受け付けた）端末の数 */
+    delivered: number
+    /** 404・410が返り、無効として消した購読の数 */
+    removed: number
+    /** それ以外で失敗したときのステータスコード（通信エラーなどコードが無いものは "error"） */
+    failures: (number | "error")[]
+}
+
 interface StoredSubscription extends PushSubscription {
+    /** 初めて登録した日時。同じ端末の登録し直しでは変えない（購読が入れ替わったかを見分けるため。#297） */
     createdAt: string
+    /** 最後に端末から登録し直された日時。アプリを開くたびに更新される */
+    lastSeenAt?: string
 }
 
 interface SubscriptionState {
@@ -104,11 +123,14 @@ export function isPushSubscription(value: unknown): value is PushSubscription {
 export function saveSubscription(subscription: PushSubscription): Promise<void> {
     return serialize(async () => {
         const state = await readState()
+        const existing = state.subscriptions.find((item) => item.endpoint === subscription.endpoint)
         const others = state.subscriptions.filter((item) => item.endpoint !== subscription.endpoint)
+        const now = new Date().toISOString()
         others.push({
             endpoint: subscription.endpoint,
             keys: { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth },
-            createdAt: new Date().toISOString(),
+            createdAt: existing?.createdAt ?? now,
+            lastSeenAt: now,
         })
         await writeState({ subscriptions: others })
     })
@@ -131,17 +153,18 @@ export async function hasSubscriptions(): Promise<boolean> {
 }
 
 /**
- * 購読へ送る。届いた件数を返す。
+ * 購読へ送る。届いた件数と、届かなかった理由を返す。
  *
  * 404・410はプッシュサービスが「この購読はもう無い」と返したもの（アプリの削除・通知の取り消し）なので、
  * 記録から消す。それ以外の失敗は一時的なものとして残す。
  */
-async function sendTo(subscriptions: PushSubscription[], message: PushMessage): Promise<number> {
+async function sendTo(subscriptions: PushSubscription[], message: PushMessage): Promise<PushSendResult> {
     const vapidDetails = getVapidDetails()
-    if (!vapidDetails || subscriptions.length === 0) return 0
+    if (!vapidDetails || subscriptions.length === 0) return { delivered: 0, removed: 0, failures: [] }
 
     const payload = JSON.stringify(message)
     const gone: string[] = []
+    const failures: PushSendResult["failures"] = []
 
     const results = await Promise.all(
         subscriptions.map(async (subscription) => {
@@ -149,6 +172,7 @@ async function sendTo(subscriptions: PushSubscription[], message: PushMessage): 
                 await webpush.sendNotification(subscription, payload, {
                     vapidDetails,
                     TTL: PUSH_TTL_SECONDS,
+                    urgency: PUSH_URGENCY,
                 })
                 return true
             } catch (error) {
@@ -156,6 +180,7 @@ async function sendTo(subscriptions: PushSubscription[], message: PushMessage): 
                 if (statusCode === 404 || statusCode === 410) {
                     gone.push(subscription.endpoint)
                 } else {
+                    failures.push(statusCode ?? "error")
                     console.error("[web-push] 通知の送信に失敗しました:", statusCode ?? error)
                 }
                 return false
@@ -163,16 +188,22 @@ async function sendTo(subscriptions: PushSubscription[], message: PushMessage): 
         })
     )
 
+    // 404・410で消した購読は、届かなかった理由として残す（以前は黙って消していた。#297）。
+    // エンドポイントには端末ごとの識別子が入るため、ホスト名だけを出す
+    if (gone.length > 0) {
+        const hosts = gone.map((endpoint) => new URL(endpoint).host).join(", ")
+        console.warn(`[web-push] 無効になった購読を${gone.length}件削除しました: ${hosts}`)
+    }
     await removeSubscriptions(gone)
-    return results.filter(Boolean).length
+    return { delivered: results.filter(Boolean).length, removed: gone.length, failures }
 }
 
 /** 登録済みの全端末へ送る */
-export async function sendPushToAll(message: PushMessage): Promise<number> {
+export async function sendPushToAll(message: PushMessage): Promise<PushSendResult> {
     return sendTo((await readState()).subscriptions, message)
 }
 
 /** 1台だけへ送る（通知をオンにした直後の確認用） */
 export async function sendPushTo(subscription: PushSubscription, message: PushMessage): Promise<boolean> {
-    return (await sendTo([subscription], message)) > 0
+    return (await sendTo([subscription], message)).delivered > 0
 }

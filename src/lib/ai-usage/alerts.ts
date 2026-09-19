@@ -1,6 +1,12 @@
 import fs from "fs/promises"
 import path from "path"
-import { hasSubscriptions, isWebPushConfigured, sendPushToAll, type PushMessage } from "@/lib/push/web-push"
+import {
+    hasSubscriptions,
+    isWebPushConfigured,
+    sendPushToAll,
+    type PushMessage,
+    type PushSendResult,
+} from "@/lib/push/web-push"
 import { formatRemaining } from "@/lib/usage-format"
 import type { AiProviderUsage, AiUsageSnapshot, AiUsageWindow } from "@/types/ai-usage"
 
@@ -14,6 +20,7 @@ import type { AiProviderUsage, AiUsageSnapshot, AiUsageWindow } from "@/types/ai
  * 判定は提供元から使用状況を取れた回ごとに走る（`getAiUsageSnapshot`）。ホストのエージェントが
  * メトリクスを送るたびに取得が回るため、画面を開いていなくても5分おきに判定される。
  * 同じ枠・同じ段階は1回だけ送り、送ったことを `.data/ai-usage-alerts.json` に残す。
+ * どの端末にも届かなかった通知は残さず、次の判定で送り直す（#297）。
  */
 
 const FIVE_HOUR_SECONDS = 5 * 60 * 60
@@ -39,14 +46,28 @@ interface StoredAlert {
     level: AlertLevel
 }
 
-interface AlertState {
-    /** 枠のキー → その枠で最後に送った段階 */
+/**
+ * 枠ごとの最後の送信結果（#297）。届かなかったときに、ログに頼らず `.data/` から原因を追えるように残す
+ * （#297の調査ではpm2のログから何も取れず、手がかりになったのは `.data/` の記録だけだった）
+ */
+interface DeliveryAttempt extends PushSendResult {
+    /** 送ろうとした日時 */
+    at: string
+    level: AlertLevel
+    resetsAt: string
+}
+
+export interface AlertState {
+    /** 枠のキー → その枠で最後に送った（届いた）段階 */
     windows: Record<string, StoredAlert>
+    /** 枠のキー → 最後に送ろうとした結果。届かなかった回も残す */
+    attempts?: Record<string, DeliveryAttempt>
 }
 
 export interface UsageAlert {
     key: string
     level: AlertLevel
+    resetsAt: string
     message: PushMessage
 }
 
@@ -60,8 +81,11 @@ function getStatePath(): string {
 async function readState(): Promise<AlertState> {
     try {
         const parsed: unknown = JSON.parse(await fs.readFile(getStatePath(), "utf8"))
-        const windows = (parsed as AlertState | null)?.windows
-        return { windows: windows && typeof windows === "object" ? windows : {} }
+        const { windows, attempts } = (parsed ?? {}) as Partial<AlertState>
+        return {
+            windows: windows && typeof windows === "object" ? windows : {},
+            attempts: attempts && typeof attempts === "object" ? attempts : {},
+        }
     } catch {
         return { windows: {} }
     }
@@ -172,12 +196,29 @@ export function evaluateUsageAlerts(
             alerts.push({
                 key,
                 level,
+                resetsAt,
                 message: buildMessage(provider, { ...usageWindow, resetsAt }, level, warnPercent, key, now),
             })
         }
     }
 
-    return { alerts, state: { windows } }
+    return { alerts, state: { ...state, windows } }
+}
+
+/**
+ * 判定前の記録へ、端末へ届いた通知の枠だけを反映する（#297）。
+ * どの端末にも届かなかった枠は判定前の記録のままにして、次の判定で送り直させる。
+ */
+export function commitDeliveredAlerts(
+    previous: AlertState,
+    evaluated: AlertState,
+    deliveredKeys: readonly string[]
+): AlertState {
+    const windows = { ...previous.windows }
+    for (const key of deliveredKeys) {
+        if (evaluated.windows[key]) windows[key] = evaluated.windows[key]
+    }
+    return { ...previous, windows }
 }
 
 let running: Promise<void> = Promise.resolve()
@@ -185,17 +226,31 @@ let running: Promise<void> = Promise.resolve()
 /**
  * 判定して、送るべきものがあれば登録済みの全端末へ送る。
  * 鍵が無い・登録した端末が無いときは記録もしない（あとで登録した端末へ、いまの状態を送れるように）。
+ *
+ * 記録は送った後に書き、1台にも届かなかった通知は記録しない（#297）。以前は先に記録していたため、
+ * 購読が無効になっていた（404・410）・送信に失敗した通知は、同じ枠では二度と送られなかった。
+ * 判定は `running` で直列化しているので、送信後に記録しても同じ通知を二重に送ることはない。
  */
 export function notifyUsageAlerts(snapshot: AiUsageSnapshot): Promise<void> {
     const run = running.then(async () => {
         if (!isWebPushConfigured() || !(await hasSubscriptions())) return
 
-        const { alerts, state } = evaluateUsageAlerts(snapshot, await readState(), Date.now())
+        const previous = await readState()
+        const { alerts, state } = evaluateUsageAlerts(snapshot, previous, Date.now())
         if (alerts.length === 0) return
 
-        // 先に記録してから送る。送信中に次の判定が走っても同じ通知を二重に送らないため
-        await writeState(state)
-        for (const alert of alerts) await sendPushToAll(alert.message)
+        const delivered: string[] = []
+        const attempts = { ...previous.attempts }
+        const at = new Date().toISOString()
+        for (const alert of alerts) {
+            const result = await sendPushToAll(alert.message)
+            console.info(`[ai-usage-alerts] ${alert.key} (${alert.level}): ${result.delivered}台へ送信`)
+            attempts[alert.key] = { at, level: alert.level, resetsAt: alert.resetsAt, ...result }
+            if (result.delivered > 0) delivered.push(alert.key)
+        }
+
+        // 届かなかった回も、送信結果（attempts）は残す。送った段階（windows）は届いた枠だけ進める
+        await writeState({ ...commitDeliveredAlerts(previous, state, delivered), attempts })
     })
     running = run.catch(() => undefined)
     return run
