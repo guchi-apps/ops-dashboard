@@ -1,71 +1,86 @@
 import { notifyUsageAlerts } from "@/lib/ai-usage/alerts"
-import { fetchChatGptUsage } from "@/lib/ai-usage/chatgpt"
-import { fetchClaudeUsage } from "@/lib/ai-usage/claude"
+import { getChatGptUsageEntry } from "@/lib/ai-usage/chatgpt"
+import { getClaudeUsageEntry } from "@/lib/ai-usage/claude"
 import { applyClaudeCreditLedger, recordClaudeCreditUsage } from "@/lib/ai-usage/claude-credit-ledger"
 import { attachDayMarks } from "@/lib/ai-usage/day-marks"
 import { applyAiUsageHistory } from "@/lib/ai-usage/history"
-import {
-    AI_MIN_FORCE_REFRESH_MS,
-    isUsageCacheFresh,
-    newUsageCacheEntry,
-    type UsageCacheEntry,
-    type UsageFetchOptions,
-} from "@/lib/usage-cache"
-import type { AiUsageSnapshot } from "@/types/ai-usage"
+import type { ProviderCacheEntry } from "@/lib/ai-usage/provider-cache"
+import type { UsageFetchOptions } from "@/lib/usage-cache"
+import type { AiProviderUsage, AiUsageSnapshot } from "@/types/ai-usage"
 
 /**
- * 各提供元のエンドポイントはいずれもレート制限が厳しく、
- * Anthropic 側は 180 秒以上の間隔が推奨されている。
- * 画面を開くたびに叩かないよう、プロセス内でスナップショットをキャッシュする。
+ * 提供元の取得結果はそれぞれのキャッシュ（`provider-cache.ts`）が持ち、TTLも提供元ごとに決まる（#273）。
+ * ここでは取り直された結果だけを記録（日の区切り・使い切りの実績・クレジット・通知）へ回し、
+ * 記録を載せた結果を提供元ごとに覚えておく。
  */
-const DEFAULT_CACHE_SECONDS = 300
+const recorded = new WeakMap<ProviderCacheEntry, AiProviderUsage>()
+
+/** 記録ファイルへの書き込みが重ならないよう、同じ取得結果を二重に記録しないよう直列化する */
+let queue: Promise<unknown> = Promise.resolve()
+
+function serialize<T>(task: () => Promise<T>): Promise<T> {
+    const run = queue.then(task, task)
+    queue = run.catch(() => undefined)
+    return run
+}
 
 /**
- * 取得に失敗したスナップショットは通常より短くしか持たない。
- * 429などの一時的な失敗を5分抱えると、カードがその間ずっとエラー表示のままになるため
- * （GitHub・1Passwordと同じ扱い）。設定していない提供元は待っても変わらないので対象にしない。
+ * まだ記録していない取得結果を記録へ回し、記録を載せた使用状況を返す。
+ *
+ * キャッシュを返した回は記録しない（同じ値を書き直すだけで、観測時刻だけが実態より新しくなって
+ * しまうため）。ウィジェットが先にClaudeを取り直した場合も、ここで初めて記録される。
  */
-const ERROR_CACHE_SECONDS = 30
+async function record(entry: ProviderCacheEntry): Promise<{ usage: AiProviderUsage; fresh: boolean }> {
+    const done = recorded.get(entry)
+    if (done) return { usage: done, fresh: false }
 
-let cache: UsageCacheEntry<AiUsageSnapshot> | null = null
+    const observed: AiUsageSnapshot = {
+        providers: [{ ...entry.snapshot.usage }],
+        fetchedAt: new Date(entry.fetchedAtMs).toISOString(),
+    }
 
-function getCacheTtlMs(): number {
-    const configured = Number.parseInt(process.env.AI_USAGE_CACHE_SECONDS ?? "", 10)
-    const seconds = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_CACHE_SECONDS
-    return seconds * 1000
+    // 取得のたびに観測を残し、週間枠に「1日ごとの区切り」を載せる（#243）
+    const snapshot = await attachDayMarks(observed, entry.fetchedAtMs)
+
+    // 終わった枠の実績はここでしか観測できない
+    await applyAiUsageHistory(snapshot)
+
+    // クレジット残高の推定に使う使用額も、提供元から取れた回だけ積む（#252）
+    const usage = snapshot.providers[0]
+    const claudeMonthly = usage.id === "claude" && usage.status === "ok" ? usage.credit?.monthly : undefined
+    if (claudeMonthly) await recordClaudeCreditUsage(claudeMonthly.usedMinor)
+
+    recorded.set(entry, usage)
+    return { usage, fresh: true }
 }
 
 export async function getAiUsageSnapshot({
     force = false,
 }: UsageFetchOptions = {}): Promise<AiUsageSnapshot> {
-    const cached = cache
-    if (cached && isUsageCacheFresh(cached, force, AI_MIN_FORCE_REFRESH_MS)) {
-        return applyClaudeCreditLedger(cached.snapshot)
-    }
+    const entries = await Promise.all([getClaudeUsageEntry(force), getChatGptUsageEntry(force)])
 
-    const [claude, chatgpt] = await Promise.all([fetchClaudeUsage(), fetchChatGptUsage()])
-
-    // 取得のたびに観測を残し、週間枠に「1日ごとの区切り」を載せて返す（#243）
-    const snapshot = await attachDayMarks({
-        providers: [claude, chatgpt],
-        fetchedAt: new Date().toISOString(),
+    const results = await serialize(async () => {
+        const recordedResults = []
+        for (const entry of entries) recordedResults.push(await record(entry))
+        return recordedResults
     })
-
-    // 終わった枠の実績はここでしか観測できない。キャッシュを返した回は記録しない
-    // （同じ値を書き直すだけで、観測時刻だけが実態より新しくなってしまうため）
-    await applyAiUsageHistory(snapshot)
-
-    // クレジット残高の推定に使う使用額も、提供元から取れた回だけ積む（#252）
-    const claudeMonthly = claude.status === "ok" ? claude.credit?.monthly : undefined
-    if (claudeMonthly) await recordClaudeCreditUsage(claudeMonthly.usedMinor)
 
     // 上限に近づいた枠を端末へ通知する（#263）。送信を待つと画面の応答が遅れるため待たない。
-    // キャッシュを返した回は値が変わっていないので判定しない
-    void notifyUsageAlerts(snapshot).catch((error) => {
-        console.error("AI usage alerts: 通知の判定・送信に失敗", error)
-    })
+    // キャッシュを返した提供元は値が変わっていないので判定しない
+    const fresh = results.filter((result) => result.fresh).map((result) => result.usage)
+    if (fresh.length > 0) {
+        void notifyUsageAlerts({ providers: fresh, fetchedAt: new Date().toISOString() }).catch((error) => {
+            console.error("AI usage alerts: 通知の判定・送信に失敗", error)
+        })
+    }
 
-    const failed = snapshot.providers.some((provider) => provider.status === "error")
-    cache = newUsageCacheEntry(snapshot, failed ? ERROR_CACHE_SECONDS * 1000 : getCacheTtlMs())
-    return applyClaudeCreditLedger(snapshot)
+    // 提供元ごとに取得時刻が違うため、画面の「取得」時刻はいちばん古いものを出す
+    // （新しい方を出すと、キャッシュを返している側まで今取れたように見える）
+    const oldest = Math.min(...entries.map((entry) => entry.fetchedAtMs))
+
+    // 台帳の値は記録直後に画面へ出すため、キャッシュを返す回も毎回載せ直す
+    return applyClaudeCreditLedger({
+        providers: results.map((result) => result.usage),
+        fetchedAt: new Date(oldest).toISOString(),
+    })
 }

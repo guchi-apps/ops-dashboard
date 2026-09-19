@@ -1,5 +1,6 @@
 import { clampPercent, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
 import { formatWindowLabel } from "@/lib/ai-usage/common"
+import { getProviderEntry, type ProviderCacheEntry, type ProviderFetchResult } from "@/lib/ai-usage/provider-cache"
 import {
     describeRefreshFailure,
     getAccessToken,
@@ -235,7 +236,7 @@ function describeUsageError(status: number, body: string): string {
         : `使用状況を取得できませんでした (${status})`
 }
 
-export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
+async function fetchChatGptUsage(): Promise<ProviderFetchResult> {
     const base: Omit<AiProviderUsage, "status"> = {
         id: "chatgpt",
         name: "ChatGPT",
@@ -248,9 +249,11 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
 
     if (!refreshToken || !accountId) {
         return {
-            ...base,
-            status: "unconfigured",
-            message: `${REFRESH_TOKEN_ENV_KEY} / OPENAI_CHATGPT_ACCOUNT_ID が未設定です`,
+            usage: {
+                ...base,
+                status: "unconfigured",
+                message: `${REFRESH_TOKEN_ENV_KEY} / OPENAI_CHATGPT_ACCOUNT_ID が未設定です`,
+            },
         }
     }
 
@@ -260,9 +263,8 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
     } catch (error) {
         console.error("ChatGPT usage: トークン更新に失敗", error)
         return {
-            ...base,
-            status: "error",
-            message: describeRefreshFailure(error),
+            usage: { ...base, status: "error", message: describeRefreshFailure(error) },
+            permanent: error instanceof RefreshTokenRevokedError,
         }
     }
 
@@ -281,9 +283,8 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
             } catch (error) {
                 console.error("ChatGPT usage: 401 を受けたあとのトークン更新に失敗", error)
                 return {
-                    ...base,
-                    status: "error",
-                    message: describeRefreshFailure(error),
+                    usage: { ...base, status: "error", message: describeRefreshFailure(error) },
+                    permanent: error instanceof RefreshTokenRevokedError,
                 }
             }
 
@@ -294,9 +295,7 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
             const body = await readErrorBody(res)
             console.error("ChatGPT usage API error:", res.status, body)
             return {
-                ...base,
-                status: "error",
-                message: describeUsageError(res.status, body),
+                usage: { ...base, status: "error", message: describeUsageError(res.status, body) },
             }
         }
 
@@ -307,12 +306,19 @@ export async function fetchChatGptUsage(): Promise<AiProviderUsage> {
         const { windows, credit } = parseChatGptUsageResponse(data)
 
         if (windows.length === 0) {
-            return { ...base, plan, status: "error", message: "使用状況のレスポンスを解釈できませんでした" }
+            return {
+                usage: { ...base, plan, status: "error", message: "使用状況のレスポンスを解釈できませんでした" },
+            }
         }
 
-        return { ...base, plan, status: "ok", windows, credit }
+        return { usage: { ...base, plan, status: "ok", windows, credit } }
     } catch (error) {
         console.error("ChatGPT usage: 取得に失敗", error)
-        return { ...base, status: "error", message: "使用状況の取得に失敗しました" }
+        return { usage: { ...base, status: "error", message: "使用状況の取得に失敗しました" } }
     }
+}
+
+/** ChatGPTの使用状況を、提供元ごとのキャッシュを通して返す（#273） */
+export function getChatGptUsageEntry(force = false): Promise<ProviderCacheEntry> {
+    return getProviderEntry("chatgpt", fetchChatGptUsage, force)
 }
