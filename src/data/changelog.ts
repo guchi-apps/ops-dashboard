@@ -14,6 +14,13 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.32.1",
+        date: "2026-09-19",
+        changes: [
+            "ログイン通知に表示される接続元IPが、送信者側の細工次第で実際と異なる値になりうる不具合を修正し、正しい接続元が表示されるようにしました。あわせて、内部のAPI認証で使うトークンの照合方法をより安全な方式に改め、セキュリティを強化しました。画面の操作方法に変更はありません。",
+        ],
+    },
+    {
         version: "0.32.0",
         date: "2026-09-19",
         changes: [
