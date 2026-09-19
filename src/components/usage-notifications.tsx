@@ -1,16 +1,19 @@
 "use client"
 
-import { Bell, BellOff } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { Bell, BellOff, ChevronDown } from "lucide-react"
+import { useCallback, useEffect, useId, useState } from "react"
+import { MENU_ITEM_CLASS } from "@/components/header-menu"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 /**
- * ヘッダーの「通知」ボタン（#263）。AI利用枠が上限に近づいたときのプッシュ通知を、この端末で受け取るかを切り替える。
+ * ヘッダーメニュー内の「通知」の行（#263・#268）。AI利用枠が上限に近づいたときのプッシュ通知を、この端末で受け取るかを切り替える。
  *
- * 判定と送信はサーバー側（`src/lib/ai-usage/alerts.ts`）で、ここがするのは端末の登録だけ。
- * 通知の許可はボタン操作の中でしか求められない（特にiOS）ため、ボタンを押したときに許可を求める。
- * サーバーに鍵が無ければボタンごと出さない。
+ * 行を押すとその場で設定が開く。判定と送信はサーバー側（`src/lib/ai-usage/alerts.ts`）で、ここがするのは端末の登録だけ。
+ * 通知の許可はボタン操作の中でしか求められない（特にiOS）ため、「通知をオンにする」を押したときに許可を求める。
+ * サーバーに鍵が無ければ行ごと出さない。
+ *
+ * メニューを閉じている間もマウントされたままなので、下の初期化はメニューを開かなくても走る。
  */
 
 /**
@@ -20,6 +23,14 @@ import { cn } from "@/lib/utils"
  * denied      — 以前「許可しない」を選んだ
  */
 type NotifyState = "unsupported" | "default" | "granted" | "denied"
+
+/** 行の右に出す、この端末の状態 */
+const STATE_LABELS: Record<NotifyState, string> = {
+    granted: "オン",
+    default: "オフ",
+    denied: "ブロック中",
+    unsupported: "非対応",
+}
 
 const SERVICE_WORKER_PATH = "/sw.js"
 
@@ -73,7 +84,7 @@ export function UsageNotifications() {
     const [open, setOpen] = useState(false)
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const containerRef = useRef<HTMLDivElement>(null)
+    const detailId = useId()
 
     // 鍵の有無を確かめ、Service Workerを登録する。すでに許可済みの端末は、サーバー側の記録が
     // 消えていても届くよう、起動のたびに購読を登録し直す（確認の通知は送らない）
@@ -109,24 +120,6 @@ export function UsageNotifications() {
             cancelled = true
         }
     }, [])
-
-    // 吹き出しは外側を押すか Esc で閉じる
-    useEffect(() => {
-        if (!open) return
-
-        const onPointerDown = (event: PointerEvent) => {
-            if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
-        }
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === "Escape") setOpen(false)
-        }
-        document.addEventListener("pointerdown", onPointerDown)
-        document.addEventListener("keydown", onKeyDown)
-        return () => {
-            document.removeEventListener("pointerdown", onPointerDown)
-            document.removeEventListener("keydown", onKeyDown)
-        }
-    }, [open])
 
     const enable = useCallback(async () => {
         if (!publicKey) return
@@ -180,35 +173,38 @@ export function UsageNotifications() {
 
     const enabled = state === "granted"
     const Icon = enabled ? Bell : BellOff
-    const label = enabled ? "通知の設定（オン）" : "通知の設定（オフ）"
+    const stateLabel = STATE_LABELS[state]
 
     return (
-        <div ref={containerRef} className="relative">
-            <Button
-                variant="outline"
-                size="sm"
+        <div className="mt-1 border-t border-border pt-1">
+            <button
                 type="button"
                 onClick={() => setOpen((value) => !value)}
-                aria-label={label}
                 aria-expanded={open}
-                title={label}
-                className={cn(
-                    "px-2 sm:px-3",
-                    enabled && "border-primary/40 text-primary",
-                    state === "denied" && "text-muted-foreground",
-                    state === "unsupported" && "opacity-60"
-                )}
+                aria-controls={detailId}
+                className={MENU_ITEM_CLASS}
             >
-                <Icon className="size-3.5" aria-hidden />
-                <span className="hidden sm:inline">通知</span>
-            </Button>
+                <Icon
+                    className={cn("size-3.5", enabled ? "text-primary" : "text-muted-foreground")}
+                    aria-hidden
+                />
+                <span className="flex-1">通知</span>
+                <span
+                    className={cn(
+                        "rounded-full px-2 py-px text-[11px] font-bold",
+                        enabled ? "bg-primary/10 text-primary" : "font-normal text-muted-foreground"
+                    )}
+                >
+                    {stateLabel}
+                </span>
+                <ChevronDown
+                    className={cn("size-3.5 text-muted-foreground transition-transform motion-reduce:transition-none", open && "rotate-180")}
+                    aria-hidden
+                />
+            </button>
 
             {open && (
-                <div
-                    role="dialog"
-                    aria-label="通知の設定"
-                    className="absolute right-0 top-full z-50 mt-2 w-72 space-y-2 rounded-md border border-border bg-card p-3 text-xs shadow-lg sm:text-[13px]"
-                >
+                <div id={detailId} className="mx-1 mb-1 mt-0.5 space-y-2 rounded-md bg-muted p-3 text-xs">
                     {state === "granted" && (
                         <>
                             <p className="font-bold">通知は有効です</p>
