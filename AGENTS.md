@@ -17,17 +17,38 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## 検証コマンド
 
-**このリポジトリには `test`・`typecheck` の npm script が無い。** CI（`.github/workflows/ci.yml`）は
-下記の3つを実行している。**存在しないコマンドを探さず、下記を使うこと。**
+**このリポジトリには `typecheck` の npm script が無い。** CI（`.github/workflows/ci.yml`）は
+下記の4つを実行している。**存在しないコマンドを探さず、下記を使うこと。**
 
 | 目的 | コマンド |
 |---|---|
 | Lint | `npm run lint` |
 | 型チェック | `npx tsc --noEmit` |
+| テスト | `npm test` |
 | ビルド | `npm run build` |
 
 `npm run build` はラッパーを通さないため無人実行から使える。DBは使わない（`prisma/` を持たない）ので、
 マイグレーションやシードの手順は無い。
+
+### 自動テスト（`npm test`）
+
+Node標準の `node:test` で `src/**/*.test.ts` を実行する（#279）。**テストランナーやモックの
+パッケージは足さない。** 枠の同定（リセット時刻のずれの許容）・使用額の減少をリセットとみなす判定・
+期限切れ購入の除外・日の区切りの6時間ルールなど、境界の判定が集中している `src/lib/ai-usage/` の
+処理を対象にしている。「作り物の値を流して確かめる」ことになる変更は、手で確かめる代わりに
+ここへテストを足す。
+
+- **TypeScriptはNodeの型除去でそのまま読む。** 列挙型（`enum`）・パラメータプロパティなど、
+  型を消すだけでは動かない構文はテスト対象のコードに書けない
+- **`@/` の解決は `scripts/test-alias-loader.mjs`**（`--import` で `scripts/test-register.mjs` が登録）。
+  tsconfig の `paths` と同じ `@/*` → `src/*` の対応を、`.ts`・`/index.ts` を探す形で再現している。
+  **`paths` を変えたらここも合わせる**
+- **記録ファイルはテストごとの一時ディレクトリへ向ける**（`test-support.ts` の `redirectStateFile`。
+  `AI_USAGE_HISTORY_PATH` などの環境変数を差し替える）。本番の `.data/` を触らない。時刻は関数の引数
+  （`now`）か、スナップショットの `fetchedAt` で渡す。`Date.now()` を直接読む処理は、そのぶん
+  テストしづらいので、テストを書くなら引数で渡せる形にする
+- 追加した `*.test.ts` は `tsc --noEmit` と ESLint の対象にもなる。**`use` で始まる関数は
+  React Hookとして扱われて lint が落ちる**ため、テスト用の補助関数の名前に `use` を付けない
 
 ### 開発サーバーでの画面確認
 

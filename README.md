@@ -725,8 +725,15 @@ Androidのアダプティブアイコンに渡すと四隅が二重に削れて�
 
 ```bash
 npm run lint
+npx tsc --noEmit
+npm test
 npm run build
 ```
+
+`npm test` はNode標準の `node:test` で `src/**/*.test.ts` を実行する（依存パッケージの追加は無い。
+TypeScriptはNodeの型除去でそのまま読み込み、`@/` の解決だけ `scripts/test-register.mjs` が担う）。
+対象は、境界の判定が集中しているAI利用枠まわりの純粋な処理
+（`src/lib/ai-usage/` の `alerts`・`history`・`claude-credit-ledger`・`day-marks`）。CIの `verify` でも実行する。
 
 ## Uptime Kuma へのモニター登録
 
