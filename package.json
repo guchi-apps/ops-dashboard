@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --import ./scripts/test-register.mjs --disable-warning=ExperimentalWarning --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"src/**/*.test.ts\"",
     "version": "node scripts/version-changelog.mjs && git add src/data/changelog.ts",
     "env:init": "cp -n .env.example .env.local && echo 'Created .env.local (edit values, then: npm run dev)'"
   },
