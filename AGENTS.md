@@ -281,6 +281,19 @@ ChatGPTの5時間枠は対象外（Issueの指定）。
   `attachDayMarks` を作り物の時刻で何度か呼ぶのが早い（`.data/` はworktreeと本番で別物のため、
   開発サーバーをそのまま動かしても線は出ない）
 
+## ログイン通知の接続元IP
+
+ログイン通知（`src/lib/signaly.ts`）の `接続元IP` は、Signalyが「見覚えのない接続元か」を判定する
+手がかりになる（#281）。**`X-Forwarded-For` は先頭ではなく末尾（`clientIpFromForwardedFor`）から読む。**
+mod_proxy はクライアントが送った値を消さず、末尾へ実IPを足すだけなので、先頭はクライアントが自由に
+決められる。`X-Real-IP` も読まない（Apacheは付けないため、クライアントの値がそのまま届く）。
+
+- `deploy/apache-vhost.example.conf` は `RequestHeader unset X-Forwarded-For` でクライアントの値を捨てる。
+  **一次情報源は `vps` リポジトリの `apache/sites-available/admin.gucchii.com.conf`** で、ここの雛形を
+  直しただけでは本番へ反映されない。アプリ側が末尾を読むので、Apacheの反映前後でどちらも正しい値になる
+- 手前にCDNなどを足すとプロキシが2段になり、末尾がそのIPになる。そのときは読み方を見直す
+- 同じ書き方（先頭を読む）は共有ドキュメント `_docs/guides/signaly-notifications.md` の共通実装にもある
+
 ## GitHubの課金・使用量API
 
 **Actions無料枠の「消費した分」を直接返すAPIは存在しない。** 旧 `GET /orgs/{org}/settings/billing/actions`
