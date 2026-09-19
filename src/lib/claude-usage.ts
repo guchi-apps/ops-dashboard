@@ -1,4 +1,9 @@
-import { claudeApiHeaders, CLAUDE_USAGE_URL, resolveClaudeAccessToken } from "@/lib/ai-usage/claude"
+import {
+    claudeApiHeaders,
+    CLAUDE_USAGE_URL,
+    resolveClaudeAccessToken,
+    shouldRetryAfterUnauthorized,
+} from "@/lib/ai-usage/claude"
 import { describeError, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
 import type { ClaudeUsageWidgetResponse } from "@/types/claude-usage"
 
@@ -27,16 +32,22 @@ function shape(entry: NonNullable<typeof cache>, stale: boolean): ClaudeUsageWid
 }
 
 async function fetchUsage(): Promise<Record<string, unknown>> {
-    const accessToken = await resolveClaudeAccessToken()
-    if (!accessToken) {
+    let token = await resolveClaudeAccessToken()
+    if (!token) {
         throw new Error("ANTHROPIC_OAUTH_REFRESH_TOKEN が未設定です")
     }
 
-    const res = await fetchWithTimeout(
-        CLAUDE_USAGE_URL,
-        { headers: claudeApiHeaders(accessToken) },
-        TIMEOUT_MS
-    )
+    const request = (accessToken: string) =>
+        fetchWithTimeout(CLAUDE_USAGE_URL, { headers: claudeApiHeaders(accessToken) }, TIMEOUT_MS)
+
+    let res = await request(token.accessToken)
+
+    // 期限内でも失効したアクセストークンで 401 が返り続けないよう、1回だけ取り直す
+    if (shouldRetryAfterUnauthorized(res.status, token)) {
+        token = await resolveClaudeAccessToken(token.accessToken)
+        if (token) res = await request(token.accessToken)
+    }
+
     if (!res.ok) {
         throw new Error(`使用状況APIが ${res.status} を返しました: ${await readErrorBody(res)}`)
     }
