@@ -1,10 +1,12 @@
 import { clampPercent, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
 import { formatMoney, formatWindowLabel } from "@/lib/ai-usage/common"
+import { getProviderEntry, type ProviderCacheEntry, type ProviderFetchResult } from "@/lib/ai-usage/provider-cache"
 import {
     describeRefreshFailure,
     getAccessToken,
     isInvalidGrantResponse,
     RefreshTokenRevokedError,
+    type AccessToken,
     type RefreshResult,
 } from "@/lib/ai-usage/token-store"
 import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
@@ -161,11 +163,25 @@ async function refreshAccessToken(refreshToken: string): Promise<RefreshResult> 
  * user:profile が付かないため 403 になる。user:profile が付くのは
  * `claude login` のフルOAuthで発行されるトークンだけなので、そのリフレッシュトークンを使う。
  */
-export async function resolveClaudeAccessToken(): Promise<string | null> {
+export async function resolveClaudeAccessToken(
+    /** 401 を受けたときに、そのとき使ったアクセストークンを渡すと期限内でも更新する */
+    invalidate?: string
+): Promise<AccessToken | null> {
     const refreshToken = process.env[REFRESH_TOKEN_ENV_KEY]
     if (!refreshToken) return null
 
-    return (await getAccessToken("claude", refreshToken, refreshAccessToken)).accessToken
+    return getAccessToken("claude", refreshToken, refreshAccessToken, { invalidate })
+}
+
+/**
+ * 401 を受けたときに、アクセストークンを取り直すべきかを返す。
+ * アクセストークンは有効期限が残っていても失効することがある（別端末での再ログインや
+ * ログアウトなど）。期限だけを見て使い回すと、保存済みのトークンが失効した時点から
+ * 401 が返り続け、更新のきっかけが二度と来ない。この呼び出しで更新したばかりのトークンが
+ * 401 なら、取り直しても直らないためやり直さない。
+ */
+export function shouldRetryAfterUnauthorized(status: number, token: AccessToken): boolean {
+    return status === 401 && !token.refreshed
 }
 
 const FIVE_HOUR_SECONDS = 5 * 60 * 60
@@ -315,7 +331,7 @@ async function fetchPlan(accessToken: string): Promise<string | null> {
     }
 }
 
-export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
+async function fetchClaudeUsage(): Promise<ProviderFetchResult> {
     const base: Omit<AiProviderUsage, "status"> = {
         id: "claude",
         name: "Claude",
@@ -323,31 +339,49 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
         windows: [],
     }
 
-    let accessToken: string | null
+    let token: AccessToken | null
     try {
-        accessToken = await resolveClaudeAccessToken()
+        token = await resolveClaudeAccessToken()
     } catch (error) {
         console.error("Claude usage: トークン更新に失敗", error)
         return {
-            ...base,
-            status: "error",
-            message: describeRefreshFailure(error),
+            usage: { ...base, status: "error", message: describeRefreshFailure(error) },
+            permanent: error instanceof RefreshTokenRevokedError,
         }
     }
 
-    if (!accessToken) {
+    if (!token) {
         return {
-            ...base,
-            status: "unconfigured",
-            message: `${REFRESH_TOKEN_ENV_KEY} が未設定です`,
+            usage: {
+                ...base,
+                status: "unconfigured",
+                message: `${REFRESH_TOKEN_ENV_KEY} が未設定です`,
+            },
         }
     }
 
-    try {
-        const [res, detectedPlan] = await Promise.all([
+    const requestUsage = (accessToken: string) =>
+        Promise.all([
             fetchWithTimeout(CLAUDE_USAGE_URL, { headers: claudeApiHeaders(accessToken) }),
             fetchPlan(accessToken),
         ])
+
+    try {
+        let [res, detectedPlan] = await requestUsage(token.accessToken)
+
+        if (shouldRetryAfterUnauthorized(res.status, token)) {
+            try {
+                token = await resolveClaudeAccessToken(token.accessToken)
+            } catch (error) {
+                console.error("Claude usage: 401 を受けたあとのトークン更新に失敗", error)
+                return {
+                    usage: { ...base, status: "error", message: describeRefreshFailure(error) },
+                    permanent: error instanceof RefreshTokenRevokedError,
+                }
+            }
+
+            if (token) [res, detectedPlan] = await requestUsage(token.accessToken)
+        }
 
         // 環境変数を設定した場合はそちらを表示名として優先する
         base.plan = process.env.CLAUDE_PLAN_NAME || detectedPlan
@@ -355,26 +389,45 @@ export async function fetchClaudeUsage(): Promise<AiProviderUsage> {
         if (!res.ok) {
             console.error("Claude usage API error:", res.status, await readErrorBody(res))
             return {
-                ...base,
-                status: "error",
-                message:
-                    res.status === 429
-                        ? "レート制限中のため取得できませんでした"
-                        : res.status === 403
-                          ? "トークンに user:profile スコープがありません（`claude login` で発行したものを使う必要があります）"
-                          : `使用状況を取得できませんでした (${res.status})`,
+                usage: {
+                    ...base,
+                    status: "error",
+                    message:
+                        res.status === 429
+                            ? "レート制限中のため取得できませんでした"
+                            : res.status === 403
+                              ? "トークンに user:profile スコープがありません（`claude login` で発行したものを使う必要があります）"
+                              : `使用状況を取得できませんでした (${res.status})`,
+                },
             }
         }
 
-        const { windows, credit } = parseClaudeUsageResponse((await res.json()) as OauthUsageResponse)
-
-        if (windows.length === 0) {
-            return { ...base, status: "error", message: "使用状況のレスポンスを解釈できませんでした" }
+        const data: unknown = await res.json()
+        if (!data || typeof data !== "object" || Array.isArray(data)) {
+            return { usage: { ...base, status: "error", message: "使用状況のレスポンスを解釈できませんでした" } }
         }
 
-        return { ...base, status: "ok", windows, credit }
+        const raw = data as Record<string, unknown>
+        const { windows, credit } = parseClaudeUsageResponse(raw as OauthUsageResponse)
+
+        if (windows.length === 0) {
+            return {
+                usage: { ...base, status: "error", message: "使用状況のレスポンスを解釈できませんでした" },
+                raw,
+            }
+        }
+
+        return { usage: { ...base, status: "ok", windows, credit }, raw }
     } catch (error) {
         console.error("Claude usage: 取得に失敗", error)
-        return { ...base, status: "error", message: "使用状況の取得に失敗しました" }
+        return { usage: { ...base, status: "error", message: "使用状況の取得に失敗しました" } }
     }
+}
+
+/**
+ * Claudeの使用状況を、提供元ごとのキャッシュを通して返す。
+ * ダッシュボードとウィジェットの両方がここを通るため、同じエンドポイントを別々に叩かない（#273）
+ */
+export function getClaudeUsageEntry(force = false): Promise<ProviderCacheEntry> {
+    return getProviderEntry("claude", fetchClaudeUsage, force)
 }

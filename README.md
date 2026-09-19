@@ -483,6 +483,10 @@ OAuthのリフレッシュトークンは使うたびにローテーションす
 
 各提供元のエンドポイントはレート制限が厳しい（Anthropic側は180秒以上の間隔が推奨）ため、
 取得結果はサーバー側で既定5分間キャッシュする（`AI_USAGE_CACHE_SECONDS` で変更可）。
+キャッシュは提供元ごとに分かれていて、片方がエラーでももう片方の取得間隔は変わらない（#273）。
+429・通信エラーなどの一時的な失敗は短く持って取り直すが、Claudeは失敗時・設定値によらず
+180秒より短くは取り直さない。リフレッシュトークンの失効と未設定は、再ログイン・設定まで
+変わらないため通常と同じ長さで持つ。
 
 ## iPhoneウィジェット向けのClaude利用枠API
 
@@ -519,9 +523,11 @@ Authorization: Bearer <WIDGET_TOKEN>
   issueの当初案は同一VPS上の `~/.claude/.credentials.json` を直接読む方式だったが、
   このファイルは 600 でpm2の実行ユーザーを揃える必要があるうえ、アクセストークンの更新を
   そのマシンのClaude Codeの実行に依存してしまうため、既存の仕組み（リフレッシュトークン + トークンストア）に寄せている
-- **キャッシュ**: プロセス内メモリに10分保持する（永続化しない）。上流の取得に失敗しても、
-  キャッシュがあれば `stale: true` を付けて200で返し、ウィジェットが空になることを避ける
-- **タイムアウト**: ウィジェット側のタイムアウトが8秒のため、上流の呼び出しは8秒で打ち切る
+- **キャッシュ**: ダッシュボードのAI使用状況と同じClaudeのキャッシュを読む（#273。別々に持つと、
+  取得が重なったときに同じエンドポイントへの間隔が180秒を割るため）。上流の取得に失敗しても、
+  前に取れた値があれば `stale: true` を付けて200で返し、ウィジェットが空になることを避ける
+- **タイムアウト**: ウィジェット側のタイムアウトが8秒のため、7秒で待つのをやめて前の値を返す
+  （取得そのものは続け、終われば次の要求からキャッシュが使われる）
 
 `anthropic-beta` ヘッダーのバージョン文字列が変わると**無言で401になる**。値は
 `src/lib/ai-usage/claude.ts` の `OAUTH_BETA_VERSION` にまとめてあるので、そこを書き換えれば復旧できる。
@@ -556,6 +562,10 @@ Authorization: Bearer <OPS_API_TOKEN>
 - **書き込みAPIは対象外**。`POST /api/host-stats` は従来どおり `HOST_STATS_TOKEN`、
   `POST /api/uptime-kuma/monitors` は `UPTIMEKUMA_ADMIN_TOKEN` で認証する。
   読み取り用として配ったトークンで本番の設定を書き換えられないよう、書き込みには相乗りさせない
+- **監視系（`/api/uptime-kuma`・`/api/monitors`）は `{ monitors, error }` を返す**。
+  取得に失敗した系統は `monitors: []` に加えて `error` に理由（文字列）が入る。成功時・未設定時は
+  `error: null`。`monitors` だけを読む呼び出し元はそのまま動くが、`monitors` が空でも
+  「監視が無い」とは限らないため、`error` も見ること（[issue #276](https://github.com/guchi-apps/ops-dashboard/issues/276)）
 - **レスポンスの形は画面向けと同一**。AIDE側は既存の型（`src/types/host-stats.ts` ほか）を契約として
   実装しているため、**形を変える場合は aide#31 側の追随が要る**
 
@@ -725,8 +735,15 @@ Androidのアダプティブアイコンに渡すと四隅が二重に削れて�
 
 ```bash
 npm run lint
+npx tsc --noEmit
+npm test
 npm run build
 ```
+
+`npm test` はNode標準の `node:test` で `src/**/*.test.ts` を実行する（依存パッケージの追加は無い。
+TypeScriptはNodeの型除去でそのまま読み込み、`@/` の解決だけ `scripts/test-register.mjs` が担う）。
+対象は、境界の判定が集中しているAI利用枠まわりの純粋な処理
+（`src/lib/ai-usage/` の `alerts`・`history`・`claude-credit-ledger`・`day-marks`）。CIの `verify` でも実行する。
 
 ## Uptime Kuma へのモニター登録
 

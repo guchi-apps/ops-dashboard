@@ -45,6 +45,32 @@ export function newUsageCacheEntry<T>(
     return { snapshot, fetchedAtMs: now, expiresAt: now + ttlMs }
 }
 
+/**
+ * 取得中の Promise を共有する（single-flight）ための関数を作る。
+ *
+ * キャッシュが切れた直後に画面のポーリング・`POST /api/host-stats` などが重なると、
+ * キャッシュだけでは全員が「切れている」と判断して提供元へ同時に取りにいってしまう。
+ * 進行中の取得があれば `start` を呼ばずにその結果へ相乗りさせ、問い合わせを1回に絞る。
+ * `force` でも相乗りする（進行中の取得は、いま取り直すのと同じ新しさのため）。
+ * 取得が終わる（成功・失敗とも）と次の呼び出しから新しく取り直す。
+ *
+ * キャッシュの判定から `start` の呼び出しまでに `await` を挟まないこと。
+ * 挟むと、その間に別の要求が同じ判定を通り抜けて二重に取りにいく。
+ */
+export function createSingleFlight<T>(): (start: () => Promise<T>) => Promise<T> {
+    let inFlight: Promise<T> | null = null
+
+    return (start) => {
+        if (inFlight) return inFlight
+
+        const running: Promise<T> = start().finally(() => {
+            if (inFlight === running) inFlight = null
+        })
+        inFlight = running
+        return running
+    }
+}
+
 /** 使用状況を取得する関数が受け取るオプション */
 export interface UsageFetchOptions {
     /** true なら TTL を無視して提供元へ取り直す（最短間隔のガードは効く） */

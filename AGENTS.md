@@ -17,17 +17,38 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## 検証コマンド
 
-**このリポジトリには `test`・`typecheck` の npm script が無い。** CI（`.github/workflows/ci.yml`）は
-下記の3つを実行している。**存在しないコマンドを探さず、下記を使うこと。**
+**このリポジトリには `typecheck` の npm script が無い。** CI（`.github/workflows/ci.yml`）は
+下記の4つを実行している。**存在しないコマンドを探さず、下記を使うこと。**
 
 | 目的 | コマンド |
 |---|---|
 | Lint | `npm run lint` |
 | 型チェック | `npx tsc --noEmit` |
+| テスト | `npm test` |
 | ビルド | `npm run build` |
 
 `npm run build` はラッパーを通さないため無人実行から使える。DBは使わない（`prisma/` を持たない）ので、
 マイグレーションやシードの手順は無い。
+
+### 自動テスト（`npm test`）
+
+Node標準の `node:test` で `src/**/*.test.ts` を実行する（#279）。**テストランナーやモックの
+パッケージは足さない。** 枠の同定（リセット時刻のずれの許容）・使用額の減少をリセットとみなす判定・
+期限切れ購入の除外・日の区切りの6時間ルールなど、境界の判定が集中している `src/lib/ai-usage/` の
+処理を対象にしている。「作り物の値を流して確かめる」ことになる変更は、手で確かめる代わりに
+ここへテストを足す。
+
+- **TypeScriptはNodeの型除去でそのまま読む。** 列挙型（`enum`）・パラメータプロパティなど、
+  型を消すだけでは動かない構文はテスト対象のコードに書けない
+- **`@/` の解決は `scripts/test-alias-loader.mjs`**（`--import` で `scripts/test-register.mjs` が登録）。
+  tsconfig の `paths` と同じ `@/*` → `src/*` の対応を、`.ts`・`/index.ts` を探す形で再現している。
+  **`paths` を変えたらここも合わせる**
+- **記録ファイルはテストごとの一時ディレクトリへ向ける**（`test-support.ts` の `redirectStateFile`。
+  `AI_USAGE_HISTORY_PATH` などの環境変数を差し替える）。本番の `.data/` を触らない。時刻は関数の引数
+  （`now`）か、スナップショットの `fetchedAt` で渡す。`Date.now()` を直接読む処理は、そのぶん
+  テストしづらいので、テストを書くなら引数で渡せる形にする
+- 追加した `*.test.ts` は `tsc --noEmit` と ESLint の対象にもなる。**`use` で始まる関数は
+  React Hookとして扱われて lint が落ちる**ため、テスト用の補助関数の名前に `use` を付けない
 
 ### 開発サーバーでの画面確認
 
@@ -69,8 +90,24 @@ ss -ltnp | grep ':17096 '   # users:(("next-server",pid=…)) のpidだけを ki
 ```
 
 ダッシュボード本体（`DashboardShell`）は確認用ルートからでもそのまま描画できる。`DashboardDataProvider`
-に `initial={{ uptimeKuma: [], uptimeRobot: [] }}` を渡せば、実データが無くてもタブの構造まで
+に `initial={{ uptimeKuma: { monitors: [], error: null }, uptimeRobot: { monitors: [], error: null } }}` を渡せば、実データが無くてもタブの構造まで
 HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
+
+## 監視（Kuma・UptimeRobot）の取得失敗
+
+`fetchUptimeKumaDashboardMonitors` / `fetchUptimeRobotMonitorsServer` は `MonitorFeed`
+（`src/lib/monitor-feed.ts`、`{ monitors, error }`）を返す（#276）。**失敗と「モニター0件」を区別するため、
+失敗を `[]` で返す形に戻さないこと。** 区別が無いと、Kumaが落ちたとき監視チップが黙って消え、
+片方だけ落ちたときは残りの件数で「すべて正常」と出る。
+
+- `error` は画面に出す短い理由（`HTTP 500`・`接続できません`・`応答の形式が想定と異なります`・
+  `APIエラー: <type>`）。トークンやURLなど秘匿値を含めない
+- **未設定（ベースURL・スラッグ・APIキーが無い）は失敗ではなく `error: null`・0件**。未設定の系統は
+  チップにも数えず、worktreeでそのまま動かしてよい
+- 失敗はチップ（`monitorChip`）・概要タブの見出しとタイル・監視タブのカードで `danger` として出す。
+  片方だけ失敗したときは、チップの値を「一部 取得不可」にして残りの件数は注記へ回す
+- `GET /api/uptime-kuma`・`GET /api/monitors` は失敗でも200で `{ monitors: [], error }` を返す。
+  `monitors` は残してあるので、それだけを読む呼び出し元（AIDE）は変わらず動く。`error` を見るかは呼び出し元次第
 
 ## AIDEの動作状況（AIDEタブ）
 
@@ -101,6 +138,14 @@ AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/s
 - **`saveStatusPage` はグループとモニターの割り当てを丸ごと置き換える。** 送らなかった
   グループは消えるので、いま公開されている `publicGroupList` を読み直し、末尾に1件足したものを
   送り返す。差分だけを送る形にはできない
+- **登録は `serialize` で1件ずつ通している**（#278）。「一覧を読む → 足す → 丸ごと保存」なので、
+  並行して走ると後から保存した側が先の1件をページから外し、同じURLのモニターも二重に作られる。
+  画面の「モニター追加」とサーバー間呼び出しは同じプロセスの同じ関数に入るため、この直列化で足りる
+  （PM2を複数プロセスにしたら成り立たない）
+- **グループ一覧は公開APIから読むしかない。** 管理者socketの `getStatusPage` は設定しか返さず、
+  グループ一覧を返すイベントは無い。公開APIはKumaが応答を数分キャッシュすることがあり、古い一覧を
+  読むと直前に足したモニターを外して保存してしまうため、`?_=<時刻>` を付けてキャッシュのキーを
+  毎回変えている（Kuma側はクエリを見ない。Kumaを更新したら挙動を確かめ直す）
 - **ページの設定は公開APIではなく管理者socketの `getStatusPage` から取る。** 公開APIが返す
   `config` には `domainNameList` が無く、それを渡して保存するとドメイン設定が消える
 - **`login` の応答は、2要素認証が有効だと `{ tokenRequired: true }` で `ok` を持たない**
@@ -172,6 +217,11 @@ AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/s
   回している。**これにより提供元への問い合わせは常時5分間隔になる**（それまでは画面を開いている
   間だけ）。エージェントは1分ごとに届くが、キャッシュ（既定300秒）を挟むので実取得は5分に1回で、
   Anthropicが推奨する180秒以上の間隔は保たれる。**ホストのエージェントが止まると枠の記録も粗くなる**
+- **キャッシュは提供元ごとに分かれている**（`src/lib/ai-usage/provider-cache.ts`。#273）。1つにまとめると、
+  片方のエラー用の短いTTL（30秒）に引きずられて、正常なもう片方まで毎分叩くことになる。Claudeは失敗時も
+  180秒より短くは取り直さず、リフレッシュトークンの失効（`RefreshTokenRevokedError`）は短いTTLの対象から外す。
+  ウィジェット（`/api/claude-usage`）も同じClaudeのキャッシュを読む。記録（区切り・実績・クレジット・通知）へ
+  回すのは、取り直された提供元の結果だけ
 - **リセット時刻の一致で枠を同定してはいけない。** ChatGPTは `reset_at` を返さないことがあり、
   その場合 `chatgpt.ts` が `Date.now() + reset_after_seconds` で組み立てるため、同じ枠でも取得の
   たびに数秒ずれる。同定は「リセット時刻が枠の半分より先へ進んだか」で行う
@@ -179,6 +229,11 @@ AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/s
   `label` はどれも「週間」で同じなので、`label` でまとめると3本が1系列に潰れる
 - **サンプルは1行ずつ足さず、枠ごとに最後の値だけを残す。** 使用率は枠の中で増える一方なので、
   確定値に要るのは最後の観測だけで、ログ形式にするとファイルだけが際限なく伸びる
+- **取得中の要求は同じ取得へ相乗りさせている**（`usage-cache.ts` の `createSingleFlight`。AI・GitHub・
+  1Passwordで共通。#274）。キャッシュが切れた瞬間に画面のポーリングと `POST /api/host-stats` が重なると、
+  キャッシュの判定だけでは全員が提供元へ取りにいき、429になる。さらに、先に取った小さい使用額が
+  後から `recordClaudeCreditUsage` へ積まれると「値が減った＝月のリセット」と誤認され、累計へ二重に
+  足される。**キャッシュの判定から取得の開始までに `await` を挟まない**（挟むと相乗りをすり抜ける）
 - **取得に失敗した提供元は記録しない**（`status !== "ok"`）。0%を実績として残すと、使わなかった枠として
   確定してしまう
 - 画面は使用率で赤・橙へ色を変えない。ここは「払っている枠を使い切れたか」を見る場所で、
