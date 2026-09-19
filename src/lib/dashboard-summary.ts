@@ -2,6 +2,7 @@ import { AIDE_SEVERITY_LABEL, formatAideDuration } from "@/lib/aide-status-forma
 import { formatAge } from "@/lib/host-stats/format"
 import { summarizeTimers } from "@/lib/host-stats/timers"
 import { summarizeTmux, type TmuxSessionView } from "@/lib/host-stats/tmux"
+import type { MonitorFeed } from "@/lib/monitor-feed"
 import type { UptimeKumaMonitor } from "@/lib/uptime-kuma"
 import type { UptimeRobotMonitor } from "@/lib/uptimerobot"
 import type { AiProviderId, AiUsageSnapshot } from "@/types/ai-usage"
@@ -56,27 +57,71 @@ function hostChip(view: HostStatsView | null): SummaryChip | null {
     }
 }
 
-function monitorChip(kuma: UptimeKumaMonitor[], robot: UptimeRobotMonitor[]): SummaryChip | null {
-    const total = kuma.length + robot.length
-    if (total === 0) return null
+/**
+ * 監視（Uptime Kuma・UptimeRobot）のチップ。
+ *
+ * 取得に失敗した系統は monitors が空で返ってくる（src/lib/monitor-feed.ts）。件数だけを見ると
+ * 「モニター0件」と区別できず、Kumaが落ちたときにチップが黙って消え、片方だけ落ちたときは
+ * 残りの件数で「すべて正常」と出てしまう。監視の取得が止まったことこそ知らせるべき状態なので、
+ * 失敗は先に見て danger で出す（#276）。未設定の系統は失敗ではないため、これまでどおり数に入れない。
+ */
+function monitorChip(
+    kuma: MonitorFeed<UptimeKumaMonitor>,
+    robot: MonitorFeed<UptimeRobotMonitor>
+): SummaryChip | null {
+    const failed = [
+        kuma.error !== null ? "Uptime Kuma" : null,
+        robot.error !== null ? "UptimeRobot" : null,
+    ].filter((name): name is string => name !== null)
+
+    const total = kuma.monitors.length + robot.monitors.length
+    if (total === 0) {
+        if (failed.length === 0) return null
+
+        return {
+            key: "monitors",
+            label: "監視",
+            value: "取得不可",
+            note: `${failed.join("・")} を取得できません`,
+            tone: "danger",
+        }
+    }
 
     const downNames = [
-        ...kuma.filter((monitor) => monitor.status === "down").map((monitor) => monitor.name),
+        ...kuma.monitors
+            .filter((monitor) => monitor.status === "down")
+            .map((monitor) => monitor.name),
         // UptimeRobot の 8（応答なし）・9（停止）を停止として数える
-        ...robot.filter((monitor) => monitor.status >= 8).map((monitor) => monitor.friendly_name),
+        ...robot.monitors
+            .filter((monitor) => monitor.status >= 8)
+            .map((monitor) => monitor.friendly_name),
     ]
-    const pending = kuma.filter((monitor) => monitor.status === "pending").length
+    const pending = kuma.monitors.filter((monitor) => monitor.status === "pending").length
+
+    const upText = `${total - downNames.length} / ${total} Up`
+    const status =
+        downNames.length > 0
+            ? `${downNames.join("・")} が Down`
+            : pending > 0
+              ? `${pending}件が確認中`
+              : "すべて正常"
+
+    if (failed.length > 0) {
+        // 残りの件数を見せたまま「すべて正常」と言い切らないよう、失敗を先頭に出す
+        return {
+            key: "monitors",
+            label: "監視",
+            value: "一部 取得不可",
+            note: `${failed.join("・")} を取得できません · 残り ${upText}${status === "すべて正常" ? "" : ` · ${status}`}`,
+            tone: "danger",
+        }
+    }
 
     return {
         key: "monitors",
         label: "監視",
-        value: `${total - downNames.length} / ${total} Up`,
-        note:
-            downNames.length > 0
-                ? `${downNames.join("・")} が Down`
-                : pending > 0
-                  ? `${pending}件が確認中`
-                  : "すべて正常",
+        value: upText,
+        note: status,
         tone: downNames.length > 0 ? "danger" : pending > 0 ? "warn" : "ok",
     }
 }
@@ -312,8 +357,8 @@ function aideChip(snapshot: AideStatusSnapshot | null): SummaryChip | null {
 export function buildSummaryChips(input: {
     hostStats: HostStatsView | null
     tmuxSessions: TmuxSessionView[]
-    uptimeKuma: UptimeKumaMonitor[]
-    uptimeRobot: UptimeRobotMonitor[]
+    uptimeKuma: MonitorFeed<UptimeKumaMonitor>
+    uptimeRobot: MonitorFeed<UptimeRobotMonitor>
     aiUsage: AiUsageSnapshot | null
     githubUsage: GitHubUsageSnapshot | null
     onepasswordUsage: OnePasswordUsageSnapshot | null

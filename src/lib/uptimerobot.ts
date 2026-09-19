@@ -1,3 +1,5 @@
+import { monitorFeedError, monitorFeedOk, type MonitorFeed } from "@/lib/monitor-feed";
+
 export interface UptimeRobotMonitor {
     id: number;
     friendly_name: string;
@@ -17,9 +19,12 @@ export interface UptimeRobotMonitor {
     custom_uptime_ratio?: string;
 }
 
-async function fetchUptimeRobotMonitors(apiKey: string | undefined): Promise<UptimeRobotMonitor[]> {
+/** APIキーが無ければ失敗ではなく「監視が無い」として `error: null` で返す。 */
+async function fetchUptimeRobotMonitors(
+    apiKey: string | undefined
+): Promise<MonitorFeed<UptimeRobotMonitor>> {
     if (!apiKey) {
-        return [];
+        return monitorFeedOk([]);
     }
 
     try {
@@ -32,21 +37,26 @@ async function fetchUptimeRobotMonitors(apiKey: string | undefined): Promise<Upt
             cache: 'no-store'
         });
 
-        const data = await res.json();
+        // 失敗時もJSONで理由が返るため、読めなかったときだけ null にして HTTP ステータスへ回す
+        const data = await res.json().catch(() => null);
 
-        if (data.stat === 'ok' && data.monitors) {
-            return data.monitors;
-        } else {
-            console.error('UptimeRobot API Error:', data.error);
+        if (data?.stat === 'ok' && Array.isArray(data.monitors)) {
+            return monitorFeedOk(data.monitors);
         }
+
+        console.error('UptimeRobot API Error:', res.status, data?.error);
+
+        if (typeof data?.error?.type === 'string') {
+            return monitorFeedError(`APIエラー: ${data.error.type}`);
+        }
+        return monitorFeedError(res.ok ? '応答の形式が想定と異なります' : `HTTP ${res.status}`);
     } catch (err) {
         console.error('Failed to fetch UptimeRobot data:', err);
+        return monitorFeedError('接続できません');
     }
-
-    return [];
 }
 
-export async function fetchUptimeRobotMonitorsServer(): Promise<UptimeRobotMonitor[]> {
+export async function fetchUptimeRobotMonitorsServer(): Promise<MonitorFeed<UptimeRobotMonitor>> {
     return fetchUptimeRobotMonitors(process.env.UPTIMEROBOT_READ_ONLY_KEY);
 }
 

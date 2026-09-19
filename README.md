@@ -556,6 +556,10 @@ Authorization: Bearer <OPS_API_TOKEN>
 - **書き込みAPIは対象外**。`POST /api/host-stats` は従来どおり `HOST_STATS_TOKEN`、
   `POST /api/uptime-kuma/monitors` は `UPTIMEKUMA_ADMIN_TOKEN` で認証する。
   読み取り用として配ったトークンで本番の設定を書き換えられないよう、書き込みには相乗りさせない
+- **監視系（`/api/uptime-kuma`・`/api/monitors`）は `{ monitors, error }` を返す**。
+  取得に失敗した系統は `monitors: []` に加えて `error` に理由（文字列）が入る。成功時・未設定時は
+  `error: null`。`monitors` だけを読む呼び出し元はそのまま動くが、`monitors` が空でも
+  「監視が無い」とは限らないため、`error` も見ること（[issue #276](https://github.com/guchi-apps/ops-dashboard/issues/276)）
 - **レスポンスの形は画面向けと同一**。AIDE側は既存の型（`src/types/host-stats.ts` ほか）を契約として
   実装しているため、**形を変える場合は aide#31 側の追随が要る**
 

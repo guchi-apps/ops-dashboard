@@ -1,3 +1,5 @@
+import { monitorFeedError, monitorFeedOk, type MonitorFeed } from "@/lib/monitor-feed"
+
 export type UptimeKumaStatus = "up" | "down" | "pending" | "maintenance"
 
 export interface UptimeKumaMonitor {
@@ -36,10 +38,31 @@ function mapHeartbeatStatus(status: number): UptimeKumaStatus {
     }
 }
 
-async function fetchMonitorsForSlug(slug: string | undefined): Promise<UptimeKumaMonitor[]> {
+const UNEXPECTED_SHAPE = "応答の形式が想定と異なります"
+
+/** 応答の骨格だけを確かめる。形が違うまま読み進めると、例外で握りつぶされて原因が見えなくなる */
+function hasExpectedShape(page: unknown, heartbeat: unknown): boolean {
+    const groups = (page as Partial<StatusPageResponse> | null)?.publicGroupList
+    const beats = (heartbeat as Partial<HeartbeatResponse> | null)?.heartbeatList
+
+    return (
+        Array.isArray(groups) &&
+        groups.every((group) => Array.isArray(group?.monitorList)) &&
+        typeof beats === "object" &&
+        beats !== null
+    )
+}
+
+/**
+ * 未設定（ベースURL・スラッグが無い）は失敗ではなく「監視が無い」として `error: null` で返す。
+ * 設定があるのに取れなかったときだけ `error` を立てる。
+ */
+async function fetchMonitorsForSlug(
+    slug: string | undefined
+): Promise<MonitorFeed<UptimeKumaMonitor>> {
     const baseUrl = process.env.UPTIMEKUMA_BASE_URL
     if (!baseUrl || !slug) {
-        return []
+        return monitorFeedOk([])
     }
 
     try {
@@ -50,15 +73,22 @@ async function fetchMonitorsForSlug(slug: string | undefined): Promise<UptimeKum
 
         if (!pageRes.ok || !heartbeatRes.ok) {
             console.error("Uptime Kuma API Error:", pageRes.status, heartbeatRes.status)
-            return []
+            return monitorFeedError(`HTTP ${pageRes.ok ? heartbeatRes.status : pageRes.status}`)
         }
 
-        const page = (await pageRes.json()) as StatusPageResponse
-        const heartbeat = (await heartbeatRes.json()) as HeartbeatResponse
-        const monitors = page.publicGroupList.flatMap((group) => group.monitorList)
+        const page: unknown = await pageRes.json()
+        const heartbeat: unknown = await heartbeatRes.json()
+        if (!hasExpectedShape(page, heartbeat)) {
+            console.error("Uptime Kuma API returned an unexpected shape")
+            return monitorFeedError(UNEXPECTED_SHAPE)
+        }
 
-        return monitors.map((monitor) => {
-            const beats = (heartbeat.heartbeatList[String(monitor.id)] ?? []).slice(
+        const { publicGroupList } = page as StatusPageResponse
+        const { heartbeatList } = heartbeat as HeartbeatResponse
+        const monitors = publicGroupList.flatMap((group) => group.monitorList)
+
+        const mapped = monitors.map((monitor) => {
+            const beats = (heartbeatList[String(monitor.id)] ?? []).slice(
                 -RECENT_HEARTBEAT_COUNT
             )
             const recentStatuses = beats.map((beat) => mapHeartbeatStatus(beat.status))
@@ -83,13 +113,18 @@ async function fetchMonitorsForSlug(slug: string | undefined): Promise<UptimeKum
                 avgPing,
             }
         })
+
+        return monitorFeedOk(mapped)
     } catch (err) {
         console.error("Failed to fetch Uptime Kuma data:", err)
-        return []
+        // JSONとして読めなかった（プロキシのHTML応答など）ときと、接続できなかったときを分ける
+        return monitorFeedError(err instanceof SyntaxError ? UNEXPECTED_SHAPE : "接続できません")
     }
 }
 
-export async function fetchUptimeKumaDashboardMonitors(): Promise<UptimeKumaMonitor[]> {
+export async function fetchUptimeKumaDashboardMonitors(): Promise<
+    MonitorFeed<UptimeKumaMonitor>
+> {
     return fetchMonitorsForSlug(process.env.UPTIMEKUMA_DASHBOARD_SLUG)
 }
 

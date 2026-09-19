@@ -7,6 +7,7 @@ import type { AideStatusSnapshot } from "@/types/aide-status"
 import type { GitHubUsageSnapshot } from "@/types/github-usage"
 import type { HostStatsView } from "@/types/host-stats"
 import type { OnePasswordUsageSnapshot } from "@/types/onepassword-usage"
+import type { MonitorFeed } from "@/lib/monitor-feed"
 import type { UptimeKumaMonitor } from "@/lib/uptime-kuma"
 import type { UptimeRobotMonitor } from "@/lib/uptimerobot"
 
@@ -45,8 +46,8 @@ export type RefreshState = "idle" | "refreshing" | "error"
 
 /** サーバー側で取得済みの初期値。初回描画で監視の枠が空にならないようにする */
 export interface DashboardInitialData {
-    uptimeKuma: UptimeKumaMonitor[]
-    uptimeRobot: UptimeRobotMonitor[]
+    uptimeKuma: MonitorFeed<UptimeKumaMonitor>
+    uptimeRobot: MonitorFeed<UptimeRobotMonitor>
 }
 
 interface DashboardData extends DashboardInitialData {
@@ -125,13 +126,13 @@ export function DashboardDataProvider({
         selectAsIs,
         null
     )
-    const uptimeKuma = usePolledJson<UptimeKumaMonitor[]>(
+    const uptimeKuma = usePolledJson<MonitorFeed<UptimeKumaMonitor>>(
         "/api/uptime-kuma",
         MONITOR_INTERVAL_MS,
         selectMonitors,
         initial.uptimeKuma
     )
-    const uptimeRobot = usePolledJson<UptimeRobotMonitor[]>(
+    const uptimeRobot = usePolledJson<MonitorFeed<UptimeRobotMonitor>>(
         "/api/monitors",
         MONITOR_INTERVAL_MS,
         selectMonitors,
@@ -235,9 +236,13 @@ function selectAsIs<T>(payload: unknown): T {
     return payload as T
 }
 
-/** 監視系のAPIは { monitors: [...] } で包んで返ってくる */
-function selectMonitors<T>(payload: unknown): T[] {
-    return (payload as { monitors?: T[] }).monitors ?? []
+/**
+ * 監視系のAPIは { monitors: [...], error } で返ってくる（取得に失敗した系統は error に理由が入る）。
+ * `error` を持たない古い形（{ monitors } だけ）が来ても、取得できた扱いで読めるようにしておく
+ */
+function selectMonitors<T>(payload: unknown): MonitorFeed<T> {
+    const feed = payload as Partial<MonitorFeed<T>>
+    return { monitors: feed.monitors ?? [], error: feed.error ?? null }
 }
 
 /**
