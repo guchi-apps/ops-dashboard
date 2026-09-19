@@ -6,6 +6,7 @@ import {
     getAccessToken,
     isInvalidGrantResponse,
     RefreshTokenRevokedError,
+    type AccessToken,
     type RefreshResult,
 } from "@/lib/ai-usage/token-store"
 import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
@@ -162,11 +163,25 @@ async function refreshAccessToken(refreshToken: string): Promise<RefreshResult> 
  * user:profile が付かないため 403 になる。user:profile が付くのは
  * `claude login` のフルOAuthで発行されるトークンだけなので、そのリフレッシュトークンを使う。
  */
-export async function resolveClaudeAccessToken(): Promise<string | null> {
+export async function resolveClaudeAccessToken(
+    /** 401 を受けたときに、そのとき使ったアクセストークンを渡すと期限内でも更新する */
+    invalidate?: string
+): Promise<AccessToken | null> {
     const refreshToken = process.env[REFRESH_TOKEN_ENV_KEY]
     if (!refreshToken) return null
 
-    return (await getAccessToken("claude", refreshToken, refreshAccessToken)).accessToken
+    return getAccessToken("claude", refreshToken, refreshAccessToken, { invalidate })
+}
+
+/**
+ * 401 を受けたときに、アクセストークンを取り直すべきかを返す。
+ * アクセストークンは有効期限が残っていても失効することがある（別端末での再ログインや
+ * ログアウトなど）。期限だけを見て使い回すと、保存済みのトークンが失効した時点から
+ * 401 が返り続け、更新のきっかけが二度と来ない。この呼び出しで更新したばかりのトークンが
+ * 401 なら、取り直しても直らないためやり直さない。
+ */
+export function shouldRetryAfterUnauthorized(status: number, token: AccessToken): boolean {
+    return status === 401 && !token.refreshed
 }
 
 const FIVE_HOUR_SECONDS = 5 * 60 * 60
@@ -324,9 +339,9 @@ async function fetchClaudeUsage(): Promise<ProviderFetchResult> {
         windows: [],
     }
 
-    let accessToken: string | null
+    let token: AccessToken | null
     try {
-        accessToken = await resolveClaudeAccessToken()
+        token = await resolveClaudeAccessToken()
     } catch (error) {
         console.error("Claude usage: トークン更新に失敗", error)
         return {
@@ -335,7 +350,7 @@ async function fetchClaudeUsage(): Promise<ProviderFetchResult> {
         }
     }
 
-    if (!accessToken) {
+    if (!token) {
         return {
             usage: {
                 ...base,
@@ -345,11 +360,28 @@ async function fetchClaudeUsage(): Promise<ProviderFetchResult> {
         }
     }
 
-    try {
-        const [res, detectedPlan] = await Promise.all([
+    const requestUsage = (accessToken: string) =>
+        Promise.all([
             fetchWithTimeout(CLAUDE_USAGE_URL, { headers: claudeApiHeaders(accessToken) }),
             fetchPlan(accessToken),
         ])
+
+    try {
+        let [res, detectedPlan] = await requestUsage(token.accessToken)
+
+        if (shouldRetryAfterUnauthorized(res.status, token)) {
+            try {
+                token = await resolveClaudeAccessToken(token.accessToken)
+            } catch (error) {
+                console.error("Claude usage: 401 を受けたあとのトークン更新に失敗", error)
+                return {
+                    usage: { ...base, status: "error", message: describeRefreshFailure(error) },
+                    permanent: error instanceof RefreshTokenRevokedError,
+                }
+            }
+
+            if (token) [res, detectedPlan] = await requestUsage(token.accessToken)
+        }
 
         // 環境変数を設定した場合はそちらを表示名として優先する
         base.plan = process.env.CLAUDE_PLAN_NAME || detectedPlan

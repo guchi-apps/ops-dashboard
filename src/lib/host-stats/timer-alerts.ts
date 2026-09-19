@@ -120,6 +120,11 @@ function advance(
 /**
  * 受信したレポートの定期ジョブを判定し、状態が変わったユニットだけを通知する。
  *
+ * **「通知済み」を記録するのは、Signalyへ届いたものだけ。** 送れなかったユニットは
+ * `notifiedState` を前回のまま残すので、次の受信で状態の変化として再び検出され、再送される。
+ * 先に記録してから送ると、Signalyが落ちている間の異常通知は二度と出ない。
+ * 失敗回数（`failureCount`）と最終実行の時刻は、通知の成否によらず進める。
+ *
  * 呼び出し元（POST /api/host-stats）を止めないよう、例外はここで握りつぶさず呼び出し側で
  * 受け止める前提にしている（保存は済んでおり、通知が落ちても画面表示は成立する）。
  */
@@ -135,7 +140,7 @@ export async function processTimerAlerts(input: {
     const threshold = getTimerFailureThreshold()
     const previous = await readState(input.hostId)
     const store: TimerAlertStore = {}
-    const pending: { status: TimerStatus; kind: "alert" | "recovery" }[] = []
+    const pending: { key: string; prior: TimerAlertState; status: TimerStatus; kind: "alert" | "recovery" }[] = []
 
     for (const status of evaluateTimers(input.timers, now)) {
         const key = status.timer.name
@@ -149,31 +154,40 @@ export async function processTimerAlerts(input: {
 
         const { next, notify } = advance(status, prior, threshold, nowIso)
         store[key] = next
-        if (notify) pending.push({ status, kind: notify })
+        if (notify) pending.push({ key, prior, status, kind: notify })
     }
+
+    // 応答しない相手に1件ずつ待たされないよう並べて送る（呼び出し元のエージェントが待っている）
+    const delivered = await Promise.all(
+        pending.map(({ status, kind }) => {
+            const failureCount = store[status.timer.name]?.failureCount ?? 0
+
+            return notifySignalyAlert({
+                kind,
+                title:
+                    kind === "alert"
+                        ? `定期ジョブの異常: ${input.hostLabel} / ${status.timer.name}`
+                        : `定期ジョブが復旧: ${input.hostLabel} / ${status.timer.name}`,
+                description:
+                    kind === "alert"
+                        ? [status.label, status.detail].filter(Boolean).join(" — ")
+                        : "直近の実行が成功しました",
+                fields: [
+                    ...timerFields(status.timer),
+                    ...(kind === "alert" && failureCount > 1
+                        ? [{ name: "連続失敗", value: `${failureCount}回` }]
+                        : []),
+                ],
+            })
+        })
+    )
+
+    // 送れなかったユニットは通知済みの記録だけを前回へ戻す。次の受信で再び「状態が変わった」と判定される
+    pending.forEach(({ key, prior }, index) => {
+        if (delivered[index]) return
+        store[key] = { ...store[key], notifiedState: prior.notifiedState, notifiedAt: prior.notifiedAt }
+    })
 
     // 監視対象から外したユニットは持ち越さない（store に入れていないので落ちる）
     await writeFileAtomic(getStatePath(input.hostId), `${JSON.stringify(store, null, 2)}\n`)
-
-    for (const { status, kind } of pending) {
-        const failureCount = store[status.timer.name]?.failureCount ?? 0
-
-        await notifySignalyAlert({
-            kind,
-            title:
-                kind === "alert"
-                    ? `定期ジョブの異常: ${input.hostLabel} / ${status.timer.name}`
-                    : `定期ジョブが復旧: ${input.hostLabel} / ${status.timer.name}`,
-            description:
-                kind === "alert"
-                    ? [status.label, status.detail].filter(Boolean).join(" — ")
-                    : "直近の実行が成功しました",
-            fields: [
-                ...timerFields(status.timer),
-                ...(kind === "alert" && failureCount > 1
-                    ? [{ name: "連続失敗", value: `${failureCount}回` }]
-                    : []),
-            ],
-        })
-    }
 }
