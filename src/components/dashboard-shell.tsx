@@ -6,6 +6,7 @@ import { AideStatus } from "@/components/aide-status"
 import { AiUsage } from "@/components/ai-usage"
 import { useDashboardData, type RefreshState } from "@/components/dashboard-data"
 import { GitHubUsage } from "@/components/github-usage"
+import { HeaderMenu } from "@/components/header-menu"
 import { HostCard } from "@/components/host-card"
 import { HostStats } from "@/components/host-stats"
 import { MonitorSections } from "@/components/monitor-sections"
@@ -83,16 +84,14 @@ const TAB_SHORT_LABELS: Partial<Record<TabId, string>> = {
  *
  * 押すとホスト・AI・GitHub・1Password・監視をまとめて取り直す。押した結果は時刻が進むことで分かるため、
  * 狭い画面でも時刻だけは出す（ボタンはアイコンのみにして幅を詰める）。
+ * 通知の設定とログアウトはここに並べず、右隣のメニューへまとめてある（#268）。
  */
 function RefreshControl({
-    leading,
     updatedAt,
     state,
     cooldownSeconds,
     onRefresh,
 }: {
-    /** 更新時刻と更新ボタンのあいだに置くもの（通知ボタン） */
-    leading?: React.ReactNode
     updatedAt: number | null
     state: RefreshState
     cooldownSeconds: number
@@ -132,7 +131,6 @@ function RefreshControl({
                     )}
                 </span>
             )}
-            {leading}
             <Button
                 variant="outline"
                 size="sm"
@@ -303,20 +301,14 @@ export function DashboardShell({
                         LIVE
                     </span>
                     <RefreshControl
-                        leading={<UsageNotifications />}
                         updatedAt={updatedAt}
                         state={refreshState}
                         cooldownSeconds={refreshCooldownSeconds}
                         onRefresh={refresh}
                     />
-                    <span className="hidden max-w-[16rem] truncate text-xs text-muted-foreground lg:inline">
-                        {userEmail}
-                    </span>
-                    <form action="/auth/signout" method="POST">
-                        <Button variant="outline" size="sm" type="submit">
-                            ログアウト
-                        </Button>
-                    </form>
+                    <HeaderMenu userEmail={userEmail}>
+                        <UsageNotifications />
+                    </HeaderMenu>
                 </div>
             </header>
 
