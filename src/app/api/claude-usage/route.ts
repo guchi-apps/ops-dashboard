@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { getClaudeUsageForWidget } from "@/lib/claude-usage"
+import { tokenMatches } from "@/lib/session"
 import { describeError } from "@/lib/upstream"
 
 export const dynamic = "force-dynamic"
@@ -13,7 +14,12 @@ export const dynamic = "force-dynamic"
  */
 export async function GET(request: NextRequest) {
     const widgetToken = process.env.WIDGET_TOKEN
-    if (!widgetToken || request.headers.get("authorization") !== `Bearer ${widgetToken}`) {
+    const authorization = request.headers.get("authorization")
+    if (
+        !widgetToken ||
+        !authorization?.startsWith("Bearer ") ||
+        !tokenMatches(authorization.slice("Bearer ".length), widgetToken)
+    ) {
         return NextResponse.json({ error: "unauthorized" }, { status: 401 })
     }
 
