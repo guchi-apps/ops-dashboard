@@ -99,8 +99,8 @@ RSSを下げるため、次の2点を入れている（#291。guchi-apps/issue-d
 
 - **`next.config.mjs` をTypeScriptに戻さない。** `next.config.ts` だと本番の `next start` が設定を
   トランスパイルするためだけにSWCのネイティブバイナリを読み込み、そのまま常駐する（RSS約43MB・
-  スレッド12本ぶん）。型は `// @ts-check` とJSDocで付ける。設定を増やして型チェックが要るように
-  なったら、`tsconfig.json` の `include` へ個別に足す（`**/*.ts` では `.mjs` は対象にならない）
+  スレッド12本ぶん）。型は `// @ts-check` とJSDocで付け、`tsconfig.json` の `include` へ
+  `next.config.mjs` を個別に足して `npx tsc --noEmit` の対象に残している（`**/*.ts` では `.mjs` は対象にならない）
 - **`deploy/ecosystem.config.js` の `--max-semi-space-size=8`** は若い世代の上限。Node 24は既定で大きく
   取ってヒープが膨らむため明示している。**Nodeのメジャーを上げたら測り直す**（既定値はV8の版で変わる）。
   `max_memory_restart` を先に下げると再起動ループになる（issue-deck#1546・#2331）ので、変えるなら
