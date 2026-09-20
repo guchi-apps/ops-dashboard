@@ -408,10 +408,13 @@ Claude / ChatGPT のトークン使用状況と課金プランをダッシュボ
 
 | 提供元 | 取得元 | 表示できるもの |
 | --- | --- | --- |
+| TypeSafe AI | TYPESAFE_USAGE_URL で指定した呼出元の集計API | 直近24時間・7日間の入力トークン数、呼出回数、入力単価ベースの概算金額 |
 | Claude | `GET https://api.anthropic.com/api/oauth/usage` と `/api/oauth/profile`（Claude Code の `/usage` と同じ） | 5時間・週間の使用率とリセット時刻、追加利用クレジットの課金額、プラン名（`rate_limit_tier` から判定） |
 | ChatGPT | `GET https://chatgpt.com/backend-api/wham/usage`（Codex CLI の `/status` と同じ） | 5時間・週間の使用率とリセット時刻、プラン名（APIが返す `plan_type`） |
 
 プラン名はどちらもAPIから自動取得するため設定不要。`CLAUDE_PLAN_NAME` / `CHATGPT_PLAN_NAME` を設定した場合のみ、表示名の上書きとして使われる。
+
+TypeSafeの公開APIはアカウントの残高・無料枠を返さず、POST /v1/systemone の応答にその呼び出しのトークン数だけを返す。そのため、TypeSafeを呼ぶアプリが集計したAPIを `TYPESAFE_USAGE_URL` に、同APIのBearerトークンを `TYPESAFE_USAGE_TOKEN` に設定する。両方未設定ならカードは表示しない。表示する金額は入力単価 `$0.042 / 100万トークン` を使った概算で、請求額そのものではない。
 
 Gemini（Antigravity）は使用状況の確認手段がインタラクティブなTUI（`/usage`）だけで、
 非対話の出力もHTTP APIも公開されておらず取得できないため、表示対象に含めていない。

@@ -7,7 +7,7 @@ import {
     getElapsedPercent,
     getRateLimitUsedPercent,
 } from "@/lib/usage-format"
-import type { AiUsageSnapshot, AiUsageWindow } from "@/types/ai-usage"
+import type { AiProviderMeteredUsage, AiUsageSnapshot, AiUsageWindow } from "@/types/ai-usage"
 import type { GitHubUsageSnapshot } from "@/types/github-usage"
 
 /** 概要タブに並べる内訳リポジトリの数。詳細はAI・GitHubタブで見る */
@@ -25,11 +25,36 @@ function windowElapsedPercent(usageWindow: AiUsageWindow, now: number): number |
     return getElapsedPercent(resetsAtMs - usageWindow.windowSeconds * 1000, resetsAtMs, now)
 }
 
+function formatTokens(tokens: number): string {
+    return new Intl.NumberFormat("ja-JP", { notation: "compact", maximumFractionDigits: 1 }).format(tokens)
+}
+
+function formatUsd(value: number): string {
+    return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: value < 0.01 ? 4 : 2,
+    }).format(value)
+}
+
+function MeteredUsageCompact({ usage }: { usage: AiProviderMeteredUsage }) {
+    return (
+        <p className="text-[10px] text-muted-foreground">
+            <span className="font-mono text-foreground">{formatTokens(usage.last24h.inputTokens)}</span> トークン ·{" "}
+            <span className="font-mono text-foreground">{formatUsd(usage.last24h.estimatedCostUsd)}</span>（24時間）
+            <br />
+            {usage.last24h.calls.toLocaleString("ja-JP")} 回 · 直近7日 {formatUsd(usage.last7d.estimatedCostUsd)}
+        </p>
+    )
+}
+
 /** 概要タブのAI使用状況。提供元ごとの枠を、カードの器を挟まずに縦に並べる */
 export function AiUsageCompact({ snapshot, now }: { snapshot: AiUsageSnapshot; now: number }) {
     return (
         <div className="space-y-2.5">
-            {snapshot.providers.map((provider, index) => (
+            {snapshot.providers
+                .filter((provider) => provider.id !== "typesafe" || provider.status !== "unconfigured")
+                .map((provider, index) => (
                 <div key={provider.id} className={index > 0 ? "border-t border-border pt-2.5" : undefined}>
                     <div className="mb-1 flex items-center gap-2">
                         <span className="text-xs font-bold">{provider.name}</span>
@@ -40,7 +65,9 @@ export function AiUsageCompact({ snapshot, now }: { snapshot: AiUsageSnapshot; n
                         )}
                     </div>
 
-                    {provider.windows.length === 0 ? (
+                    {provider.metered ? (
+                        <MeteredUsageCompact usage={provider.metered} />
+                    ) : provider.windows.length === 0 ? (
                         <p className="text-[10px] text-muted-foreground">
                             {provider.message ?? "使用状況を取得できませんでした"}
                         </p>
@@ -63,7 +90,7 @@ export function AiUsageCompact({ snapshot, now }: { snapshot: AiUsageSnapshot; n
                         </div>
                     )}
                 </div>
-            ))}
+                ))}
         </div>
     )
 }
