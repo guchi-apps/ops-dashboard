@@ -93,6 +93,20 @@ ss -ltnp | grep ':17096 '   # users:(("next-server",pid=…)) のpidだけを ki
 に `initial={{ uptimeKuma: { monitors: [], error: null }, uptimeRobot: { monitors: [], error: null } }}` を渡せば、実データが無くてもタブの構造まで
 HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
 
+## 本番のメモリ設定（PM2）
+
+RSSを下げるため、次の2点を入れている（#291。guchi-apps/issue-deck#3017・#3027のカナリア横展開）。
+
+- **`next.config.mjs` をTypeScriptに戻さない。** `next.config.ts` だと本番の `next start` が設定を
+  トランスパイルするためだけにSWCのネイティブバイナリを読み込み、そのまま常駐する（RSS約43MB・
+  スレッド12本ぶん）。型は `// @ts-check` とJSDocで付け、`tsconfig.json` の `include` へ
+  `next.config.mjs` を個別に足して `npx tsc --noEmit` の対象に残している（`**/*.ts` では `.mjs` は対象にならない）
+- **`deploy/ecosystem.config.js` の `--max-semi-space-size=8`** は若い世代の上限。Node 24は既定で大きく
+  取ってヒープが膨らむため明示している。**Nodeのメジャーを上げたら測り直す**（既定値はV8の版で変わる）。
+  `max_memory_restart` を先に下げると再起動ループになる（issue-deck#1546・#2331）ので、変えるなら
+  反映後の `VmHWM` を測ってから
+- `deploy.yml` は設定ファイル名を2か所（アーカイブと掃除の `rm -rf`）で書いている。名前を変えたら両方直す
+
 ## 監視（Kuma・UptimeRobot）の取得失敗
 
 `fetchUptimeKumaDashboardMonitors` / `fetchUptimeRobotMonitorsServer` は `MonitorFeed`
@@ -251,7 +265,19 @@ ChatGPTの5時間枠は対象外（Issueの指定）。
 - 同じ枠・同じ段階は1回だけ送り、`.data/ai-usage-alerts.json` に残す。枠の同定は history.ts と同じく
   「リセット時刻が枠の半分より先へ進んだか」で行う（ChatGPTのリセット時刻は取得のたびに数秒ずれる）。
   **登録した端末が無い間は記録もしない**（あとから登録した端末へ、いまの状態を送れるように）
-- 購読は `.data/push-subscriptions.json`。プッシュサービスが404・410を返した購読は消す
+- **記録は送った後に書き、1台にも届かなかった通知は記録しない**（#297）。以前は送る前に記録していたため、
+  購読が無効（404・410）だった・送信に失敗した通知は、同じ枠では二度と送られなかった（実際に
+  Claude 5時間枠の96%を取りこぼした）。届かなければ次の判定（5分後）で送り直し、アプリを開いて購読が
+  登録し直された時点で届く。判定は `running` で直列化しているので、送信後に記録しても二重には送らない
+- 購読は `.data/push-subscriptions.json`。プッシュサービスが404・410を返した購読は消し、ログに
+  `[web-push] 無効になった購読を…削除しました` を出す。`createdAt` は初めて登録した日時で、アプリを開くたびの
+  登録し直しでは `lastSeenAt` だけが進む（`createdAt` が新しければ、購読が入れ替わったということ）
+- **送信の結果は `.data/ai-usage-alerts.json` の `attempts` に枠ごとに残る**（送ろうとした日時・届いた台数
+  `delivered`・404/410で消した数 `removed`・それ以外の失敗のステータス `failures`）。届かなかった回も残す。
+  `windows` は「届いた段階」なので、`attempts` にあって `windows` が進んでいなければ届いていない。
+  #297の調査では本番のpm2ログから何も取れなかったため、ログ（`[ai-usage-alerts] … N台へ送信`）には頼らず
+  こちらと `.data/ai-usage-windows.json`（枠ごとの最大使用率）を突き合わせる。**送信は `urgency: high`** で、
+  iPhoneで配信を後回しにされないようにしている
 - **`public/sw.js` は `src/proxy.ts` の matcher から外してある。** Service Workerのスクリプト取得が
   ログイン画面へリダイレクトされると、ブラウザは登録を失敗させる
 - iPhone・iPadはホーム画面に追加したアプリからしか受け取れない（iOS 16.4以上）。Safariのタブでは
