@@ -1,6 +1,7 @@
 import { notifyUsageAlerts } from "@/lib/ai-usage/alerts"
 import { getChatGptUsageEntry } from "@/lib/ai-usage/chatgpt"
 import { getClaudeUsageEntry } from "@/lib/ai-usage/claude"
+import { getTypeSafeUsageEntry } from "@/lib/ai-usage/typesafe"
 import { applyClaudeCreditLedger, recordClaudeCreditUsage } from "@/lib/ai-usage/claude-credit-ledger"
 import { attachDayMarks } from "@/lib/ai-usage/day-marks"
 import { applyAiUsageHistory } from "@/lib/ai-usage/history"
@@ -58,7 +59,11 @@ async function record(entry: ProviderCacheEntry): Promise<{ usage: AiProviderUsa
 export async function getAiUsageSnapshot({
     force = false,
 }: UsageFetchOptions = {}): Promise<AiUsageSnapshot> {
-    const entries = await Promise.all([getClaudeUsageEntry(force), getChatGptUsageEntry(force)])
+    const entries = await Promise.all([
+        getClaudeUsageEntry(force),
+        getChatGptUsageEntry(force),
+        getTypeSafeUsageEntry(force),
+    ])
 
     const results = await serialize(async () => {
         const recordedResults = []

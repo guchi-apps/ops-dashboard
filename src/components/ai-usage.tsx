@@ -7,7 +7,7 @@ import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
 import { formatRemaining, getElapsedPercent, toDayMarkers } from "@/lib/usage-format"
-import type { AiProviderCredit, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
+import type { AiProviderCredit, AiProviderMeteredUsage, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
 /** サブスク枠と区別が付くよう、クレジット枠の行にはこの補足を添える */
 const CREDIT_LABEL = "クレジット枠"
@@ -83,6 +83,53 @@ function PlanBadge({ plan }: { plan: string | null }) {
     )
 }
 
+function formatTokens(tokens: number): string {
+    return new Intl.NumberFormat("ja-JP", { notation: "compact", maximumFractionDigits: 1 }).format(tokens)
+}
+
+function formatUsd(value: number): string {
+    return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: value < 0.01 ? 4 : 2,
+    }).format(value)
+}
+
+/** 上限を返さないTypeSafeのような提供元の、実測トークン数・概算金額・呼出回数 */
+function MeteredUsage({ usage }: { usage: AiProviderMeteredUsage }) {
+    return (
+        <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+                <div>
+                    <p className="font-mono text-base sm:text-lg font-bold">{formatTokens(usage.last24h.inputTokens)}</p>
+                    <p className="text-[10px] sm:text-xs text-muted-foreground">入力トークン（24時間）</p>
+                </div>
+                <div>
+                    <p className="font-mono text-base sm:text-lg font-bold">{formatUsd(usage.last24h.estimatedCostUsd)}</p>
+                    <p className="text-[10px] sm:text-xs text-muted-foreground">概算金額（24時間）</p>
+                </div>
+            </div>
+            <p className="border-t border-border pt-2 text-[10px] sm:text-xs text-muted-foreground">
+                {usage.last24h.calls.toLocaleString("ja-JP")} 回 · 直近7日 {formatTokens(usage.last7d.inputTokens)} トークン
+                {" · "}
+                {formatUsd(usage.last7d.estimatedCostUsd)}
+            </p>
+            {usage.features.length > 0 && (
+                <ul className="space-y-1 border-t border-border pt-2 text-[10px] sm:text-xs text-muted-foreground">
+                    {usage.features.map((feature) => (
+                        <li key={feature.label} className="flex items-baseline justify-between gap-2">
+                            <span className="min-w-0 truncate">{feature.label}</span>
+                            <span className="shrink-0 font-mono">
+                                {formatTokens(feature.last24h.inputTokens)} · {formatUsd(feature.last24h.estimatedCostUsd)}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    )
+}
+
 function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: number }) {
     return (
         <DashboardCard className="h-full flex flex-col gap-3 px-3 py-3 sm:px-4 sm:py-4">
@@ -91,7 +138,9 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
                 <PlanBadge plan={provider.plan} />
             </div>
 
-            {provider.windows.length > 0 ? (
+            {provider.metered ? (
+                <MeteredUsage usage={provider.metered} />
+            ) : provider.windows.length > 0 ? (
                 <div className="space-y-3">
                     {provider.windows.map((usageWindow, index) => (
                         <UsageWindowRow
@@ -140,9 +189,11 @@ export function AiUsage() {
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                {snapshot.providers.map((provider) => (
-                    <ProviderCard key={provider.id} provider={provider} now={now} />
-                ))}
+                {snapshot.providers
+                    .filter((provider) => provider.id !== "typesafe" || provider.status !== "unconfigured")
+                    .map((provider) => (
+                        <ProviderCard key={provider.id} provider={provider} now={now} />
+                    ))}
             </div>
         </section>
     )
