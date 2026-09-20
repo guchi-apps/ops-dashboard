@@ -17,8 +17,8 @@ interface RawFeature {
 }
 
 interface RawUsageResponse {
-    totalLast24h?: RawTotals
-    totalLast7d?: RawTotals
+    last24h?: RawTotals
+    last7d?: RawTotals
     features?: unknown
 }
 
@@ -42,8 +42,8 @@ function toTotals(value: RawTotals | undefined): AiMeteredTotals | null {
 export function parseTypeSafeUsageResponse(data: unknown): AiProviderUsage["metered"] | null {
     if (!data || typeof data !== "object") return null
     const response = data as RawUsageResponse
-    const last24h = toTotals(response.totalLast24h)
-    const last7d = toTotals(response.totalLast7d)
+    const last24h = toTotals(response.last24h)
+    const last7d = toTotals(response.last7d)
     if (!last24h || !last7d) return null
 
     const features: AiMeteredFeatureUsage[] = Array.isArray(response.features)
