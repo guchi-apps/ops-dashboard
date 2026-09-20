@@ -98,14 +98,40 @@ HTMLに出るため、レイアウトやクラスの確認はこれで足りる�
 RSSを下げるため、次の2点を入れている（#291。guchi-apps/issue-deck#3017・#3027のカナリア横展開）。
 
 - **`next.config.mjs` をTypeScriptに戻さない。** `next.config.ts` だと本番の `next start` が設定を
-  トランスパイルするためだけにSWCのネイティブバイナリを読み込み、そのまま常駐する（RSS約43MB・
-  スレッド12本ぶん）。型は `// @ts-check` とJSDocで付け、`tsconfig.json` の `include` へ
+  トランスパイルするためだけにSWCのネイティブバイナリを読み込み、そのまま常駐する（issue-deckの実測で
+  RSS約43MB・スレッド12本ぶん）。型は `// @ts-check` とJSDocで付け、`tsconfig.json` の `include` へ
   `next.config.mjs` を個別に足して `npx tsc --noEmit` の対象に残している（`**/*.ts` では `.mjs` は対象にならない）
 - **`deploy/ecosystem.config.js` の `--max-semi-space-size=8`** は若い世代の上限。Node 24は既定で大きく
   取ってヒープが膨らむため明示している。**Nodeのメジャーを上げたら測り直す**（既定値はV8の版で変わる）。
   `max_memory_restart` を先に下げると再起動ループになる（issue-deck#1546・#2331）ので、変えるなら
-  反映後の `VmHWM` を測ってから
+  反映後の `VmHWM` を測ってから（下の「反映前後の実測」）
 - `deploy.yml` は設定ファイル名を2か所（アーカイブと掃除の `rm -rf`）で書いている。名前を変えたら両方直す
+
+### 反映前後の実測（#304）
+
+v0.32.2（上の2点を入れたリリース）のデプロイ前後を本番で測った値。**測定には `sudo`（`github-user` のPM2）が
+要るため、エージェントは代行できない。**
+
+```bash
+sudo su github-user -s /bin/bash -c 'pm2 describe ops-dashboard | grep -E "restarts|uptime|Used Heap|Heap Size|memory"; P=$(pm2 pid ops-dashboard); grep -E "VmRSS|VmHWM|Threads" /proc/$P/status'
+```
+
+| | 反映前（v0.32.1・稼働13h） | 反映後（v0.32.2・稼働4h） |
+| --- | ---: | ---: |
+| `VmHWM`（起動からのピーク） | 246.6 MB | **159.6 MB** |
+| `VmRSS`（その時点） | 132.9 MB | 158.9 MB |
+| `Threads` | 14 | **11** |
+| `Used Heap` / `Heap Size` | 49.34 / 54.12 MiB | 53.85 / 64.36 MiB |
+| `restarts` | 0 | 0 |
+
+- **比べるのは `VmHWM` だけ。** `VmRSS` はその時点の値で、稼働時間が違うと比較にならない（反映前は
+  ピークから戻った後の値、反映後はまだピーク付近）。反映後のほうが `VmRSS` は大きいが、悪化ではない
+- **効いたのは `.mjs` のほう。** スレッドが14→11に減っており、SWCが読み込まれていない。`Heap Size` は
+  下がっていないので `--max-semi-space-size=8` の寄与はほぼ無い。ops-dashboardは元からヒープが50MB台で、
+  issue-deck（195MB→85MB）のような削り代が無いため
+- **`max_memory_restart` は `320M` のまま据え置く。** 閾値を下げても使用量は減らず（PM2が殺す時期が
+  早まるだけ）、再起動ループの前例がある。反映後のピークは稼働4時間時点の値でしかなく、反映前は13時間で
+  246.6MBまで伸びていた。下げるなら、同じ稼働時間どうしで比べたピークを取ってから
 
 ## 監視（Kuma・UptimeRobot）の取得失敗
 
