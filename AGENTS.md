@@ -93,6 +93,20 @@ ss -ltnp | grep ':17096 '   # users:(("next-server",pid=…)) のpidだけを ki
 に `initial={{ uptimeKuma: { monitors: [], error: null }, uptimeRobot: { monitors: [], error: null } }}` を渡せば、実データが無くてもタブの構造まで
 HTMLに出るため、レイアウトやクラスの確認はこれで足りる（#136）。
 
+## 本番のメモリ設定（PM2）
+
+RSSを下げるため、次の2点を入れている（#291。guchi-apps/issue-deck#3017・#3027のカナリア横展開）。
+
+- **`next.config.mjs` をTypeScriptに戻さない。** `next.config.ts` だと本番の `next start` が設定を
+  トランスパイルするためだけにSWCのネイティブバイナリを読み込み、そのまま常駐する（RSS約43MB・
+  スレッド12本ぶん）。型は `// @ts-check` とJSDocで付け、`tsconfig.json` の `include` へ
+  `next.config.mjs` を個別に足して `npx tsc --noEmit` の対象に残している（`**/*.ts` では `.mjs` は対象にならない）
+- **`deploy/ecosystem.config.js` の `--max-semi-space-size=8`** は若い世代の上限。Node 24は既定で大きく
+  取ってヒープが膨らむため明示している。**Nodeのメジャーを上げたら測り直す**（既定値はV8の版で変わる）。
+  `max_memory_restart` を先に下げると再起動ループになる（issue-deck#1546・#2331）ので、変えるなら
+  反映後の `VmHWM` を測ってから
+- `deploy.yml` は設定ファイル名を2か所（アーカイブと掃除の `rm -rf`）で書いている。名前を変えたら両方直す
+
 ## 監視（Kuma・UptimeRobot）の取得失敗
 
 `fetchUptimeKumaDashboardMonitors` / `fetchUptimeRobotMonitorsServer` は `MonitorFeed`
