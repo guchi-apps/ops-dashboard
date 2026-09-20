@@ -14,6 +14,19 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.33.0",
+        date: "2026-09-20",
+        changes: [
+            "AI利用枠に新しく「TypeSafe AI（Jev）」の使用状況を追加しました。設定すると、直近24時間・7日間の入力トークン数、呼び出し回数、概算金額がAI利用枠タブと概要タブに表示されます。",
+        ],
+        usage: [
+            "サーバーの環境変数 TYPESAFE_USAGE_URL と TYPESAFE_USAGE_TOKEN を設定する",
+            "ダッシュボードの「AI利用枠」タブ、または概要タブを開く",
+            "「TypeSafe AI」のカードが表示され、直近24時間・7日間の入力トークン数、呼び出し回数、概算金額が確認できれば成功",
+            "両方の環境変数が未設定のままなら、カードは今まで通り表示されない",
+        ],
+    },
+    {
         version: "0.32.2",
         date: "2026-09-20",
         changes: [

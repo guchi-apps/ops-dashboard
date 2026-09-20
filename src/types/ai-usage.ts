@@ -1,4 +1,4 @@
-export type AiProviderId = "claude" | "chatgpt"
+export type AiProviderId = "claude" | "chatgpt" | "typesafe"
 
 /**
  * ok           — 使用状況を取得できた
@@ -38,6 +38,28 @@ export interface AiUsageWindow {
     note?: string
     /** 1日ごとの区切り。1日を超える枠でだけ入り、記録が無ければ空配列 */
     dayMarks?: AiUsageDayMark[]
+}
+
+/** APIの呼び出し元が記録した、上限を持たない従量課金の利用量 */
+export interface AiMeteredTotals {
+    calls: number
+    inputTokens: number
+    /** 入力トークン単価から計算したUSDの概算。提供元の請求額そのものではない */
+    estimatedCostUsd: number
+}
+
+/** 従量課金の用途別内訳 */
+export interface AiMeteredFeatureUsage {
+    label: string
+    last24h: AiMeteredTotals
+    last7d: AiMeteredTotals
+}
+
+/** 上限を返さない提供元向けの実測使用量 */
+export interface AiProviderMeteredUsage {
+    last24h: AiMeteredTotals
+    last7d: AiMeteredTotals
+    features: AiMeteredFeatureUsage[]
 }
 
 /**
@@ -145,6 +167,8 @@ export interface AiProviderUsage {
     message?: string
     windows: AiUsageWindow[]
     credit?: AiProviderCredit
+    /** TypeSafeのように上限ではなく実測値だけを返す提供元の使用量 */
+    metered?: AiProviderMeteredUsage
     /** 終わった枠の使い切り実績。記録がまだ無ければ省略される */
     windowHistory?: AiUsageWindowHistory[]
 }

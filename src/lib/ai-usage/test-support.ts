@@ -30,7 +30,7 @@ export function makeProvider(
 ): AiProviderUsage {
     return {
         id,
-        name: id === "claude" ? "Claude" : "ChatGPT",
+        name: id === "claude" ? "Claude" : id === "chatgpt" ? "ChatGPT" : "TypeSafe AI",
         plan: null,
         status: "ok",
         windows,

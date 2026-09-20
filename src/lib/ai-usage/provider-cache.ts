@@ -44,6 +44,7 @@ const ERROR_CACHE_SECONDS = 30
 const MIN_CACHE_MS: Record<AiProviderId, number> = {
     claude: AI_MIN_FORCE_REFRESH_MS,
     chatgpt: 0,
+    typesafe: 0,
 }
 
 function getCacheTtlMs(): number {
