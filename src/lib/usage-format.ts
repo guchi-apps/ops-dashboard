@@ -75,3 +75,17 @@ export function getRateLimitUsedPercent(rateLimit: { used: number; limit: number
     if (rateLimit.limit <= 0) return 0
     return Math.round((rateLimit.used / rateLimit.limit) * 1000) / 10
 }
+
+/** トークン数を「142万」のように短く整える */
+export function formatTokens(tokens: number): string {
+    return new Intl.NumberFormat("ja-JP", { notation: "compact", maximumFractionDigits: 1 }).format(tokens)
+}
+
+/** USDの金額。1セント未満は桁を増やして、0円に見えないようにする */
+export function formatUsd(value: number): string {
+    return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: value < 0.01 ? 4 : 2,
+    }).format(value)
+}

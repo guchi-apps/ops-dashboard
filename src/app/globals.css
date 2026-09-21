@@ -151,3 +151,77 @@
     --ring: oklch(68% 0.07 264); /* ネイビー系フォーカスリング（暗背景向け） */
   }
 }
+
+/*
+ * アプリ別のAI利用（#325）の行。並びを画面幅で3通りに変える（列の数が変わるため、
+ * Tailwindのユーティリティでは組みにくく、grid-template-areasで持つ）。
+ *   〜767px  カード（名前・金額 / モデル / バー / 呼出・トークン）
+ *   768px〜  名前の下にモデルを積み、右にバー・呼出・トークン・金額
+ *   1280px〜 モデルを独立した列にする
+ * 中身のセルは data-area で置き場所を決める。
+ */
+.ai-app-row {
+  display: grid;
+  align-items: center;
+  column-gap: 0.875rem;
+  row-gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name cost"
+    "models models"
+    "bar bar"
+    "calls tok";
+}
+.ai-app-row > [data-area="name"] { grid-area: name; }
+.ai-app-row > [data-area="models"] { grid-area: models; }
+.ai-app-row > [data-area="bar"] { grid-area: bar; }
+.ai-app-row > [data-area="calls"] { grid-area: calls; }
+.ai-app-row > [data-area="tok"] { grid-area: tok; }
+.ai-app-row > [data-area="cost"] { grid-area: cost; }
+.ai-app-row > [data-area="note"] { grid-area: models; }
+
+/* 機能ごとの内訳。〜767pxは「機能・金額 / モデル・呼出とトークン」の2行 */
+.ai-app-feature {
+  display: grid;
+  align-items: center;
+  column-gap: 0.75rem;
+  row-gap: 0.25rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "feat cost"
+    "model tok";
+}
+.ai-app-feature > [data-area="feat"] { grid-area: feat; }
+.ai-app-feature > [data-area="model"] { grid-area: model; }
+.ai-app-feature > [data-area="calls"] { grid-area: calls; }
+.ai-app-feature > [data-area="tok"] { grid-area: tok; }
+.ai-app-feature > [data-area="cost"] { grid-area: cost; }
+
+@media (min-width: 48rem) {
+  .ai-app-row {
+    row-gap: 0.375rem;
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.2fr) 3.4rem 5rem 4.4rem;
+    grid-template-areas:
+      "name bar calls tok cost"
+      "models bar calls tok cost";
+  }
+  .ai-app-row > [data-area="note"] { grid-area: models; }
+  .ai-app-row.ai-app-head {
+    grid-template-areas: "name bar calls tok cost";
+  }
+  .ai-app-feature {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 3.4rem 6rem 4.4rem;
+    grid-template-areas: "feat model calls tok cost";
+  }
+}
+
+@media (min-width: 80rem) {
+  .ai-app-row {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.25fr) minmax(0, 1.5fr) 4rem 5.5rem 4.5rem;
+    grid-template-areas: "name models bar calls tok cost";
+  }
+  .ai-app-row.ai-app-head {
+    grid-template-areas: "name models bar calls tok cost";
+  }
+  .ai-app-row > [data-area="note"] { grid-area: models / models / models / cost; }
+}

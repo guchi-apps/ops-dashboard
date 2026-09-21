@@ -199,6 +199,33 @@ AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/s
 「モニター追加」はKumaの `/add` を開くリンクへ戻る。設定を欠いたまま壊れないので、worktreeで
 そのまま動かしてよい。
 
+## アプリ別のAI利用（連携先のアプリが集計した使用量）
+
+「どのアプリが、どのモデルで、どれだけ使ったか」は、**各アプリが使用量APIを持ち、こちらが読みにいく**
+形で出している（#325）。応答の形・単価の扱いは README の「アプリ別のAI利用」を参照する。
+提供元ごとの利用枠（Claude・ChatGPT）とは別の軸で、そちらのキャッシュ・記録・通知には触れない。
+
+- **アプリから送りつける形（`POST`で受けて `.data/` に貯める）にはしていない。** 過去の推移は見えないが、
+  全アプリへ送信処理と保管・認証を足さずに済む。推移が要るなら別Issueで、`history.ts` と同じ
+  「観測を積む」仕組みを検討する
+- **1行でも形が違う応答は全体を捨てる**（`parseAiAppUsageResponse`）。TypeSafeの `parse` は不正な行を
+  捨てて表示を続けるが、こちらは合計が黙って少なくなるほうを避けている。揃えるべきは連携先のアプリ側
+- **単価表に無いモデルの金額は `null`（画面では「—」）。** 近いモデルの単価で推測しない。出力トークンを数えて
+  いない行も、出力が有料のモデルなら `null`（入力だけの金額を全体の金額として出さないため）。
+  合計に金額不明の行が混じるときは、画面に「+」と注記を出す
+- **`AI_APP_USAGE_SOURCES` に `issue-deck` が無いあいだだけ、TypeSafeの取得結果をissue-deckの行として
+  補っている**（`collect.ts` の `typeSafeAppFromUsage`）。issue-deckが使用量APIを持ったら、
+  設定へ足すだけでTypeSafeからの補完は止まる。両方を数えるとJevが二重になる
+- **`/api/ai-app-usage` は `src/proxy.ts` の除外に載せ、ルート側の `requireSessionOrApiToken()` で認証する。**
+  AIDEなどサーバー間からも `OPS_API_TOKEN` で読めるようにするため。連携先へ送るBearerも同じ `OPS_API_TOKEN`
+  （TypeSafe連携の `TYPESAFE_USAGE_TOKEN` を同じ値で配っているのと同じ考え方）。URLは https かループバックに限る
+- **行の並びは `globals.css` の `.ai-app-row`（grid-template-areas）で3通りに切り替えている。** 列を足すときは
+  3つのブレークポイントすべての `grid-template-areas` を合わせる
+- **画面確認は2通り。** 描画は `AiAppUsageView`（取得から切り離してある）に作り物の `AiAppUsageSnapshot` を
+  渡す `/login` 配下の一時ルートで確かめる（`AiAppUsage` 本体は取得後にしか描かないため、`curl` ではHTMLに出ない）。
+  取得の経路は、`node` で `127.0.0.1` に `Authorization: Bearer` を検証する疑似の連携先を立て、
+  `AI_APP_USAGE_SOURCES` と `OPS_API_TOKEN` を渡した `npm run dev` へ `curl` する（成功・形式不正・接続失敗の各行を作れる）
+
 ## AI利用枠のクレジット（サブスク外）
 
 サブスクの制限枠とは別会計の「クレジット枠」は、**両方とも使用状況のレスポンスに同居している**。

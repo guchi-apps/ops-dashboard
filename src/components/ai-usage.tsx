@@ -6,7 +6,7 @@ import { ClaudeCreditLedger } from "@/components/claude-credit-ledger"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
-import { formatRemaining, getElapsedPercent, toDayMarkers } from "@/lib/usage-format"
+import { formatRemaining, formatTokens, formatUsd, getElapsedPercent, toDayMarkers } from "@/lib/usage-format"
 import type { AiProviderCredit, AiProviderMeteredUsage, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
 /** サブスク枠と区別が付くよう、クレジット枠の行にはこの補足を添える */
@@ -81,18 +81,6 @@ function PlanBadge({ plan }: { plan: string | null }) {
             {plan}
         </span>
     )
-}
-
-function formatTokens(tokens: number): string {
-    return new Intl.NumberFormat("ja-JP", { notation: "compact", maximumFractionDigits: 1 }).format(tokens)
-}
-
-function formatUsd(value: number): string {
-    return new Intl.NumberFormat("en-US", {
-        style: "currency",
-        currency: "USD",
-        maximumFractionDigits: value < 0.01 ? 4 : 2,
-    }).format(value)
 }
 
 /** 上限を返さないTypeSafeのような提供元の、実測トークン数・概算金額・呼出回数 */
