@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { MIN_FORCE_REFRESH_MS } from "@/lib/usage-cache"
+import type { AiAppUsageSnapshot } from "@/types/ai-app-usage"
 import type { AiUsageSnapshot } from "@/types/ai-usage"
 import type { AideStatusSnapshot } from "@/types/aide-status"
 import type { GitHubUsageSnapshot } from "@/types/github-usage"
@@ -53,6 +54,8 @@ export interface DashboardInitialData {
 interface DashboardData extends DashboardInitialData {
     hostStats: HostStatsView | null
     aiUsage: AiUsageSnapshot | null
+    /** アプリ別のAI利用（#325）。未取得なら null */
+    aiAppUsage: AiAppUsageSnapshot | null
     githubUsage: GitHubUsageSnapshot | null
     onepasswordUsage: OnePasswordUsageSnapshot | null
     /** AIDEの動作状況。未取得なら null */
@@ -106,6 +109,13 @@ export function DashboardDataProvider({
         null,
         true
     )
+    const aiAppUsage = usePolledJson<AiAppUsageSnapshot | null>(
+        "/api/ai-app-usage",
+        USAGE_INTERVAL_MS,
+        selectAsIs,
+        null,
+        true
+    )
     const githubUsage = usePolledJson<GitHubUsageSnapshot | null>(
         "/api/github-usage",
         USAGE_INTERVAL_MS,
@@ -147,6 +157,7 @@ export function DashboardDataProvider({
         () => [
             hostStats.refresh,
             aiUsage.refresh,
+            aiAppUsage.refresh,
             githubUsage.refresh,
             onepasswordUsage.refresh,
             aideStatus.refresh,
@@ -156,6 +167,7 @@ export function DashboardDataProvider({
         [
             hostStats.refresh,
             aiUsage.refresh,
+            aiAppUsage.refresh,
             githubUsage.refresh,
             onepasswordUsage.refresh,
             aideStatus.refresh,
@@ -178,6 +190,7 @@ export function DashboardDataProvider({
         () => ({
             hostStats: hostStats.value,
             aiUsage: aiUsage.value,
+            aiAppUsage: aiAppUsage.value,
             githubUsage: githubUsage.value,
             onepasswordUsage: onepasswordUsage.value,
             aideStatus: aideStatus.value,
@@ -187,6 +200,7 @@ export function DashboardDataProvider({
             updatedAt: latest([
                 hostStats.updatedAt,
                 aiUsage.updatedAt,
+                aiAppUsage.updatedAt,
                 githubUsage.updatedAt,
                 onepasswordUsage.updatedAt,
                 aideStatus.updatedAt,
@@ -204,6 +218,7 @@ export function DashboardDataProvider({
             refreshAiUsage,
             hostStats,
             aiUsage,
+            aiAppUsage,
             githubUsage,
             onepasswordUsage,
             aideStatus,

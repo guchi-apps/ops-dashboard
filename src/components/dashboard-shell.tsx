@@ -4,6 +4,7 @@ import { RefreshCw } from "lucide-react"
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
 import { AideStatus } from "@/components/aide-status"
 import { AiUsage } from "@/components/ai-usage"
+import { AiAppUsage } from "@/components/ai-app-usage"
 import { useDashboardData, type RefreshState } from "@/components/dashboard-data"
 import { GitHubUsage } from "@/components/github-usage"
 import { HeaderMenu } from "@/components/header-menu"
@@ -502,6 +503,7 @@ export function DashboardShell({
                 {activeTab === "usage" && (
                     <div className="space-y-5">
                         <AiUsage />
+                        <AiAppUsage />
                         <GitHubUsage />
                         <OnePasswordUsage />
                     </div>

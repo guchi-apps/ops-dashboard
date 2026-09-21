@@ -20,7 +20,7 @@ Supabaseダッシュボードの Authentication → URL Configuration の Redire
 | 概要 | 全項目を畳んで1画面に収めたもの。ホストごとの主要4指標、tmuxの稼働・待機、AI/GitHubの残枠、監視の状態タイル |
 | ホスト | ホストごとの全指標と推移（Swap・温度・ネットワーク・ディスクI/O・上位プロセス・ディスク内訳） |
 | tmux | セッションの一覧。稼働中・待機中・放置の別、実行中コマンド、作業ディレクトリ、最終活動 |
-| AI・GitHub・1Password | 提供元ごとの制限枠と課金、Actionsのリポジトリ別内訳、1Passwordのレート制限 |
+| AI・GitHub・1Password | 提供元ごとの制限枠と課金、アプリ別のAI利用（使用モデル・呼出回数・トークン・概算金額）、Actionsのリポジトリ別内訳、1Passwordのレート制限 |
 | 監視 | Uptime Kuma / UptimeRobot のheartbeatと応答時間 |
 
 選んだタブは端末ごとに `localStorage` へ保存する。
@@ -416,6 +416,48 @@ Claude / ChatGPT のトークン使用状況と課金プランをダッシュボ
 
 TypeSafeの公開APIはアカウントの残高・無料枠を返さず、POST /v1/systemone の応答にその呼び出しのトークン数だけを返す。そのため、TypeSafeを呼ぶアプリが集計したAPIを `TYPESAFE_USAGE_URL` に、同APIのBearerトークンを `TYPESAFE_USAGE_TOKEN` に設定する。両方未設定ならカードは表示しない。表示する金額は入力単価 `$0.042 / 100万トークン` を使った概算で、請求額そのものではない。
 
+### アプリ別のAI利用
+
+「どのアプリが、どのモデルで、どれくらいAIを使っているか」を、上の提供元別の利用枠とは別の軸で出す
+（[issue #325](https://github.com/guchi-apps/ops-dashboard/issues/325)）。AI・GitHub・1Passwordタブの、AI Usageの下の区画で、
+24時間・7日間を切り替え、アプリの行を開くと機能ごと×モデルごとの内訳が出る。
+
+**各アプリが使用量APIを持ち、ダッシュボードのサーバーがそれを読みにいく**（TypeSafe・AIDEと同じ向き）。
+アプリ側から送りつける形にはしていないため、ダッシュボードは使用量を保存せず、見えるのは各アプリが
+いま持っている直近24時間・7日間の集計だけになる。連携先は環境変数 `AI_APP_USAGE_SOURCES` に
+`[{"app":"aide-bot","url":"https://…/api/ai-usage"}]` のJSON配列で渡し、各アプリへは
+`Authorization: Bearer <OPS_API_TOKEN>` を付けてGETする（連携先は同じ値で検証する）。
+`url` は https か、同じホスト内のループバックの http だけを受け付ける（トークンを平文で送らないため）。
+
+連携先の応答の形（`src/lib/ai-app-usage/parse.ts` が検証する）:
+
+```json
+{ "features": [
+  { "label": "チャット", "model": "claude-opus-5",
+    "last24h": { "calls": 96, "inputTokens": 1420000, "outputTokens": 61000,
+                 "cacheReadTokens": 0, "cacheWriteTokens": 0 },
+    "last7d": { "calls": 612, "inputTokens": 9100000, "outputTokens": 402000 } } ] }
+```
+
+- 機能×モデルごとに1行。同じ機能でモデルを切り替えていれば2行に分ける
+- `outputTokens` `cacheReadTokens` `cacheWriteTokens` は省略できる。省略した出力トークンは「数えていない」（画面では「—」）
+- `inputTokens` は**キャッシュに載らなかった分**。画面の入力トークンはキャッシュの書き込み・読み出しを足した合計で出す
+- `features` が空なのは「取得できたが呼び出しが無かった」で、エラーではない
+- **1行でも形が違えば応答全体を採用せず**、そのアプリは「取得不可」（`応答の形式が想定と異なります`）になる。
+  一部の行だけを捨てると、合計が黙って少なく出るため
+
+金額はダッシュボード側の単価表（`src/lib/ai-app-usage/models.ts`）で換算した概算で、請求額そのものではない。
+**単価表に無いモデルは名前だけを出して金額は「不明」にする**（近いモデルの単価で推測しない）。
+モデルを増やしたら、単価表にも足す。日付付きのID（`claude-haiku-4-5-20251001`）は一覧のIDへ寄せて数える。
+
+- 取得できなかったアプリは「取得不可」と理由（`HTTP 500`・`接続できません`など。URLやトークンは含めない）を出し、
+  合計には含めない。0件と区別するため
+- 連携先が未設定なら区画ごと出さない。`AI_APP_USAGE_SOURCES` が壊れているときも出さず、サーバーのログに理由が出る
+- **issue-deckだけは使用量APIを待たずに出る。** 既存のTypeSafe連携（`TYPESAFE_USAGE_URL`）の取得結果を
+  issue-deckの行（モデル `Jev`）として使う。`AI_APP_USAGE_SOURCES` に `issue-deck` を入れた時点で、
+  そちらが正になり、TypeSafeからの補完は止まる（Jevの分が二重に数えられないため）
+- キャッシュは5分（失敗したアプリがあるときは30秒）。ヘッダーの更新ボタンからの取得（`?force=1`）は30秒の間隔を守る
+
 Gemini（Antigravity）は使用状況の確認手段がインタラクティブなTUI（`/usage`）だけで、
 非対話の出力もHTTP APIも公開されておらず取得できないため、表示対象に含めていない。
 
@@ -548,6 +590,7 @@ GET /api/host-stats          ホスト（VPS・サブPC）のステータス
 GET /api/monitors            UptimeRobot
 GET /api/uptime-kuma         Uptime Kuma
 GET /api/ai-usage            AI利用枠（Claude / ChatGPT）
+GET /api/ai-app-usage        アプリ別のAI利用（使用モデル・呼出回数・トークン・概算金額）
 GET /api/github-usage        GitHubの制限
 GET /api/onepassword-usage   1Passwordのレート制限
 
