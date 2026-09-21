@@ -20,6 +20,7 @@ const PUBLIC_PATH_PREFIXES = [
   "/api/monitors",
   "/api/uptime-kuma",
   "/api/ai-usage",
+  "/api/ai-app-usage",
   "/api/github-usage",
   "/api/onepassword-usage",
 ];
