@@ -4,13 +4,16 @@
  *
  * リリース自動化ワークフロー（release-develop-to-main.yml）は、developへ取り込まれた
  * 差分から利用者向けの更新履歴を生成し、環境変数 RELEASE_CHANGELOG で渡してくる。
- * 設定されていればその内容を changes へ反映する。未設定・空のとき（ローカルで
- * `npm version` を叩いた場合など）は、従来どおり手で埋めるための枠だけを作る。
+ * 設定されていればその内容を changes へ反映する。**未設定・空のとき（画面で体感できる変化が
+ * 無いリリースや、ローカルで `npm version` を叩いた場合）は、エントリを作らない**（バージョンだけが
+ * 上がる）。仮の文言だけの版を作ると誰も埋めないまま更新履歴の画面に残り続けるため（#336）。
+ * 手で書きたいときは、`RELEASE_CHANGELOG` を渡して実行するか、changelog.ts を直接編集する。
  *
  * あわせて RELEASE_USAGE（利用者向けの操作手順・1行1手順）も渡ってくる。
  * こちらは「変わったこと」ではなく「どう使うか」なので changes へ混ぜず usage として持たせる。
  * 画面で使える変化が無いリリースでは生成されず空文字で渡るため、その場合は項目ごと出力しない
- * （空の見出しだけが残ると書き漏らしに見えるため）。
+ * （空の見出しだけが残ると書き漏らしに見えるため）。RELEASE_USAGE だけがあって
+ * RELEASE_CHANGELOG が空のときも、エントリは作らない（usage は changes の補足でしかないため）。
  *
  * **依存関係に触れてはいけない。** 共有ワークフローはバージョンbumpのために
  * npm ci を実行しないため、Node標準モジュールだけで完結させる。
@@ -21,8 +24,6 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const changelogPath = join(__dirname, "../src/data/changelog.ts");
-
-export const CHANGELOG_PLACEHOLDER = "（変更内容を追記してください）";
 
 /**
  * RELEASE_CHANGELOG の文面を changes 配列へ整形する。
@@ -51,9 +52,15 @@ function escapeForTs(value) {
     return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
 }
 
+/**
+ * 先頭へエントリを差し込む。差し込まなかったときは `reason` に理由を返す
+ * （`exists`: 同じバージョンが既にある / `empty`: changes が空）。
+ * マーカーが見つからないときは、changes が空でも従来どおり例外にする
+ * （changelog.ts の形が変わったことに気づけなくなるため）。
+ */
 export function insertChangelogEntry(content, version, date, changes = [], usage = []) {
     if (content.includes(`version: "${version}"`)) {
-        return { content, inserted: false }
+        return { content, inserted: false, reason: "exists" }
     }
 
     const marker = "export const changelog: ChangelogEntry[] = ["
@@ -62,7 +69,10 @@ export function insertChangelogEntry(content, version, date, changes = [], usage
         throw new Error("changelog marker not found in changelog.ts")
     }
 
-    const items = changes.length > 0 ? changes : [CHANGELOG_PLACEHOLDER]
+    if (changes.length === 0) {
+        return { content, inserted: false, reason: "empty" }
+    }
+
     const insertAt = index + marker.length
     const usageBlock =
         usage.length > 0
@@ -76,7 +86,7 @@ ${usage.map((item) => `            "${escapeForTs(item)}",`).join("\n")}
         version: "${version}",
         date: "${date}",
         changes: [
-${items.map((item) => `            "${escapeForTs(item)}",`).join("\n")}
+${changes.map((item) => `            "${escapeForTs(item)}",`).join("\n")}
         ],${usageBlock}
     },`
 
@@ -101,7 +111,7 @@ function main() {
     const changes = parseReleaseChangelog(process.env.RELEASE_CHANGELOG)
     const usage = parseReleaseUsage(process.env.RELEASE_USAGE)
     const original = readFileSync(changelogPath, "utf8")
-    const { content, inserted } = insertChangelogEntry(
+    const { content, inserted, reason } = insertChangelogEntry(
         original,
         version,
         todayJst(),
@@ -110,19 +120,19 @@ function main() {
     )
 
     if (!inserted) {
-        console.log(`changelog.ts already has version ${version}; skipping.`)
+        console.log(
+            reason === "empty"
+                ? `RELEASE_CHANGELOG is empty; not adding a changelog entry for v${version}.`
+                : `changelog.ts already has version ${version}; skipping.`
+        )
         return
     }
 
     writeFileSync(changelogPath, content, "utf8")
     const usageNote = usage.length > 0 ? ` + ${usage.length} usage step(s)` : ""
-    if (changes.length > 0) {
-        console.log(
-            `Added changelog entry for v${version} (${changes.length} change(s)${usageNote})`
-        )
-    } else {
-        console.log(`Added changelog stub for v${version}${usageNote}`)
-    }
+    console.log(
+        `Added changelog entry for v${version} (${changes.length} change(s)${usageNote})`
+    )
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]
