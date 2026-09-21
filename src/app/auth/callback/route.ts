@@ -5,6 +5,7 @@ import { isEmailAllowed } from "@/lib/allowed-emails";
 import { sanitizeReturnTo } from "@/lib/return-to";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { notifySignalyLogin } from "@/lib/signaly";
+import { signOutLocally } from "@/lib/supabase/sign-out";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +30,8 @@ export async function GET(request: Request) {
   const claims = data?.claims;
 
   if (!claims?.email || !isEmailAllowed(claims.email)) {
-    await supabase.auth.signOut();
+    // 許可外ユーザーでも、共有 Supabase 上の他アプリのセッションは失効させない。
+    await signOutLocally(supabase);
     return NextResponse.redirect(`${origin}/login?error=forbidden`);
   }
 
