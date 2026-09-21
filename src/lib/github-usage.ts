@@ -37,6 +37,9 @@ const FALLBACK_ALLOWANCE_MINUTES = 2000
 
 const DEFAULT_CACHE_SECONDS = 300
 
+/** 集計に時間がかかる課金レポートだけ、共通の10秒より長く応答を待つ */
+const BILLING_REPORT_TIMEOUT_MS = 30_000
+
 /**
  * 取得に失敗したスナップショットは通常より短くしか持たない。
  * 一時的な失敗を通常のキャッシュ期間ぶん抱えると、復旧しているのに
@@ -94,16 +97,25 @@ function getRunnerMultiplier(sku: string): number {
  * `label` は失敗時に画面へ出す表示名。パスをそのまま出すと、組織名の設定を
  * 誤ってトークンを入れてしまった場合にそれが画面へ露出するため、パスは含めない。
  */
-async function githubFetch<T>(path: string, token: string, label: string): Promise<T> {
+async function githubFetch<T>(
+    path: string,
+    token: string,
+    label: string,
+    timeoutMs?: number
+): Promise<T> {
     let res: Response
     try {
-        res = await fetchWithTimeout(`${API_BASE}${path}`, {
-            headers: {
-                Authorization: `Bearer ${token}`,
-                Accept: "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
+        res = await fetchWithTimeout(
+            `${API_BASE}${path}`,
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
             },
-        })
+            timeoutMs
+        )
     } catch (error) {
         throw new Error(`${label}に到達できませんでした: ${describeError(error)}`)
     }
@@ -218,7 +230,8 @@ async function fetchActionsUsage(org: string, token: string, now: Date): Promise
         githubFetch<UsageReportResponse>(
             `/organizations/${encodeURIComponent(org)}/settings/billing/usage?year=${year}&month=${month}`,
             token,
-            "課金レポート"
+            "課金レポート",
+            BILLING_REPORT_TIMEOUT_MS
         ),
         fetchRepositoryVisibility(org, token),
         fetchOrgPlanName(org, token),
