@@ -14,6 +14,18 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.34.3",
+        date: "2026-09-22",
+        changes: [
+            "アプリのアイコンを新しいデザインへ更新しました。",
+        ],
+        usage: [
+            "ダッシュボードをブラウザで開く、またはホーム画面に追加したアプリを開く",
+            "ブラウザのタブやホーム画面に表示されるアイコンを確認する",
+            "濃紺の背景にタイルが並んだ新しいデザインのアイコンになっていれば反映されています",
+        ],
+    },
+    {
         version: "0.34.0",
         date: "2026-09-21",
         changes: [
