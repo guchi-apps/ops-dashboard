@@ -36,6 +36,13 @@ export interface ModelInfo {
  */
 const MODELS: ModelInfo[] = [
     {
+        id: "claude-opus-5-5",
+        label: "Opus 5.5",
+        provider: "Anthropic",
+        family: "opus",
+        price: { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 },
+    },
+    {
         id: "claude-opus-5",
         label: "Opus 5",
         provider: "Anthropic",
@@ -71,12 +78,17 @@ const MODELS: ModelInfo[] = [
  * モデルの識別子から一覧の1件を引く。
  *
  * 日付付きのID（`claude-haiku-4-5-20251001`）や Jev の派生名（`jev-1`）も同じモデルとして扱うため、
- * 完全一致のほかに「一覧のIDに `-` を足したものの先頭一致」を許す。
+ * 完全一致のほかに「一覧のIDに `-` を足したものの先頭一致」を許す。**完全一致を全件先に確かめてから
+ * 前方一致にフォールバックする。** 一段階の判定にすると、`claude-opus-5-5`（別モデル）が
+ * `claude-opus-5` への前方一致で先に拾われてしまうように、短いIDのモデルが配列内で先にあるだけで
+ * 後から登録した別モデルの単価を誤って被ってしまう（#362）。
  */
 export function findModel(model: string): ModelInfo | null {
     const normalized = model.trim().toLowerCase()
     return (
-        MODELS.find((info) => normalized === info.id || normalized.startsWith(`${info.id}-`)) ?? null
+        MODELS.find((info) => normalized === info.id) ??
+        MODELS.find((info) => normalized.startsWith(`${info.id}-`)) ??
+        null
     )
 }
 

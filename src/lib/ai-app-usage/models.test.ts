@@ -17,6 +17,13 @@ describe("findModel", () => {
         assert.equal(findModel("jevons"), null)
     })
 
+    it("別モデルのIDへの前方一致にはならず、完全一致するモデルとして引ける（#362）", () => {
+        // "claude-opus-5-5"（Opus 5.5）は "claude-opus-5"（Opus 5）への前方一致にも
+        // 当てはまってしまう文字列だが、別モデルとして単価が異なるため巻き込んではいけない
+        assert.equal(findModel("claude-opus-5-5")?.id, "claude-opus-5-5")
+        assert.equal(findModel("claude-opus-5")?.id, "claude-opus-5")
+    })
+
     it("一覧に無いモデルは名前をそのまま出し、集計のキーも変えない", () => {
         assert.equal(findModel("gpt-9"), null)
         assert.equal(modelLabel("gpt-9"), "gpt-9")
@@ -35,6 +42,18 @@ describe("estimateCostUsd", () => {
         })
         assert.ok(cost !== null)
         assert.ok(Math.abs(cost - (5 + 2.5 + 1 + 2.5)) < 1e-9)
+    })
+
+    it("Opus 5.5は別単価（Opus 5より安い）として計算する（#362）", () => {
+        // Opus 5.5: 入力 $4 / 出力 $20 / 書き込み $5 / 読み出し $0.2（100万トークンあたり）
+        const cost = estimateCostUsd("claude-opus-5-5", {
+            inputTokens: 1_000_000,
+            outputTokens: 100_000,
+            cacheReadTokens: 2_000_000,
+            cacheWriteTokens: 400_000,
+        })
+        assert.ok(cost !== null)
+        assert.ok(Math.abs(cost - (4 + 2 + 0.4 + 2)) < 1e-9)
     })
 
     it("単価に無いモデルは推測せず null", () => {
