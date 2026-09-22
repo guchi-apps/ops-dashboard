@@ -12,8 +12,7 @@ Supabaseダッシュボードの Authentication → URL Configuration の Redire
 
 ## 画面の構成
 
-上部に「いま異常があるか」を示すサマリーを常時置き、その下をタブで切り替える（[issue #40](https://github.com/guchi-apps/ops-dashboard/issues/40)）。
-サマリーはタブを切り替えても消えないため、どのタブを見ていても障害・オフライン・放置セッション・残枠の逼迫に気づける。
+画面はタブで切り替える。
 
 | タブ | 内容 |
 | --- | --- |
@@ -24,8 +23,8 @@ Supabaseダッシュボードの Authentication → URL Configuration の Redire
 | 監視 | Uptime Kuma / UptimeRobot のheartbeatと応答時間 |
 
 選んだタブは端末ごとに `localStorage` へ保存する。
-データの取得は共通のプロバイダに一本化しており（ホスト30秒・監視60秒・AI/GitHub/1Password 5分）、サマリーが全ソースを横断して集計できるようにしている。
-狭い画面ではサマリーとタブが横スクロールになり、tmuxの一覧は表からカードに切り替わる。
+データの取得は共通のプロバイダに一本化している（ホスト30秒・監視60秒・AI/GitHub/1Password 5分）。
+狭い画面ではタブが横スクロールになり、tmuxの一覧は表からカードに切り替わる。
 
 ヘッダーの更新ボタンを押すと、この自動取得を待たずにホスト・AI・GitHub・1Password・監視をまとめて取り直す（[issue #29](https://github.com/guchi-apps/ops-dashboard/issues/29)）。
 AI・GitHub・1Passwordはサーバー側にもキャッシュ（既定5分）があるため、このボタンからの取得だけ `?force=1` を付けてキャッシュを飛ばし、提供元へ取りにいく。

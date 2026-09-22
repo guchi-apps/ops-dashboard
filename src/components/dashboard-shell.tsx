@@ -14,7 +14,6 @@ import { MonitorSections } from "@/components/monitor-sections"
 import { MonitorTiles, getMonitorStatusText } from "@/components/monitor-tiles"
 import { OnePasswordUsage } from "@/components/onepassword-usage"
 import { Panel } from "@/components/panel"
-import { StatusStrip } from "@/components/status-strip"
 import { StatusBadge, TEXT_TONES, type StatusTone } from "@/components/status-badge"
 import { SwipeTabs } from "@/components/swipe-tabs"
 import { TmuxLegend, TmuxSessionList, TmuxSessionTable } from "@/components/tmux-sessions"
@@ -22,7 +21,6 @@ import { Button } from "@/components/ui/button"
 import { AiUsageCompact, GitHubUsageCompact } from "@/components/usage-compact"
 import { UsageNotifications } from "@/components/usage-notifications"
 import { AIDE_SEVERITY_TONE } from "@/lib/aide-status-format"
-import { buildSummaryChips } from "@/lib/dashboard-summary"
 import { formatAge } from "@/lib/host-stats/format"
 import { collectTmuxSessions, summarizeTmux } from "@/lib/host-stats/tmux"
 import { cn } from "@/lib/utils"
@@ -172,7 +170,6 @@ export function DashboardShell({
         hostStats,
         aiUsage,
         githubUsage,
-        onepasswordUsage,
         uptimeKuma,
         uptimeRobot,
         aideStatus,
@@ -248,30 +245,6 @@ export function DashboardShell({
     const tmuxSummary = useMemo(() => summarizeTmux(hosts, tmuxSessions), [hosts, tmuxSessions])
     const monitorStatus = getMonitorStatusText(uptimeKuma, uptimeRobot)
 
-    const chips = useMemo(
-        () =>
-            buildSummaryChips({
-                hostStats,
-                tmuxSessions,
-                uptimeKuma,
-                uptimeRobot,
-                aiUsage,
-                githubUsage,
-                onepasswordUsage,
-                aideStatus,
-            }),
-        [
-            hostStats,
-            tmuxSessions,
-            uptimeKuma,
-            uptimeRobot,
-            aiUsage,
-            githubUsage,
-            onepasswordUsage,
-            aideStatus,
-        ]
-    )
-
     const aideHealth = aideStatus?.status === "ok" ? aideStatus.health : null
 
     const counts: Partial<Record<TabId, number>> = {
@@ -314,8 +287,6 @@ export function DashboardShell({
                     </HeaderMenu>
                 </div>
             </header>
-
-            <StatusStrip chips={chips} />
 
             <div
                 ref={tabListRef}
