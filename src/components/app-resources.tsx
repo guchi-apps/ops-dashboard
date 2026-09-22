@@ -14,7 +14,7 @@ const HATCH_STYLE = {
     backgroundImage: "repeating-linear-gradient(135deg, currentColor 0 2px, transparent 2px 5px)",
 }
 
-const HATCH_CLASS = "text-slate-400 dark:text-slate-500"
+const HATCH_CLASS = "text-muted-foreground"
 
 interface ResourceRow {
     name: string
@@ -229,7 +229,7 @@ export function AppResources({
                         rows={diskRows}
                         usage={apps.disk}
                         stamp={measuredAge === undefined ? undefined : `計測 ${formatAge(measuredAge)}（1時間ごと）`}
-                        barClassName="bg-teal-600 dark:bg-teal-400"
+                        barClassName="bg-teal-400"
                     />
                 )}
             </div>
