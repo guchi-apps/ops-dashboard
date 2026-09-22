@@ -152,7 +152,7 @@ function RowItem({
                 <span className="ml-auto shrink-0">{badge}</span>
             </div>
             <span className="text-[11px] tabular-nums text-muted-foreground">{sub}</span>
-            {detail && <span className="text-[11px] text-red-600 dark:text-red-400">{detail}</span>}
+            {detail && <span className="text-[11px] text-red-400">{detail}</span>}
         </li>
     )
 }
@@ -304,7 +304,7 @@ function JobsPanel({ jobs }: { jobs: AideJob[] }) {
             </RowList>
             {/* 失敗の理由は表の列に収まらないため、表の下へ回す */}
             {failures.map((job) => (
-                <p key={job.name} className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">
+                <p key={job.name} className="mt-1.5 text-[11px] text-red-400">
                     <span className="font-mono">{job.name}</span>: {job.lastRun?.message}
                 </p>
             ))}
@@ -440,7 +440,7 @@ function AccessPanel({ access, now }: { access: AideMcpAccess; now: number }) {
                                 <Fragment key="op">
                                     <Operation entry={entry} />
                                     {!entry.ok && entry.detail && (
-                                        <span className="block text-[11px] text-red-600 dark:text-red-400">
+                                        <span className="block text-[11px] text-red-400">
                                             {entry.detail}
                                         </span>
                                     )}
