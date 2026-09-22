@@ -23,12 +23,12 @@ const PERIODS: { id: AiAppPeriod; label: string; text: string }[] = [
 
 /** モデルの系統ごとの色。一覧に無いモデルは無彩色にして、色だけで区別しない（名前も必ず出す） */
 const FAMILY_DOT: Record<ModelFamily, string> = {
-    opus: "bg-[#3f4f8a] dark:bg-[#8ea2ee]",
-    sonnet: "bg-[#1f9d8f] dark:bg-[#4cc5b6]",
-    haiku: "bg-[#c39a2c] dark:bg-[#e3bd58]",
-    jev: "bg-[#c8547e] dark:bg-[#ee8fb0]",
+    opus: "bg-[#8ea2ee]",
+    sonnet: "bg-[#4cc5b6]",
+    haiku: "bg-[#e3bd58]",
+    jev: "bg-[#ee8fb0]",
 }
-const UNKNOWN_DOT = "bg-slate-400 dark:bg-slate-500"
+const UNKNOWN_DOT = "bg-slate-400"
 
 function dotClass(model: string): string {
     const info = findModel(model)
@@ -72,7 +72,7 @@ function Stat({ value, label, note }: { value: string; label: string; note?: str
         <div className="min-w-0 bg-card px-3.5 py-2.5 sm:px-4 sm:py-3">
             <p className="truncate font-mono text-lg font-bold tabular-nums sm:text-[22px]">{value}</p>
             <p className="text-[10px] text-muted-foreground sm:text-[11px]">{label}</p>
-            {note && <p className="text-[10px] text-amber-700 dark:text-amber-400">{note}</p>}
+            {note && <p className="text-[10px] text-amber-400">{note}</p>}
         </div>
     )
 }
@@ -203,7 +203,7 @@ function AppItem({
                     <span data-area="name" className="flex min-w-0 items-center gap-2">
                         <span className="w-2.5 shrink-0" aria-hidden />
                         <b className="truncate text-sm font-semibold">{app.app}</b>
-                        <span className="shrink-0 rounded-full bg-amber-100 px-2 py-px text-[10px] font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                        <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-px text-[10px] font-semibold text-amber-400">
                             取得不可
                         </span>
                     </span>

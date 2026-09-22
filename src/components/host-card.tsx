@@ -219,7 +219,7 @@ export function HostCard({
                     {latest.hostname}
                 </span>
                 {!online && (
-                    <span className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-red-600 dark:text-red-400">
+                    <span className="rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-red-400">
                         OFFLINE
                     </span>
                 )}
