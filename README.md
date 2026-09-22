@@ -755,10 +755,10 @@ op --version
 
 | ファイル | 用途 |
 | --- | --- |
-| `icon.svg` | デザインの正。角丸あり・四隅は透過。ファビコンとしてもそのまま配信する |
-| `icon-maskable.svg` | 端末側がマスクを掛ける用途の正。全面が地色で、図形は中央85%に収めてある |
+| `icon.svg` | 通常用アイコンの正。全面を濃紺で塗り、ファビコンとしてもそのまま配信する |
+| `icon-maskable.svg` | 端末側がマスクを掛ける用途の正。外周の角丸は画像に焼き込まない |
 | `icon-192.png` / `icon-512.png` | PWAの`purpose: "any"`。`icon.svg`から書き出す |
-| `icon-maskable-512.png` | Androidのアダプティブアイコン（`purpose: "maskable"`）。`icon-maskable.svg`から書き出す |
+| `icon-maskable-192.png` / `icon-maskable-512.png` | Androidのアダプティブアイコン（`purpose: "maskable"`）。`icon-maskable.svg`から書き出す |
 | `apple-touch-icon.png` | iOSのホーム画面。`icon-maskable.svg`から180pxで書き出す |
 
 デザインを変えるときは**SVGを2つとも直してから**書き出し、PNGもあわせてコミットする。
@@ -767,9 +767,9 @@ op --version
 ./scripts/generate-icons.sh   # 要 rsvg-convert（Ubuntu: librsvg2-bin）
 ```
 
-角丸の有無を用途で分けているのは、**端末側が独自にマスクを掛けるため**。角丸済みの画像を
-Androidのアダプティブアイコンに渡すと四隅が二重に削れて小さく見え、iOSに透過付きの画像を渡すと
-透過部分が黒く塗られる（#164）。
+端末側が独自にマスクを掛けるため、アイコン画像自体には外周の角丸を焼き込まない。既にホーム画面へ
+追加済みのPWAは、OSのアイコン・名称のキャッシュが残る場合があるため、StatusHubへの更新後も古い
+表示が残るときは一度削除してから再追加する。
 
 **未ログイン状態では `/icons/*` と `/manifest.webmanifest` が `/login` へリダイレクト（307）される。**
 `public/`配下の静的ファイルも`src/proxy.ts`を通り、matcherが除外しているのは`_next/static`・

@@ -27,6 +27,7 @@ echo "アイコンを書き出します:"
 render icon.svg 192 icon-192.png
 render icon.svg 512 icon-512.png
 # Android のアダプティブアイコン（purpose="maskable"）。全面が地色
+render icon-maskable.svg 192 icon-maskable-192.png
 render icon-maskable.svg 512 icon-maskable-512.png
 # iOS のホーム画面。透過部分が黒く出るため全面が地色のものを使う
 render icon-maskable.svg 180 apple-touch-icon.png

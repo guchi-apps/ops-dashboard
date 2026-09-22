@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ops-dashboard のアプリアイコン（デザインの正）。#342
+  StatusHub のアプリアイコン（デザインの正）。#342
   9タイルの監視盤。右上の緑のタイルが「いま正常に稼働している」ことを表す。
   添付された新デザインをそのまま使用する。PNGの書き出しは scripts/generate-icons.sh。
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-labelledby="title desc">
-  <title id="title">ops-dashboard app icon</title>
+  <title id="title">StatusHub app icon</title>
   <desc id="desc">A nine-tile operations grid with a larger central control tile and one green live-status tile.</desc>
   <rect width="1024" height="1024" fill="#071B38"/>
   <g fill="#398BF5">

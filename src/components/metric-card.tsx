@@ -3,23 +3,23 @@ import { cn } from "@/lib/utils"
 
 /** 使用率の色分け。概要タブとホストタブで同じ基準を使う */
 export function getUsageColor(percent: number): string {
-    if (percent >= 90) return "text-red-600 dark:text-red-400"
-    if (percent >= 75) return "text-amber-600 dark:text-amber-400"
-    return "text-emerald-600 dark:text-emerald-400"
+    if (percent >= 90) return "text-red-400"
+    if (percent >= 75) return "text-amber-400"
+    return "text-status-ok"
 }
 
 /** CPU温度の色分け。使用率（%）とは基準が違うため別に持つ */
 export function getTemperatureColor(celsius: number): string {
-    if (celsius >= 85) return "text-red-600 dark:text-red-400"
-    if (celsius >= 70) return "text-amber-600 dark:text-amber-400"
-    return "text-emerald-600 dark:text-emerald-400"
+    if (celsius >= 85) return "text-red-400"
+    if (celsius >= 70) return "text-amber-400"
+    return "text-status-ok"
 }
 
 /** 上限のない指標（Load・転送量）の色。値ごとに意味を持たせず、種類の見分けだけに使う */
 export const NEUTRAL_METRIC_COLORS = {
-    load: "text-sky-600 dark:text-sky-400",
-    network: "text-violet-600 dark:text-violet-400",
-    diskIo: "text-teal-600 dark:text-teal-400",
+    load: "text-highlight",
+    network: "text-violet-400",
+    diskIo: "text-teal-400",
 } as const
 
 interface MetricCardProps {
