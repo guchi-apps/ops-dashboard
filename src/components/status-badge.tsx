@@ -12,8 +12,8 @@ export type StatusTone = "ok" | "info" | "warn" | "danger" | "neutral"
 export const BADGE_TONES: Record<StatusTone, string> = {
     ok: "border-status-ok/30 bg-status-ok/10 text-status-ok",
     info: "border-highlight/30 bg-highlight/10 text-highlight",
-    warn: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-    danger: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+    warn: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    danger: "border-red-500/30 bg-red-500/10 text-red-300",
     neutral: "border-border bg-muted/50 text-muted-foreground",
 }
 
@@ -28,8 +28,8 @@ export const DOT_TONES: Record<StatusTone, string> = {
 export const TEXT_TONES: Record<StatusTone, string> = {
     ok: "text-status-ok",
     info: "text-highlight",
-    warn: "text-amber-600 dark:text-amber-400",
-    danger: "text-red-600 dark:text-red-400",
+    warn: "text-amber-400",
+    danger: "text-red-400",
     neutral: "text-muted-foreground",
 }
 

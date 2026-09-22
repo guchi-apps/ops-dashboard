@@ -598,7 +598,7 @@ function TmuxBreakdown({
                                 className="flex items-baseline justify-between gap-2"
                             >
                                 <span className="min-w-0 truncate font-mono">{session.name}</span>
-                                <span className="shrink-0 font-mono text-amber-600 dark:text-amber-400">
+                                <span className="shrink-0 font-mono text-amber-400">
                                     {session.inactiveSeconds !== undefined
                                         ? formatAge(session.inactiveSeconds)
                                         : "-"}
