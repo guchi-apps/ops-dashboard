@@ -235,7 +235,7 @@ function AddMonitorPanel() {
             )}
 
             {state.kind === "done" && (
-                <p className="text-sm text-emerald-600 dark:text-emerald-400">{state.message}</p>
+                <p className="text-sm text-status-ok">{state.message}</p>
             )}
             {state.kind === "error" && (
                 <p className="text-sm text-destructive">{state.message}</p>

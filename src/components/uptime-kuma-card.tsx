@@ -6,10 +6,10 @@ import { cn } from "@/lib/utils"
 import type { UptimeKumaMonitor, UptimeKumaStatus } from "@/lib/uptime-kuma"
 
 const STATUS_STYLES: Record<UptimeKumaStatus, { label: string; className: string }> = {
-    up: { label: "Up", className: "bg-emerald-500" },
+    up: { label: "Up", className: "bg-status-ok" },
     down: { label: "Down", className: "bg-red-600" },
     pending: { label: "Pending", className: "bg-orange-500" },
-    maintenance: { label: "Maintenance", className: "bg-blue-600" },
+    maintenance: { label: "Maintenance", className: "bg-primary" },
 }
 
 function StatusBadge({ status }: { status: UptimeKumaStatus }) {

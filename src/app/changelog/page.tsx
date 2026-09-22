@@ -6,7 +6,7 @@ import { SectionHeading } from "@/components/section-heading"
 import { DashboardCard } from "@/components/dashboard-card"
 
 export const metadata: Metadata = {
-    title: "更新履歴 | ops-dashboard",
+    title: "更新履歴 | StatusHub",
 }
 
 export default function ChangelogPage() {
@@ -17,7 +17,7 @@ export default function ChangelogPage() {
                     <h1 className="text-2xl font-bold shrink-0">更新履歴</h1>
                     <Link
                         href="/"
-                        className="ml-auto text-sm text-blue-600 hover:underline dark:text-blue-400"
+                        className="ml-auto text-sm text-primary hover:text-highlight hover:underline"
                     >
                         ダッシュボードに戻る
                     </Link>

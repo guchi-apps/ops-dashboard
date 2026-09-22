@@ -14,12 +14,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ops-dashboard",
+  title: "StatusHub",
   description: "VPS稼働状況・UptimeRobot・Uptime Kuma監視ダッシュボード",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "ops-dashboard",
+    title: "StatusHub",
   },
   icons: {
     // SVGを先に置く。対応ブラウザはタブの小さいサイズでも輪郭がぼやけない（#164）
@@ -38,11 +38,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  colorScheme: "light dark",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f8fafc" },
-    { media: "(prefers-color-scheme: dark)", color: "#020617" },
-  ],
+  colorScheme: "dark",
+  themeColor: "#071B38",
 };
 
 export default function RootLayout({

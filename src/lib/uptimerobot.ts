@@ -63,14 +63,14 @@ export async function fetchUptimeRobotMonitorsServer(): Promise<MonitorFeed<Upti
 export function getUptimeRobotStatusInfo(status: number): { text: string; color: string } {
     switch (status) {
         case 2:
-            return { text: "Running", color: "text-emerald-500 dark:text-emerald-400" }
+            return { text: "Running", color: "text-status-ok" }
         case 8:
         case 9:
             return { text: "Down", color: "text-red-500 dark:text-red-400" }
         case 0:
             return { text: "Paused", color: "text-yellow-500 dark:text-yellow-400" }
         case 1:
-            return { text: "Checking...", color: "text-blue-500 dark:text-blue-400" }
+            return { text: "Checking...", color: "text-primary" }
         default:
             return { text: "Unknown", color: "text-slate-400" }
     }
