@@ -29,7 +29,7 @@ export default function ChangelogPage() {
                             <SectionHeading
                                 title={`v${entry.version}`}
                                 trailing={
-                                    <span className="text-sm text-slate-500 dark:text-slate-400">
+                                    <span className="text-sm text-muted-foreground">
                                         {entry.date}
                                     </span>
                                 }
