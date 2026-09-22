@@ -10,32 +10,32 @@ import { cn } from "@/lib/utils"
 export type StatusTone = "ok" | "info" | "warn" | "danger" | "neutral"
 
 export const BADGE_TONES: Record<StatusTone, string> = {
-    ok: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-    info: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300",
-    warn: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-    danger: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+    ok: "border-status-ok/30 bg-status-ok/10 text-status-ok",
+    info: "border-highlight/30 bg-highlight/10 text-highlight",
+    warn: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    danger: "border-red-500/30 bg-red-500/10 text-red-300",
     neutral: "border-border bg-muted/50 text-muted-foreground",
 }
 
 export const DOT_TONES: Record<StatusTone, string> = {
-    ok: "bg-emerald-500",
-    info: "bg-sky-500",
+    ok: "bg-status-ok",
+    info: "bg-highlight",
     warn: "bg-amber-500",
     danger: "bg-red-500",
     neutral: "bg-muted-foreground",
 }
 
 export const TEXT_TONES: Record<StatusTone, string> = {
-    ok: "text-emerald-600 dark:text-emerald-400",
-    info: "text-sky-600 dark:text-sky-400",
-    warn: "text-amber-600 dark:text-amber-400",
-    danger: "text-red-600 dark:text-red-400",
+    ok: "text-status-ok",
+    info: "text-highlight",
+    warn: "text-amber-400",
+    danger: "text-red-400",
     neutral: "text-muted-foreground",
 }
 
 export const BORDER_TONES: Record<StatusTone, string> = {
-    ok: "border-l-emerald-500",
-    info: "border-l-sky-500",
+    ok: "border-l-status-ok",
+    info: "border-l-highlight",
     warn: "border-l-amber-500",
     danger: "border-l-red-500",
     neutral: "border-l-muted-foreground/40",

@@ -14,7 +14,6 @@ import { MonitorSections } from "@/components/monitor-sections"
 import { MonitorTiles, getMonitorStatusText } from "@/components/monitor-tiles"
 import { OnePasswordUsage } from "@/components/onepassword-usage"
 import { Panel } from "@/components/panel"
-import { StatusStrip } from "@/components/status-strip"
 import { StatusBadge, TEXT_TONES, type StatusTone } from "@/components/status-badge"
 import { SwipeTabs } from "@/components/swipe-tabs"
 import { TmuxLegend, TmuxSessionList, TmuxSessionTable } from "@/components/tmux-sessions"
@@ -22,7 +21,6 @@ import { Button } from "@/components/ui/button"
 import { AiUsageCompact, GitHubUsageCompact } from "@/components/usage-compact"
 import { UsageNotifications } from "@/components/usage-notifications"
 import { AIDE_SEVERITY_TONE } from "@/lib/aide-status-format"
-import { buildSummaryChips } from "@/lib/dashboard-summary"
 import { formatAge } from "@/lib/host-stats/format"
 import { collectTmuxSessions, summarizeTmux } from "@/lib/host-stats/tmux"
 import { cn } from "@/lib/utils"
@@ -172,7 +170,6 @@ export function DashboardShell({
         hostStats,
         aiUsage,
         githubUsage,
-        onepasswordUsage,
         uptimeKuma,
         uptimeRobot,
         aideStatus,
@@ -248,30 +245,6 @@ export function DashboardShell({
     const tmuxSummary = useMemo(() => summarizeTmux(hosts, tmuxSessions), [hosts, tmuxSessions])
     const monitorStatus = getMonitorStatusText(uptimeKuma, uptimeRobot)
 
-    const chips = useMemo(
-        () =>
-            buildSummaryChips({
-                hostStats,
-                tmuxSessions,
-                uptimeKuma,
-                uptimeRobot,
-                aiUsage,
-                githubUsage,
-                onepasswordUsage,
-                aideStatus,
-            }),
-        [
-            hostStats,
-            tmuxSessions,
-            uptimeKuma,
-            uptimeRobot,
-            aiUsage,
-            githubUsage,
-            onepasswordUsage,
-            aideStatus,
-        ]
-    )
-
     const aideHealth = aideStatus?.status === "ok" ? aideStatus.health : null
 
     const counts: Partial<Record<TabId, number>> = {
@@ -297,10 +270,10 @@ export function DashboardShell({
         <div className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-5 sm:py-4">
             <header className="mb-2.5 flex items-center gap-2 sm:gap-3">
                 <span className="h-5 w-1 shrink-0 rounded-full bg-highlight" aria-hidden />
-                <h1 className="shrink-0 text-base font-bold sm:text-lg">ops-dashboard</h1>
+                <h1 className="shrink-0 text-base font-bold sm:text-lg">StatusHub</h1>
                 <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
-                    <span className="hidden items-center gap-1.5 text-[9px] font-bold tracking-[0.16em] text-emerald-600 sm:inline-flex dark:text-emerald-400">
-                        <span className="size-1.5 rounded-full bg-emerald-500" aria-hidden />
+                    <span className="hidden items-center gap-1.5 text-[9px] font-bold tracking-[0.16em] text-status-ok sm:inline-flex">
+                        <span className="size-1.5 rounded-full bg-status-ok" aria-hidden />
                         LIVE
                     </span>
                     <RefreshControl
@@ -314,8 +287,6 @@ export function DashboardShell({
                     </HeaderMenu>
                 </div>
             </header>
-
-            <StatusStrip chips={chips} />
 
             <div
                 ref={tabListRef}
@@ -598,7 +569,7 @@ function TmuxBreakdown({
                                 className="flex items-baseline justify-between gap-2"
                             >
                                 <span className="min-w-0 truncate font-mono">{session.name}</span>
-                                <span className="shrink-0 font-mono text-amber-600 dark:text-amber-400">
+                                <span className="shrink-0 font-mono text-amber-400">
                                     {session.inactiveSeconds !== undefined
                                         ? formatAge(session.inactiveSeconds)
                                         : "-"}

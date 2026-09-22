@@ -173,8 +173,8 @@ export function TmuxSessionList({
                         <div
                             className={cn(
                                 "flex items-center gap-2 rounded-lg px-2 py-1.5 text-[11px]",
-                                session.state === "running" && "bg-emerald-500/[0.07]",
-                                session.state === "waiting" && "bg-sky-500/[0.07]",
+                                session.state === "running" && "bg-status-ok/[0.07]",
+                                session.state === "waiting" && "bg-highlight/[0.07]",
                                 // 入力待ちは薄くしない。こちらが動けば進むもので、埋もれさせたくない
                                 session.state !== "running" &&
                                     session.state !== "waiting" &&
@@ -237,8 +237,8 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                             key={sessionKey(session)}
                             className={cn(
                                 "border-t border-border",
-                                session.state === "running" && "bg-emerald-500/[0.06]",
-                                session.state === "waiting" && "bg-sky-500/[0.06]"
+                                session.state === "running" && "bg-status-ok/[0.06]",
+                                session.state === "waiting" && "bg-highlight/[0.06]"
                             )}
                         >
                             <td className="whitespace-nowrap px-2 py-2">
@@ -296,8 +296,8 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                         key={sessionKey(session)}
                         className={cn(
                             "rounded-lg border border-border bg-muted/30 p-2.5",
-                            session.state === "running" && "border-emerald-500/30 bg-emerald-500/[0.07]",
-                            session.state === "waiting" && "border-sky-500/35 bg-sky-500/[0.07]",
+                            session.state === "running" && "border-status-ok/30 bg-status-ok/[0.07]",
+                            session.state === "waiting" && "border-highlight/35 bg-highlight/[0.07]",
                             session.state === "stale" && "border-amber-500/35 bg-amber-500/[0.07]"
                         )}
                     >

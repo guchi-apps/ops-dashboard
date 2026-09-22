@@ -26,10 +26,10 @@ const KUMA_TONES: Record<UptimeKumaStatus, StatusTone> = {
 }
 
 const HEARTBEAT_COLORS: Record<UptimeKumaStatus, string> = {
-    up: "bg-emerald-500",
+    up: "bg-status-ok",
     down: "bg-red-500",
     pending: "bg-orange-500",
-    maintenance: "bg-blue-500",
+    maintenance: "bg-primary",
 }
 
 /** 概要タブでは幅が狭いため、直近の分だけ出す */

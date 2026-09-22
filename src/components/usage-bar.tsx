@@ -4,7 +4,7 @@ import type { UsageBarMarker } from "@/lib/usage-format"
 function getUsageBarColor(percent: number): string {
     if (percent >= 90) return "bg-red-400"
     if (percent >= 75) return "bg-amber-400"
-    return "bg-emerald-400"
+    return "bg-status-ok"
 }
 
 interface UsageBarProps {
@@ -57,11 +57,11 @@ function ReservedLegend() {
     return (
         <div className="flex flex-wrap gap-x-3 text-[9px] leading-relaxed text-muted-foreground sm:text-[10px]">
             <span className="inline-flex items-center gap-1">
-                <span className="size-2 rounded-[2px] bg-emerald-400" aria-hidden />
+                <span className="size-2 rounded-[2px] bg-status-ok" aria-hidden />
                 使用
             </span>
             <span className="inline-flex items-center gap-1">
-                <span className="size-2 rounded-[2px] bg-sky-400" aria-hidden />
+                <span className="size-2 rounded-[2px] bg-highlight" aria-hidden />
                 購入済み・未使用
             </span>
             <span className="inline-flex items-center gap-1">
@@ -96,7 +96,7 @@ export function UsageBar({
                 </span>
                 <span className="font-mono text-sm sm:text-base font-bold">
                     {reservedPercent !== undefined && (
-                        <span aria-hidden className="mr-1.5 inline-block size-2 rounded-[2px] bg-sky-400" />
+                        <span aria-hidden className="mr-1.5 inline-block size-2 rounded-[2px] bg-highlight" />
                     )}
                     {valueText ?? `残り ${Math.round(100 - usedPercent)}%`}
                 </span>
@@ -123,7 +123,7 @@ export function UsageBar({
                     {/* 使用済みと見分けが付くよう、色を変えたうえでカードの地色の細い線で区切る */}
                     {reservedPercent !== undefined && (
                         <div
-                            className="h-full border-l-2 border-card bg-sky-400 transition-all"
+                            className="h-full border-l-2 border-card bg-highlight transition-all"
                             style={{ width: `${reservedPercent}%` }}
                         />
                     )}

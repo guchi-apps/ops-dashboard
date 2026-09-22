@@ -12,8 +12,7 @@ Supabaseダッシュボードの Authentication → URL Configuration の Redire
 
 ## 画面の構成
 
-上部に「いま異常があるか」を示すサマリーを常時置き、その下をタブで切り替える（[issue #40](https://github.com/guchi-apps/ops-dashboard/issues/40)）。
-サマリーはタブを切り替えても消えないため、どのタブを見ていても障害・オフライン・放置セッション・残枠の逼迫に気づける。
+画面はタブで切り替える。
 
 | タブ | 内容 |
 | --- | --- |
@@ -24,8 +23,8 @@ Supabaseダッシュボードの Authentication → URL Configuration の Redire
 | 監視 | Uptime Kuma / UptimeRobot のheartbeatと応答時間 |
 
 選んだタブは端末ごとに `localStorage` へ保存する。
-データの取得は共通のプロバイダに一本化しており（ホスト30秒・監視60秒・AI/GitHub/1Password 5分）、サマリーが全ソースを横断して集計できるようにしている。
-狭い画面ではサマリーとタブが横スクロールになり、tmuxの一覧は表からカードに切り替わる。
+データの取得は共通のプロバイダに一本化している（ホスト30秒・監視60秒・AI/GitHub/1Password 5分）。
+狭い画面ではタブが横スクロールになり、tmuxの一覧は表からカードに切り替わる。
 
 ヘッダーの更新ボタンを押すと、この自動取得を待たずにホスト・AI・GitHub・1Password・監視をまとめて取り直す（[issue #29](https://github.com/guchi-apps/ops-dashboard/issues/29)）。
 AI・GitHub・1Passwordはサーバー側にもキャッシュ（既定5分）があるため、このボタンからの取得だけ `?force=1` を付けてキャッシュを飛ばし、提供元へ取りにいく。
@@ -756,10 +755,10 @@ op --version
 
 | ファイル | 用途 |
 | --- | --- |
-| `icon.svg` | デザインの正。角丸あり・四隅は透過。ファビコンとしてもそのまま配信する |
-| `icon-maskable.svg` | 端末側がマスクを掛ける用途の正。全面が地色で、図形は中央85%に収めてある |
+| `icon.svg` | 通常用アイコンの正。全面を濃紺で塗り、ファビコンとしてもそのまま配信する |
+| `icon-maskable.svg` | 端末側がマスクを掛ける用途の正。外周の角丸は画像に焼き込まない |
 | `icon-192.png` / `icon-512.png` | PWAの`purpose: "any"`。`icon.svg`から書き出す |
-| `icon-maskable-512.png` | Androidのアダプティブアイコン（`purpose: "maskable"`）。`icon-maskable.svg`から書き出す |
+| `icon-maskable-192.png` / `icon-maskable-512.png` | Androidのアダプティブアイコン（`purpose: "maskable"`）。`icon-maskable.svg`から書き出す |
 | `apple-touch-icon.png` | iOSのホーム画面。`icon-maskable.svg`から180pxで書き出す |
 
 デザインを変えるときは**SVGを2つとも直してから**書き出し、PNGもあわせてコミットする。
@@ -768,9 +767,9 @@ op --version
 ./scripts/generate-icons.sh   # 要 rsvg-convert（Ubuntu: librsvg2-bin）
 ```
 
-角丸の有無を用途で分けているのは、**端末側が独自にマスクを掛けるため**。角丸済みの画像を
-Androidのアダプティブアイコンに渡すと四隅が二重に削れて小さく見え、iOSに透過付きの画像を渡すと
-透過部分が黒く塗られる（#164）。
+端末側が独自にマスクを掛けるため、アイコン画像自体には外周の角丸を焼き込まない。既にホーム画面へ
+追加済みのPWAは、OSのアイコン・名称のキャッシュが残る場合があるため、StatusHubへの更新後も古い
+表示が残るときは一度削除してから再追加する。
 
 **未ログイン状態では `/icons/*` と `/manifest.webmanifest` が `/login` へリダイレクト（307）される。**
 `public/`配下の静的ファイルも`src/proxy.ts`を通り、matcherが除外しているのは`_next/static`・

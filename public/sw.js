@@ -22,7 +22,7 @@ self.addEventListener("push", (event) => {
     }
 
     event.waitUntil(
-        self.registration.showNotification(data.title || "ops-dashboard", {
+        self.registration.showNotification(data.title || "StatusHub", {
             body: data.body || "",
             tag: data.tag,
             // 同じ枠の通知（90% → 100%）は置き換えるが、置き換えたときも知らせる

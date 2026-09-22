@@ -236,7 +236,7 @@ export function ClaudeCreditLedger({ ledger }: { ledger: ClaudeCreditLedgerView 
                     )}
 
                     {state.kind === "done" && (
-                        <p className="text-xs text-emerald-600 dark:text-emerald-400">{state.message}</p>
+                        <p className="text-xs text-status-ok">{state.message}</p>
                     )}
                     {state.kind === "error" && <p className="text-xs text-destructive">{state.message}</p>}
                 </div>
