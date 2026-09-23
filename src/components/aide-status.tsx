@@ -39,9 +39,10 @@ const METHOD_LABELS: Record<string, string> = {
 
 /**
  * 数が多く、ツールの呼び出しを押し流すメソッド。既定では畳む。
- * AIDE側の `isQuietMethod`（src/mcp/access-log.ts）と同じ判定
+ * AIDE側の `isQuietMethod`（src/mcp/access-log.ts）に `initialize` を足したもの。接続開始は
+ * クライアントが数分おきに繰り返すため、畳まないと一覧を埋めてツール名が見えなくなる（#394）
  */
-const QUIET_METHODS = new Set(["ping", "tools/list", "resources/list", "prompts/list"])
+const QUIET_METHODS = new Set(["initialize", "ping", "tools/list", "resources/list", "prompts/list"])
 
 function isQuietMethod(method: string): boolean {
     return QUIET_METHODS.has(method) || method.startsWith("notifications/")
@@ -468,11 +469,11 @@ function AccessPanel({ access, now }: { access: AideMcpAccess; now: number }) {
                         onChange={(event) => setShowQuiet(event.target.checked)}
                         className="accent-primary"
                     />
-                    接続確認・一覧の取得も表示する
+                    接続開始・接続確認・一覧の取得も表示する
                 </label>
                 {entries.length === 0 ? (
                     <p className="text-[11px] text-muted-foreground">
-                        直近の記録は接続確認だけです。上のチェックを入れると表示します。
+                        直近の記録は接続開始・接続確認などだけで、ツールは呼ばれていません。上のチェックを入れると表示します。
                     </p>
                 ) : (
                     <>
