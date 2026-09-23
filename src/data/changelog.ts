@@ -14,6 +14,19 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.35.0",
+        date: "2026-09-23",
+        changes: [
+            "「AI・GitHub・1Password」タブの「アプリ別のAI利用」で、Claude Opus 5.5の利用実績が正しいモデル名と金額で表示されるようになりました。概要タブのホストカードは、CPU・メモリ・ディスクの3項目を横一列で見やすく表示するようになりました。",
+        ],
+        usage: [
+            "ヘッダーのタブから「AI・GitHub・1Password」を開く",
+            "「アプリ別のAI利用」の一覧で、Opus 5.5を使ったアプリの行に「Opus 5.5」という名称と金額が表示されていれば成功",
+            "ヘッダーのタブから「概要」を開く",
+            "各ホストのカードでCPU・メモリ・ディスクの3つの指標が横一列に並んでいれば成功",
+        ],
+    },
+    {
         version: "0.34.5",
         date: "2026-09-22",
         changes: [
