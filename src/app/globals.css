@@ -122,6 +122,25 @@
   html {
     @apply font-sans;
   }
+  /* iOS 27のPWAが自動で付けるプログレッシブブラーの発生自体を止めるダミー要素（#361）。
+     WebKitは画面上端に固定ヘッダーがあるかを、実際の描画結果ではなくCSSのスタイル設定
+     （position: fixed・10pxを超える高さ）だけで判定し、無いと判断した場合にだけステータスバー
+     周辺へこのブラーを自動で付ける（https://qiita.com/na-trium-144/items/0add98a80ca2391e3f17）。
+     opacity: 0 / visibility: hidden / display: none はこの判定から外れて無効なため、
+     background-clip: text で「有効な背景を持つ固定要素として認識されるが、テキストが
+     無いため何も描画されない」要素にする。layout.tsx の <body> 直下に実DOM要素として置く。 */
+  .ios-status-bar-blur-fix {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 11px;
+    z-index: 2147483647;
+    pointer-events: none;
+    background-color: var(--background);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
 }
 
 /*

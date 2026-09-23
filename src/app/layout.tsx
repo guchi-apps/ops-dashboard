@@ -50,6 +50,9 @@ export default function RootLayout({
   return (
     <html lang="ja" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
       <body className="min-h-screen flex flex-col">
+        {/* iOS 27のPWAが自動で付けるブラーを止めるダミー要素（globals.css参照・#361）。
+            何も描画しないため位置は先頭でなくてよいが、他の要素より前にしておく。 */}
+        <div aria-hidden="true" className="ios-status-bar-blur-fix" />
         {children}
         <AppFooter />
       </body>
