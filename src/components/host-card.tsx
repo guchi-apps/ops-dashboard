@@ -1,16 +1,13 @@
 "use client"
 
-import { NEUTRAL_METRIC_COLORS, getTemperatureColor, getUsageColor } from "@/components/metric-card"
+import { getUsageColor } from "@/components/metric-card"
 import { Sparkline } from "@/components/sparkline"
 import { StatusBadge, StatusDot, type StatusTone } from "@/components/status-badge"
-import { formatAge, formatBytes, formatRateShort, formatUptime } from "@/lib/host-stats/format"
-import { pickSeries, sumSeries } from "@/lib/host-stats/history"
+import { formatAge, formatBytes, formatUptime } from "@/lib/host-stats/format"
+import { pickSeries } from "@/lib/host-stats/history"
 import { describeTimer, evaluateTimers, type TimerState, type TimerStatus } from "@/lib/host-stats/timers"
 import { cn } from "@/lib/utils"
 import type { HostStatsHostView } from "@/types/host-stats"
-
-/** 温度グラフの縦軸の最小の幅（℃）。変動が小さいときに波形が暴れて見えないようにする */
-const MIN_TEMPERATURE_SPAN = 10
 
 function formatRate(bytesPerSecond: number): string {
     return `${formatBytes(bytesPerSecond)}/s`
@@ -153,14 +150,6 @@ export function HostCard({
         disk.usedPercent > worst.usedPercent ? disk : worst
     )
 
-    const temperatures = pickSeries(history, "temp")
-    const temperatureMin = temperatures.length > 0 ? Math.min(...temperatures) : 0
-    const temperatureMax = temperatures.length > 0 ? Math.max(...temperatures) : 0
-    const temperatureSpan = Math.max(MIN_TEMPERATURE_SPAN, temperatureMax - temperatureMin)
-
-    const loads = pickSeries(history, "load")
-    const networkSeries = sumSeries(pickSeries(history, "rx"), pickSeries(history, "tx"))
-
     const facts = [
         { label: "LOAD", value: latest.loadAverage.map((value) => value.toFixed(2)).join(" / ") },
         latest.swap && latest.swap.totalBytes > 0
@@ -228,7 +217,7 @@ export function HostCard({
                 </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="grid grid-cols-3 gap-2">
                 <MiniMetric
                     label="CPU"
                     value={`${latest.cpuPercent}%`}
@@ -253,39 +242,6 @@ export function HostCard({
                     chartLabel={`ディスク使用率の${suffix}`}
                     detail={`${formatBytes(worstDisk.usedBytes)} / ${formatBytes(worstDisk.totalBytes)}（${worstDisk.path}）`}
                 />
-                {latest.temperatureCelsius !== undefined ? (
-                    <MiniMetric
-                        label="Temp"
-                        value={`${latest.temperatureCelsius}°C`}
-                        valueClassName={getTemperatureColor(latest.temperatureCelsius)}
-                        values={temperatures}
-                        min={temperatureMin}
-                        max={temperatureMin + temperatureSpan}
-                        chartLabel={`CPU温度の${suffix}`}
-                        detail="CPU温度"
-                    />
-                ) : latest.network ? (
-                    <MiniMetric
-                        label="Network"
-                        value={`↓${formatRateShort(latest.network.inBytesPerSecond)}`}
-                        valueClassName={NEUTRAL_METRIC_COLORS.network}
-                        values={networkSeries}
-                        max={Math.max(...networkSeries, 1)}
-                        chartLabel={`ネットワーク転送量の${suffix}`}
-                        detail={`↑ ${formatRate(latest.network.outBytesPerSecond)}`}
-
-                    />
-                ) : (
-                    <MiniMetric
-                        label="Load"
-                        value={latest.loadAverage[0].toFixed(2)}
-                        valueClassName={NEUTRAL_METRIC_COLORS.load}
-                        values={loads}
-                        max={Math.max(...loads, 1)}
-                        chartLabel={`Load Averageの${suffix}`}
-                        detail="1分平均"
-                    />
-                )}
             </div>
 
             <SecondaryFacts facts={facts} />
