@@ -133,6 +133,25 @@ sudo su github-user -s /bin/bash -c 'pm2 describe ops-dashboard | grep -E "resta
   早まるだけ）、再起動ループの前例がある。反映後のピークは稼働4時間時点の値でしかなく、反映前は13時間で
   246.6MBまで伸びていた。下げるなら、同じ稼働時間どうしで比べたピークを取ってから
 
+## iOS 27のPWAが自動で付けるヘッダーのぼかし
+
+iOS 27のホーム画面Webアプリは、画面上端に「有効な固定ヘッダー」（CSSの`position: fixed`かつ
+高さ10pxを超える要素）が無いと判定すると、**実際の描画結果とは無関係にその判定だけで**
+半透明のプログレッシブブラーをステータスバー周辺へ自動で付ける
+（https://qiita.com/na-trium-144/items/0add98a80ca2391e3f17 。#361。KurashioやDaySpanでも同じ
+症状を確認）。以前の#347の調査で`backdrop-filter`・`blur`・`position: fixed`のいずれもこの
+リポジトリに存在しないと確認していたのは事実だが、それ自体が「固定ヘッダー無し」と判定されて
+ブラーが出る条件だったと分かった。**別のエンドポイントやコード上の原因を探さないこと。**
+
+- `opacity: 0` / `visibility: hidden` / `display: none` はこの判定から外れて無効。
+  `background-clip: text` で「有効な背景を持つ固定要素として認識されるが、テキストが無いため
+  何も描画されない」ダミー要素（`.ios-status-bar-blur-fix`。`globals.css` の`@layer base`・
+  `layout.tsx` の`<body>`直下）を実DOM要素として置き、判定条件だけを満たしてブラーの発生自体を止める
+- DaySpanは先に色ずれ（`theme-color`・manifestの`theme_color`・ヘッダー色が不一致）が原因の
+  ブラーの中の色混ざりを別途修正していたが、StatusHubは背景色・`theme-color`・manifestの
+  `theme_color`が元からライト/ダーク共通の同一色（`#071B38`）で揃っているため、この対応は不要
+- この判定はAppleの非公式な内部挙動のため、iOSの将来のバージョンで条件が変わりうる
+
 ## 監視（Kuma・UptimeRobot）の取得失敗
 
 `fetchUptimeKumaDashboardMonitors` / `fetchUptimeRobotMonitorsServer` は `MonitorFeed`
