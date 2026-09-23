@@ -703,8 +703,8 @@ export function AideStatusView({ snapshot, now }: { snapshot: AideStatusSnapshot
                 {health && (
                     <>
                         <OverviewPanel health={health} />
-                        <JobsPanel jobs={health.jobs} />
                         <ServerPanel health={health} />
+                        <JobsPanel jobs={health.jobs} />
                         <AccessPanel access={health.mcpAccess} now={now} />
                         <McpPanel health={health} tools={snapshot.tools} />
                         <CachePanel cache={health.cache} />
