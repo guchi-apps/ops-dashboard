@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { useDashboardData } from "@/components/dashboard-data"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
@@ -15,7 +16,7 @@ import type { GitHubActionsUsage, GitHubRateLimit } from "@/types/github-usage"
 /** レート制限の枠の長さ（1時間）。経過位置の目印を出すのに使う */
 const RATE_LIMIT_WINDOW_MS = 3_600_000
 
-/** 内訳を並べるリポジトリ数の上限。これを超えた分はまとめて件数だけ出す */
+/** 内訳を並べるリポジトリ数の初期表示件数。これを超えた分は「他N件」ボタンを押すと開く */
 const MAX_LISTED_REPOSITORIES = 6
 
 function formatNumber(value: number): string {
@@ -49,8 +50,11 @@ function CardFooter({ rows }: { rows: { label: string; value: string }[] }) {
 }
 
 function RepositoryBreakdown({ actions }: { actions: GitHubActionsUsage }) {
-    const listed = actions.repositories.slice(0, MAX_LISTED_REPOSITORIES)
-    const hiddenCount = actions.repositories.length - listed.length
+    const [expanded, setExpanded] = useState(false)
+    const listed = expanded ? actions.repositories : actions.repositories.slice(0, MAX_LISTED_REPOSITORIES)
+    const hiddenCount = actions.repositories.length - Math.min(actions.repositories.length, MAX_LISTED_REPOSITORIES)
+    // repositories は実行時間の多い順（src/lib/github-usage.ts）なので先頭が最大値
+    const largestMinutes = actions.repositories[0]?.minutes ?? 0
 
     return (
         <div className="space-y-1.5">
@@ -70,10 +74,10 @@ function RepositoryBreakdown({ actions }: { actions: GitHubActionsUsage }) {
                     <p className="text-[10px] sm:text-xs text-muted-foreground">
                         公開リポジトリのActionsは無制限に無料。無料枠を消費するのは非公開だった期間の分だけ
                     </p>
-                    <ul className="space-y-0.5 text-[10px] sm:text-xs">
+                    <ul className="space-y-1 text-[10px] sm:text-xs">
                         {listed.map((repo) => (
-                            <li key={repo.name} className="flex items-baseline justify-between gap-2">
-                                <span className="min-w-0 truncate">
+                            <li key={repo.name} className="flex items-center gap-2">
+                                <span className="min-w-0 flex-1 truncate">
                                     {repo.name}
                                     {!repo.isPrivate && (
                                         <span className="ml-1 opacity-70">
@@ -83,13 +87,29 @@ function RepositoryBreakdown({ actions }: { actions: GitHubActionsUsage }) {
                                         </span>
                                     )}
                                 </span>
-                                <span className="shrink-0 font-mono">{formatNumber(repo.minutes)}分</span>
+                                <span className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-muted sm:w-16">
+                                    <span
+                                        className="block h-full min-w-0.5 rounded-full bg-status-ok"
+                                        style={{
+                                            width: `${largestMinutes > 0 ? (repo.minutes / largestMinutes) * 100 : 0}%`,
+                                        }}
+                                    />
+                                </span>
+                                <span className="w-9 shrink-0 text-right font-mono sm:w-10">
+                                    {formatNumber(repo.minutes)}分
+                                </span>
                             </li>
                         ))}
-                        {hiddenCount > 0 && (
-                            <li className="opacity-70">他 {hiddenCount} リポジトリ</li>
-                        )}
                     </ul>
+                    {hiddenCount > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => setExpanded((value) => !value)}
+                            className="rounded-full border border-border px-3 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+                        >
+                            {expanded ? "閉じる" : `他 ${hiddenCount} リポジトリを表示`}
+                        </button>
+                    )}
                 </>
             )}
         </div>
