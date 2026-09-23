@@ -14,6 +14,17 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.37.1",
+        date: "2026-09-23",
+        changes: [
+            "AIDEタブ内の表示順序を調整し、サーバー情報が定期ジョブの情報より先に表示されるようにしました。",
+        ],
+        usage: [
+            "ダッシュボードでAIDEタブを開く",
+            "タブ内で「サーバー」の項目が「定期ジョブ」の項目より上に表示されていれば反映されています",
+        ],
+    },
+    {
         version: "0.37.0",
         date: "2026-09-23",
         changes: [
