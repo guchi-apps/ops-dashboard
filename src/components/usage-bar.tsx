@@ -94,7 +94,7 @@ export function UsageBar({
                     {label}
                     {note && <span className="ml-1 text-[10px] sm:text-xs opacity-70">{note}</span>}
                 </span>
-                <span className="font-mono text-sm sm:text-base font-bold">
+                <span className="whitespace-nowrap font-mono text-sm sm:text-base font-bold">
                     {reservedPercent !== undefined && (
                         <span aria-hidden className="mr-1.5 inline-block size-2 rounded-[2px] bg-highlight" />
                     )}
@@ -159,11 +159,13 @@ export function UsageBar({
             {reservedPercent !== undefined && <ReservedLegend />}
 
             <div className="flex flex-wrap items-center justify-between gap-x-2 text-[10px] sm:text-xs text-muted-foreground">
-                <span>
-                    {usedText ?? `使用 ${usedPercent}%`}
-                    {elapsedPercent !== null && <span className="ml-1.5">経過 {elapsedPercent}%</span>}
+                <span className="flex flex-wrap items-baseline gap-x-1.5">
+                    <span className="whitespace-nowrap">{usedText ?? `使用 ${usedPercent}%`}</span>
+                    {elapsedPercent !== null && (
+                        <span className="whitespace-nowrap">経過 {elapsedPercent}%</span>
+                    )}
                 </span>
-                {remainingText && <span>{remainingText}</span>}
+                {remainingText && <span className="whitespace-nowrap">{remainingText}</span>}
             </div>
         </div>
     )

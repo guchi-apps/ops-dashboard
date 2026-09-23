@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { Lock } from "lucide-react"
 import { useDashboardData } from "@/components/dashboard-data"
 import { DashboardCard } from "@/components/dashboard-card"
 import { SectionHeading } from "@/components/section-heading"
@@ -36,6 +37,26 @@ function CardHeader({ title, badge }: { title: string; badge?: string }) {
     )
 }
 
+/** 緑＝上の「無料枠」バーと同じ、無料枠を消費した分。控えめな色＝公開リポジトリの分（カウントしない） */
+function RepositoryLegend() {
+    return (
+        <div className="flex flex-wrap gap-x-3 text-[9px] leading-relaxed text-muted-foreground sm:text-[10px]">
+            <span className="inline-flex items-center gap-1">
+                <span className="size-2 rounded-[2px] bg-status-ok" aria-hidden />
+                無料枠
+            </span>
+            <span className="inline-flex items-center gap-1">
+                <span className="size-2 rounded-[2px] bg-border" aria-hidden />
+                公開リポジトリはカウントしない
+            </span>
+            <span className="inline-flex items-center gap-1">
+                <Lock className="size-2.5" aria-hidden />
+                非公開
+            </span>
+        </div>
+    )
+}
+
 function CardFooter({ rows }: { rows: { label: string; value: string }[] }) {
     return (
         <div className="mt-auto space-y-0.5 border-t border-border pt-2 text-[10px] sm:text-xs text-muted-foreground">
@@ -60,7 +81,7 @@ function RepositoryBreakdown({ actions }: { actions: GitHubActionsUsage }) {
         <div className="space-y-1.5">
             <div className="flex items-baseline justify-between gap-2">
                 <span className="text-xs sm:text-sm font-medium">今月の実行時間</span>
-                <span className="font-mono text-sm sm:text-base font-bold">
+                <span className="whitespace-nowrap font-mono text-sm sm:text-base font-bold">
                     {formatNumber(actions.totalMinutes)}分
                 </span>
             </div>
@@ -74,28 +95,38 @@ function RepositoryBreakdown({ actions }: { actions: GitHubActionsUsage }) {
                     <p className="text-[10px] sm:text-xs text-muted-foreground">
                         公開リポジトリのActionsは無制限に無料。無料枠を消費するのは非公開だった期間の分だけ
                     </p>
+                    <RepositoryLegend />
                     <ul className="space-y-1 text-[10px] sm:text-xs">
                         {listed.map((repo) => (
                             <li key={repo.name} className="flex items-center gap-2">
-                                <span className="min-w-0 flex-1 truncate">
-                                    {repo.name}
-                                    {!repo.isPrivate && (
-                                        <span className="ml-1 opacity-70">
-                                            {repo.allowanceMinutes > 0
-                                                ? `公開（無料枠 ${formatNumber(repo.allowanceMinutes)}分）`
-                                                : "公開"}
-                                        </span>
+                                <span
+                                    className="inline-flex min-w-0 flex-1 items-center gap-1 truncate"
+                                    aria-label={repo.isPrivate ? `${repo.name}（非公開）` : repo.name}
+                                >
+                                    {repo.isPrivate && (
+                                        <Lock className="size-3 shrink-0 text-muted-foreground" aria-hidden />
                                     )}
+                                    <span className="truncate">{repo.name}</span>
                                 </span>
-                                <span className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-muted sm:w-16">
+                                <span className="flex h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-muted sm:w-16">
                                     <span
-                                        className="block h-full min-w-0.5 rounded-full bg-status-ok"
+                                        className="block h-full bg-status-ok"
                                         style={{
-                                            width: `${largestMinutes > 0 ? (repo.minutes / largestMinutes) * 100 : 0}%`,
+                                            width: `${largestMinutes > 0 ? (repo.allowanceMinutes / largestMinutes) * 100 : 0}%`,
+                                        }}
+                                    />
+                                    <span
+                                        className="block h-full bg-border"
+                                        style={{
+                                            width: `${
+                                                largestMinutes > 0
+                                                    ? ((repo.minutes - repo.allowanceMinutes) / largestMinutes) * 100
+                                                    : 0
+                                            }%`,
                                         }}
                                     />
                                 </span>
-                                <span className="w-9 shrink-0 text-right font-mono sm:w-10">
+                                <span className="w-14 shrink-0 whitespace-nowrap text-right font-mono sm:w-16">
                                     {formatNumber(repo.minutes)}分
                                 </span>
                             </li>

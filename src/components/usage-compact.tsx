@@ -152,7 +152,7 @@ export function GitHubUsageCompact({
                     {listed.map((repository) => (
                         <li key={repository.name} className="flex items-baseline justify-between gap-2">
                             <span className="min-w-0 truncate">{repository.name}</span>
-                            <span className="shrink-0 font-mono">
+                            <span className="shrink-0 whitespace-nowrap font-mono">
                                 {repository.minutes.toLocaleString("ja-JP")}分
                             </span>
                         </li>
