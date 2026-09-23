@@ -72,16 +72,17 @@ WSL2はNAT構成のため、Windowsホスト側でWSLへのポートフォワー
 
 ## ホスト（VPS・サブPC）のステータス表示
 
-VPSと自宅LAN内のサブPCについて、CPU・メモリ・ディスク等の現在値と直近24時間の推移をホストごとに表示する（[issue #34](https://github.com/m-guchi/ops-dashboard/issues/34)）。
+VPSと自宅LAN内のホスト（サブPC・Mac mini等）について、CPU・メモリ・ディスク等の現在値と直近24時間の推移をホストごとに表示する（[issue #34](https://github.com/m-guchi/ops-dashboard/issues/34)）。
 
-収集は**すべて push 型に一本化**している。サブPCは自宅LAN内（NAT配下）にいてVPSからポーリングできないため、ホスト側から定期的にPOSTしてもらう必要があり、VPSだけ別方式にすると同じ表示を二重に実装することになるためである。
+収集は**すべて push 型に一本化**している。自宅LAN内のホストはNAT配下にいてVPSからポーリングできないため、ホスト側から定期的にPOSTしてもらう必要があり、VPSだけ別方式にすると同じ表示を二重に実装することになるためである。
 VPS上ではダッシュボード自身が同じマシンで動いているので、送信先は `http://localhost:3110`（外部を経由しない）。
 
 ```
-各ホスト（VPS・サブPC）                        ダッシュボード（admin.gucchii.com）
-  systemd timer（1分ごと）
-    └─ scripts/host-stats/agent.sh
-         /proc・df・systemctl・tmux から収集
+各ホスト（VPS・サブPC・Mac mini等）             ダッシュボード（admin.gucchii.com）
+  systemd timer（Linux）/ launchd（macOS）
+    └─ scripts/host-stats/agent.sh（Linux）
+       scripts/host-stats/agent-macos.sh（macOS）
+         /proc・df・systemctl・tmux（Linux） / sysctl・vm_stat・df（macOS）から収集
          → POST /api/host-stats（Bearer HOST_STATS_TOKEN）
                                                  └─ .data/host-stats/<識別子>/latest.json
                                                     .data/host-stats/<識別子>/history.jsonl
@@ -278,6 +279,59 @@ systemctl status ops-dashboard-host-stats.service
 
 `/etc/ops-dashboard-host-stats.env` は各ホストで新規に作るファイルで、Gitでもデプロイでも管理していない。
 アプリ本体の `.env`（デプロイのたびに書き換わり、全シークレットを含む）とは意図的に分けている。
+
+### macOS（Mac mini）への設置
+
+macOSには `/proc`・`systemctl`・`/sys/class/*` が無く、`agent.sh` はそのままでは動かない。macOS向けには
+`scripts/host-stats/agent-macos.sh` を使う。送信先のペイロード形式（`HostStatsReport`）は共通のため、
+ダッシュボード側の実装・カードの表示は変更していない。
+
+| 項目 | agent.sh（Linux） | agent-macos.sh（macOS） |
+| --- | --- | --- |
+| CPU使用率 | `/proc/stat` | `top -l 2 -n 0`（2回サンプリングし、信頼できる2回目の値を使う） |
+| メモリ使用率 | `/proc/meminfo` | `vm_stat` + `sysctl hw.memsize`（Activity Monitorの「使用中のメモリ」に合わせ、アクティブ+Wired+圧縮の合計） |
+| Swap使用率 | `/proc/meminfo` | `sysctl vm.swapusage`。使っていなければ送らない |
+| ディスク使用率 | `df -B1 -P` | `df -k` |
+| Load Average | `/proc/loadavg` | `sysctl vm.loadavg` |
+| 稼働時間 | `/proc/uptime` | `sysctl kern.boottime` と現在時刻の差 |
+| ログイン中のセッション | `who` | `who`（共通） |
+
+**温度・サービス死活・定期ジョブ・アプリ別リソース・tmuxセッションはmacOS版では送らない。** いずれもペイロード上は
+任意項目で、送らなければそのホストにはその項目・カードが出ないだけで受信自体は失敗しない（「表示する項目」参照）。
+必要になれば別途対応する。
+
+設置はVPS・サブPCと同じ3ファイル構成だが、systemd の代わりに launchd を使う。
+
+```bash
+SRC=<agent-macos.sh・host-stats.macmini.env.example・plistを置いた場所>
+
+# 1. エージェントを配置する
+sudo mkdir -p /opt/ops-dashboard-host-stats
+sudo cp "$SRC/agent-macos.sh" /opt/ops-dashboard-host-stats/
+sudo chmod 755 /opt/ops-dashboard-host-stats/agent-macos.sh
+
+# 2. 設定ファイルを新規に作る（トークンを含むため 600 / root 所有にする）
+sudo cp "$SRC/host-stats.macmini.env.example" /etc/ops-dashboard-host-stats.env
+sudo chmod 600 /etc/ops-dashboard-host-stats.env
+# エディタを開く行なので、ここまでをまとめて貼り付けないこと
+sudo vi /etc/ops-dashboard-host-stats.env   # HOST_STATS_TOKEN を記入（他の項目は雛形のままでよい）
+
+# 3. 送信されるJSONを確認する（送信はしない）
+sudo bash -c 'set -a; . /etc/ops-dashboard-host-stats.env; set +a; /opt/ops-dashboard-host-stats/agent-macos.sh --print'
+
+# 4. launchdへ登録する（起動直後に1回、以降は60秒ごと）
+sudo cp "$SRC/com.gucchii.ops-dashboard-host-stats.plist" /Library/LaunchDaemons/
+sudo launchctl load -w /Library/LaunchDaemons/com.gucchii.ops-dashboard-host-stats.plist
+
+# 5. ログを確認する（エラーはここに出る。journalctlに相当するものが無いためファイルへ出している）
+tail -f /var/log/ops-dashboard-host-stats.log
+```
+
+`HOST_STATS_TOKEN` はVPS・サブPCと共通の値（1Passwordの `apps/ops-dashboard/host-stats-token`）を使う。
+ホストが増えてもトークンは共通で、`HOST_STATS_ID` によって保存先だけが分かれる。
+
+設定を配り直すときは、`launchctl unload` してから1〜4をやり直す
+（`launchctl load` は多重登録を防がないため、登録済みのまま重ねて `load` しない）。
 
 ### 監視するサービスの選び方
 
