@@ -267,65 +267,69 @@ export function DashboardShell({
     // 全体の高さは body 側の min-h-screen に任せる。
     // ここでも画面高を確保すると、フッターの分だけ必ずスクロールが出てしまう
     return (
-        <div className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-5 sm:py-4">
-            <header className="mb-2.5 flex items-center gap-2 sm:gap-3">
-                <span className="h-5 w-1 shrink-0 rounded-full bg-highlight" aria-hidden />
-                <h1 className="shrink-0 text-base font-bold sm:text-lg">StatusHub</h1>
-                <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
-                    <span className="hidden items-center gap-1.5 text-[9px] font-bold tracking-[0.16em] text-status-ok sm:inline-flex">
-                        <span className="size-1.5 rounded-full bg-status-ok" aria-hidden />
-                        LIVE
-                    </span>
-                    <RefreshControl
-                        updatedAt={updatedAt}
-                        state={refreshState}
-                        cooldownSeconds={refreshCooldownSeconds}
-                        onRefresh={refresh}
-                    />
-                    <HeaderMenu userEmail={userEmail}>
-                        <UsageNotifications />
-                    </HeaderMenu>
-                </div>
-            </header>
+        <div className="mx-auto w-full max-w-[1600px] px-3 pb-3 sm:px-5 sm:pb-4">
+            {/* ヘッダーとタブ帯をまとめて画面上部に固定する（#382）。z-indexはHeaderMenuの
+                ドロップダウン（z-50）より低くし、重なり順を崩さない */}
+            <div className="sticky top-0 z-30 -mx-3 bg-background px-3 pt-3 sm:-mx-5 sm:px-5 sm:pt-4">
+                <header className="mb-2.5 flex items-center gap-2 sm:gap-3">
+                    <span className="h-5 w-1 shrink-0 rounded-full bg-highlight" aria-hidden />
+                    <h1 className="shrink-0 text-base font-bold sm:text-lg">StatusHub</h1>
+                    <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
+                        <span className="hidden items-center gap-1.5 text-[9px] font-bold tracking-[0.16em] text-status-ok sm:inline-flex">
+                            <span className="size-1.5 rounded-full bg-status-ok" aria-hidden />
+                            LIVE
+                        </span>
+                        <RefreshControl
+                            updatedAt={updatedAt}
+                            state={refreshState}
+                            cooldownSeconds={refreshCooldownSeconds}
+                            onRefresh={refresh}
+                        />
+                        <HeaderMenu userEmail={userEmail}>
+                            <UsageNotifications />
+                        </HeaderMenu>
+                    </div>
+                </header>
 
-            <div
-                ref={tabListRef}
-                role="tablist"
-                aria-label="表示の切り替え"
-                className="-mx-3 mb-2.5 mt-1.5 flex gap-1 overflow-x-auto border-b border-border px-3 sm:mx-0 sm:px-0"
-            >
-                {tabIds.map((tab) => (
-                    <button
-                        key={tab}
-                        type="button"
-                        role="tab"
-                        data-tab-id={tab}
-                        aria-selected={activeTab === tab}
-                        onClick={() => storeActiveTab(tab)}
-                        className={cn(
-                            "shrink-0 border-b-2 px-3 py-1.5 text-[13px] transition-colors",
-                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            activeTab === tab
-                                ? "border-highlight font-bold text-foreground"
-                                : "border-transparent text-muted-foreground hover:text-foreground"
-                        )}
-                    >
-                        <span className="sm:hidden">{TAB_SHORT_LABELS[tab] ?? TAB_LABELS[tab]}</span>
-                        <span className="hidden sm:inline">{TAB_LABELS[tab]}</span>
-                        {counts[tab] !== undefined && counts[tab]! > 0 && (
-                            <span
-                                className={cn(
-                                    "ml-1.5 text-[10px]",
-                                    countTones[tab]
-                                        ? cn("font-bold", TEXT_TONES[countTones[tab]!])
-                                        : "text-muted-foreground"
-                                )}
-                            >
-                                {counts[tab]}
-                            </span>
-                        )}
-                    </button>
-                ))}
+                <div
+                    ref={tabListRef}
+                    role="tablist"
+                    aria-label="表示の切り替え"
+                    className="-mx-3 mb-2.5 mt-1.5 flex gap-1 overflow-x-auto border-b border-border px-3 sm:mx-0 sm:px-0"
+                >
+                    {tabIds.map((tab) => (
+                        <button
+                            key={tab}
+                            type="button"
+                            role="tab"
+                            data-tab-id={tab}
+                            aria-selected={activeTab === tab}
+                            onClick={() => storeActiveTab(tab)}
+                            className={cn(
+                                "shrink-0 border-b-2 px-3 py-1.5 text-[13px] transition-colors",
+                                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                                activeTab === tab
+                                    ? "border-highlight font-bold text-foreground"
+                                    : "border-transparent text-muted-foreground hover:text-foreground"
+                            )}
+                        >
+                            <span className="sm:hidden">{TAB_SHORT_LABELS[tab] ?? TAB_LABELS[tab]}</span>
+                            <span className="hidden sm:inline">{TAB_LABELS[tab]}</span>
+                            {counts[tab] !== undefined && counts[tab]! > 0 && (
+                                <span
+                                    className={cn(
+                                        "ml-1.5 text-[10px]",
+                                        countTones[tab]
+                                            ? cn("font-bold", TEXT_TONES[countTones[tab]!])
+                                            : "text-muted-foreground"
+                                    )}
+                                >
+                                    {counts[tab]}
+                                </span>
+                            )}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             <SwipeTabs

@@ -27,6 +27,7 @@ const FAMILY_DOT: Record<ModelFamily, string> = {
     sonnet: "bg-[#4cc5b6]",
     haiku: "bg-[#e3bd58]",
     jev: "bg-[#ee8fb0]",
+    gpt: "bg-[#f0a15c]",
 }
 const UNKNOWN_DOT = "bg-slate-400"
 

@@ -29,6 +29,13 @@ describe("findModel", () => {
         assert.equal(modelLabel("gpt-9"), "gpt-9")
         assert.equal(canonicalModelId("gpt-9"), "gpt-9")
     })
+
+    it("GPT-6のSol・Lunaも一覧から引ける（#377）", () => {
+        assert.equal(findModel("gpt-6-sol")?.id, "gpt-6-sol")
+        assert.equal(modelLabel("gpt-6-sol"), "GPT-6 Sol")
+        assert.equal(findModel("gpt-6-luna")?.id, "gpt-6-luna")
+        assert.equal(modelLabel("gpt-6-luna"), "GPT-6 Luna")
+    })
 })
 
 describe("estimateCostUsd", () => {
@@ -69,5 +76,27 @@ describe("estimateCostUsd", () => {
             estimateCostUsd("jev", { inputTokens: 1_000_000, outputTokens: null, ...NONE }),
             TYPESAFE_INPUT_USD_PER_MILLION_TOKENS
         )
+    })
+
+    it("GPT-6 Sol・Lunaもそれぞれの単価で計算する（#377）", () => {
+        // Sol: 入力 $2 / 出力 $10 / 書き込み $2.5 / 読み出し $0.2（100万トークンあたり）
+        const sol = estimateCostUsd("gpt-6-sol", {
+            inputTokens: 1_000_000,
+            outputTokens: 100_000,
+            cacheReadTokens: 2_000_000,
+            cacheWriteTokens: 400_000,
+        })
+        assert.ok(sol !== null)
+        assert.ok(Math.abs(sol - (2 + 1 + 0.4 + 1)) < 1e-9)
+
+        // Luna: 入力 $0.1 / 出力 $0.5 / 書き込み $0.125 / 読み出し $0.01（100万トークンあたり）
+        const luna = estimateCostUsd("gpt-6-luna", {
+            inputTokens: 1_000_000,
+            outputTokens: 100_000,
+            cacheReadTokens: 2_000_000,
+            cacheWriteTokens: 400_000,
+        })
+        assert.ok(luna !== null)
+        assert.ok(Math.abs(luna - (0.1 + 0.05 + 0.02 + 0.05)) < 1e-9)
     })
 })
