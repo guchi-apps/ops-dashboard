@@ -1,7 +1,8 @@
 "use client"
 
-import { Fragment, useState } from "react"
+import { Fragment, useCallback, useState } from "react"
 import { useDashboardData } from "@/components/dashboard-data"
+import { JobHistoryModal } from "@/components/job-history-modal"
 import { Panel } from "@/components/panel"
 import { StatusBadge, TEXT_TONES } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
@@ -89,11 +90,14 @@ function Table({
     headers,
     rows,
     rowClassNames,
+    onRowSelect,
     className,
 }: {
     headers: string[]
     rows: React.ReactNode[][]
     rowClassNames?: (string | undefined)[]
+    /** 渡すと行が押せるようになる（クリック・Enter・Space） */
+    onRowSelect?: (index: number) => void
     className?: string
 }) {
     return (
@@ -113,7 +117,25 @@ function Table({
                 </thead>
                 <tbody className="[&_tr:last-child_td]:border-b-0">
                     {rows.map((cells, index) => (
-                        <tr key={index} className={rowClassNames?.[index]}>
+                        <tr
+                            key={index}
+                            className={cn(
+                                rowClassNames?.[index],
+                                onRowSelect &&
+                                    "cursor-pointer hover:bg-primary/10 focus-visible:bg-primary/10 focus-visible:outline-none"
+                            )}
+                            {...(onRowSelect && {
+                                tabIndex: 0,
+                                role: "button",
+                                onClick: () => onRowSelect(index),
+                                onKeyDown: (event: React.KeyboardEvent) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                        event.preventDefault()
+                                        onRowSelect(index)
+                                    }
+                                },
+                            })}
+                        >
                             {cells.map((cell, cellIndex) => (
                                 <td
                                     key={cellIndex}
@@ -139,14 +161,33 @@ function RowItem({
     badge,
     sub,
     detail,
+    onSelect,
 }: {
     name: React.ReactNode
     badge: React.ReactNode
     sub: string
     detail?: string
+    /** 渡すと行が押せるようになる（クリック・Enter・Space） */
+    onSelect?: () => void
 }) {
     return (
-        <li className="flex flex-col gap-px py-1.5">
+        <li
+            className={cn(
+                "flex flex-col gap-px py-1.5",
+                onSelect && "cursor-pointer active:bg-primary/10 focus-visible:bg-primary/10 focus-visible:outline-none"
+            )}
+            {...(onSelect && {
+                tabIndex: 0,
+                role: "button",
+                onClick: onSelect,
+                onKeyDown: (event: React.KeyboardEvent) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        onSelect()
+                    }
+                },
+            })}
+        >
             <div className="flex items-center gap-2">
                 <span className="min-w-0 text-xs font-medium [overflow-wrap:anywhere]">{name}</span>
                 <span className="ml-auto shrink-0">{badge}</span>
@@ -255,6 +296,9 @@ function jobLabel(job: AideJob): string {
 }
 
 function JobsPanel({ jobs }: { jobs: AideJob[] }) {
+    const [selectedName, setSelectedName] = useState<string | null>(null)
+    const closeModal = useCallback(() => setSelectedName(null), [])
+    const selectedJob = jobs.find((job) => job.name === selectedName)
     const badge = (job: AideJob) => (
         <StatusBadge tone={AIDE_SEVERITY_TONE[job.severity]}>{jobLabel(job)}</StatusBadge>
     )
@@ -287,6 +331,7 @@ function JobsPanel({ jobs }: { jobs: AideJob[] }) {
                     </span>,
                     badge(job),
                 ])}
+                onRowSelect={(index) => setSelectedName(jobs[index]?.name ?? null)}
             />
             <RowList>
                 {jobs.map((job) => (
@@ -299,6 +344,7 @@ function JobsPanel({ jobs }: { jobs: AideJob[] }) {
                                 ? `${job.interval} · ${formatAideDateTime(job.lastRun.at)}（${formatAideDuration(job.lastRun.ageMinutes)}前）`
                                 : job.interval
                         }
+                        onSelect={() => setSelectedName(job.name)}
                     />
                 ))}
             </RowList>
@@ -309,8 +355,9 @@ function JobsPanel({ jobs }: { jobs: AideJob[] }) {
                 </p>
             ))}
             <Note>
-                worker が実行のたびに残す記録を読んでいます。まだ一度も動いていないジョブは「記録なし」になります。
+                worker が実行のたびに残す記録を読んでいます。まだ一度も動いていないジョブは「記録なし」になります。ジョブを押すと実行記録を開きます。
             </Note>
+            {selectedJob && <JobHistoryModal job={selectedJob} onClose={closeModal} />}
         </Panel>
     )
 }
