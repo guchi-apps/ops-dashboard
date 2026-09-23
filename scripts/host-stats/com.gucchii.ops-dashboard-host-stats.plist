@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    ops-dashboard へこのホスト（Mac mini）のメトリクスを1分ごとに送信する。
+    systemd timer + ops-dashboard-host-stats.service（Linux）のmacOS版。
+
+    トークンを含む /etc/ops-dashboard-host-stats.env はこのplistに埋め込まず、
+    ProgramArguments 側で読み込む（600 / root 所有のまま扱うため。README を参照）。
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.gucchii.ops-dashboard-host-stats</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>set -a; . /etc/ops-dashboard-host-stats.env; set +a; /opt/ops-dashboard-host-stats/agent-macos.sh</string>
+    </array>
+
+    <!-- 起動直後に1回、以降は60秒ごと（systemd timerのOnBootSec=1min・OnUnitActiveSec=1minに相当） -->
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/ops-dashboard-host-stats.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/ops-dashboard-host-stats.log</string>
+</dict>
+</plist>
