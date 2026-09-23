@@ -15,7 +15,7 @@ export interface ModelPrice {
 }
 
 /** 画面で色分けに使うモデルの系統 */
-export type ModelFamily = "opus" | "sonnet" | "haiku" | "jev"
+export type ModelFamily = "opus" | "sonnet" | "haiku" | "jev" | "gpt"
 
 export interface ModelInfo {
     /** 単価表のキー。連携先が日付付きのIDを返しても、ここへ寄せて数える */
@@ -71,6 +71,20 @@ const MODELS: ModelInfo[] = [
         provider: "TypeSafe",
         family: "jev",
         price: { input: 0.042, output: 0, cacheWrite: 0, cacheRead: 0 },
+    },
+    {
+        id: "gpt-6-sol",
+        label: "GPT-6 Sol",
+        provider: "OpenAI",
+        family: "gpt",
+        price: { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
+    },
+    {
+        id: "gpt-6-luna",
+        label: "GPT-6 Luna",
+        provider: "OpenAI",
+        family: "gpt",
+        price: { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01 },
     },
 ]
 
