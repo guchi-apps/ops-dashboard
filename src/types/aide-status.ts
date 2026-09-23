@@ -25,21 +25,28 @@ export interface AideServer {
     mcpUrl: string
 }
 
+/** ジョブ1回分の実行記録 */
+export interface AideJobRun {
+    ok: boolean
+    /** 記録が書かれた時刻（＝実行の終了時刻） */
+    at: string
+    seconds: number
+    message: string
+    host: string
+}
+
 export interface AideJob {
     name: string
     description: string
     interval: string
     staleAfterMinutes: number
     severity: AideSeverity
-    lastRun: {
-        ok: boolean
-        /** 記録が書かれた時刻（＝実行の終了時刻） */
-        at: string
-        ageMinutes: number
-        seconds: number
-        message: string
-        host: string
-    } | null
+    lastRun: (AideJobRun & { ageMinutes: number }) | null
+    /**
+     * 直近の実行記録（新しい順・最大30件）。**AIDE側が履歴を返すようになるまでは届かない**
+     * （guchi-apps/aide#441）ため任意。無いときは画面で「記録なし」を出す
+     */
+    recentRuns?: AideJobRun[]
 }
 
 export interface AideCache {

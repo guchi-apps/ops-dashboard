@@ -182,6 +182,11 @@ AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/s
 - 取得に失敗したときのステータスで原因を切り分ける。401はトークンのずれ、503はAIDE側の未設定、
   404はAIDEにAPIがまだ無い（デプロイ前）
 - `AIDE_STATUS_TOKEN` が未設定ならタブもチップも出ない。worktreeでそのまま動かしてよい
+- **「定期ジョブ」の行を押すと実行記録のモーダルが開く**（#387。`job-history-modal.tsx`）。ただしAIDEは
+  実行記録をジョブごとに直近1件しか持たず、履歴（`jobs[].recentRuns`・新しい順・最大30件）を返すのは
+  guchi-apps/aide#441の対応後。それまでは任意フィールドが届かず「実行記録がありません」の空状態になる。
+  **こちらで履歴を貯め直す形にはしない**（AIDE側が正）。モーダルは、タブ切り替えの transform の中では
+  `fixed` が画面基準にならないため `createPortal` で body 直下に出している
 
 ## Uptime Kuma へのモニター登録
 
