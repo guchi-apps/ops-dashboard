@@ -2,6 +2,7 @@
 
 import { DashboardCard } from "@/components/dashboard-card"
 import { useDashboardData } from "@/components/dashboard-data"
+import { AccessDenied, SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
 import { formatRemaining, getElapsedPercent, getRateLimitUsedPercent } from "@/lib/usage-format"
@@ -79,7 +80,25 @@ export function OnePasswordUsage() {
     const { onepasswordUsage: snapshot, now } = useDashboardData()
 
     // 未設定のときは、使わない環境で「未設定」のカードが出続けないようセクションごと隠す
-    if (!snapshot || snapshot.status === "unconfigured") return null
+    if (snapshot?.status === "unconfigured") return null
+
+    if (!snapshot) {
+        return (
+            <section className="space-y-3 sm:space-y-4">
+                <SectionHeading title="1Password" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    {[0, 1].map((index) => (
+                        <DashboardCard key={index} className="px-3 py-3 sm:px-4 sm:py-4">
+                            <SkeletonGroup label="1Passwordの使用状況" className="space-y-3">
+                                <SkeletonBar />
+                                <SkeletonBar />
+                            </SkeletonGroup>
+                        </DashboardCard>
+                    ))}
+                </div>
+            </section>
+        )
+    }
 
     const tokenLimits = snapshot.limits.filter((limit) => limit.type === "token")
     const accountLimits = snapshot.limits.filter((limit) => limit.type === "account")
@@ -99,7 +118,11 @@ export function OnePasswordUsage() {
                 }
             />
 
-            {snapshot.status === "error" ? (
+            {snapshot.status === "error" && snapshot.denied ? (
+                <DashboardCard className="px-3 py-3 sm:px-4 sm:py-4">
+                    <AccessDenied reason={snapshot.message} />
+                </DashboardCard>
+            ) : snapshot.status === "error" ? (
                 <DashboardCard className="px-3 py-3 sm:px-4 sm:py-4">
                     <p className="text-[11px] sm:text-xs text-muted-foreground">
                         {snapshot.message ?? "使用状況を取得できませんでした"}

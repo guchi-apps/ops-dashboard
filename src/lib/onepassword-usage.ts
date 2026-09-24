@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import { describeError } from "@/lib/upstream"
+import { describeError, looksLikePermissionError } from "@/lib/upstream"
 import {
     createSingleFlight,
     isUsageCacheFresh,
@@ -134,6 +134,18 @@ async function buildSnapshot(token: string | undefined): Promise<OnePasswordUsag
     try {
         return { status: "ok", limits: await fetchRateLimits(token, fetchedAtMs), fetchedAt }
     } catch (error) {
-        return { status: "error", message: describeError(error), limits: [], fetchedAt }
+        // op CLI の失敗は stderr に理由が入る。トークンの失効・権限不足を見分けて出し分ける
+        const stderr = (error as { stderr?: unknown }).stderr
+        const detail = `${describeError(error)} ${typeof stderr === "string" ? stderr : ""}`
+        const denied = looksLikePermissionError(detail)
+        return {
+            status: "error",
+            denied: denied || undefined,
+            message: denied
+                ? "サービスアカウントトークンが認証されませんでした。OP_SERVICE_ACCOUNT_TOKEN を確かめてください"
+                : describeError(error),
+            limits: [],
+            fetchedAt,
+        }
     }
 }

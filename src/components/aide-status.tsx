@@ -4,6 +4,7 @@ import { Fragment, useCallback, useState } from "react"
 import { useDashboardData } from "@/components/dashboard-data"
 import { JobHistoryModal } from "@/components/job-history-modal"
 import { Panel } from "@/components/panel"
+import { AccessDenied, Skeleton, SkeletonGroup } from "@/components/skeleton"
 import { StatusBadge, TEXT_TONES } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -267,19 +268,26 @@ function ErrorPanel({ snapshot, now }: { snapshot: AideStatusSnapshot; now: numb
     return (
         <Panel
             title="AIDE の動作状況"
-            className="border-l-[3px] border-l-red-500 md:col-span-2 xl:col-span-12"
+            className={cn(
+                "border-l-[3px] md:col-span-2 xl:col-span-12",
+                snapshot.denied ? "border-l-amber-500" : "border-l-red-500"
+            )}
             trailing={
                 <>
-                    <StatusBadge tone="danger" withDot>
-                        取得できません
+                    <StatusBadge tone={snapshot.denied ? "warn" : "danger"} withDot>
+                        {snapshot.denied ? "権限不足" : "取得できません"}
                     </StatusBadge>
                     <Meta>{formatAideLogTime(snapshot.fetchedAt, now)} に確認</Meta>
                 </>
             }
         >
-            <p className="text-[13px]">
-                AIDEから動作状況を取得できませんでした。{snapshot.message}
-            </p>
+            {snapshot.denied ? (
+                <AccessDenied reason={snapshot.message} />
+            ) : (
+                <p className="text-[13px]">
+                    AIDEから動作状況を取得できませんでした。{snapshot.message}
+                </p>
+            )}
             {snapshot.health && snapshot.healthFetchedAt && (
                 <p className="mt-1 text-[11px] text-muted-foreground">
                     以下は {formatAideDateTime(snapshot.healthFetchedAt)} に取得できた値です。
@@ -731,7 +739,15 @@ export function AideStatus() {
 export function AideStatusView({ snapshot, now }: { snapshot: AideStatusSnapshot | null; now: number }) {
 
     if (!snapshot) {
-        return <p className="px-1 text-xs text-muted-foreground">AIDEの動作状況を読み込んでいます…</p>
+        return (
+            <Panel title="AIDE の動作状況">
+                <SkeletonGroup label="AIDEの動作状況" className="space-y-2">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-3 w-2/3" />
+                    <Skeleton className="h-3 w-1/2" />
+                </SkeletonGroup>
+            </Panel>
+        )
     }
 
     if (snapshot.status === "unconfigured") {

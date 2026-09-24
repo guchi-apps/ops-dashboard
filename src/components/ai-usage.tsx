@@ -4,6 +4,7 @@ import { useDashboardData } from "@/components/dashboard-data"
 import { AiUsageHistory } from "@/components/ai-usage-history"
 import { ClaudeCreditLedger } from "@/components/claude-credit-ledger"
 import { DashboardCard } from "@/components/dashboard-card"
+import { AccessDenied, SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
 import { formatRemaining, formatTokens, formatUsd, getElapsedPercent, toDayMarkers } from "@/lib/usage-format"
@@ -138,6 +139,8 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
                         />
                     ))}
                 </div>
+            ) : provider.denied ? (
+                <AccessDenied reason={provider.message} />
             ) : (
                 <p className="text-[11px] sm:text-xs text-muted-foreground">
                     {provider.message ?? "使用状況を取得できませんでした"}
@@ -159,7 +162,23 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
 export function AiUsage() {
     const { aiUsage: snapshot, now } = useDashboardData()
 
-    if (!snapshot) return null
+    if (!snapshot) {
+        return (
+            <section className="space-y-3 sm:space-y-4">
+                <SectionHeading title="AI Usage" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    {[0, 1].map((index) => (
+                        <DashboardCard key={index} className="px-3 py-3 sm:px-4 sm:py-4">
+                            <SkeletonGroup label="AI使用状況" className="space-y-3">
+                                <SkeletonBar />
+                                <SkeletonBar />
+                            </SkeletonGroup>
+                        </DashboardCard>
+                    ))}
+                </div>
+            </section>
+        )
+    }
 
     return (
         <section className="space-y-3 sm:space-y-4">

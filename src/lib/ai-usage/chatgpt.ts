@@ -1,4 +1,4 @@
-import { clampPercent, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
+import { clampPercent, fetchWithTimeout, isPermissionStatus, readErrorBody } from "@/lib/upstream"
 import { formatWindowLabel } from "@/lib/ai-usage/common"
 import { getProviderEntry, type ProviderCacheEntry, type ProviderFetchResult } from "@/lib/ai-usage/provider-cache"
 import {
@@ -295,7 +295,12 @@ async function fetchChatGptUsage(): Promise<ProviderFetchResult> {
             const body = await readErrorBody(res)
             console.error("ChatGPT usage API error:", res.status, body)
             return {
-                usage: { ...base, status: "error", message: describeUsageError(res.status, body) },
+                usage: {
+                    ...base,
+                    status: "error",
+                    denied: isPermissionStatus(res.status) || undefined,
+                    message: describeUsageError(res.status, body),
+                },
             }
         }
 

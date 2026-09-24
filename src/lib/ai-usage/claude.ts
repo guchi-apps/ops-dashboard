@@ -1,4 +1,4 @@
-import { clampPercent, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
+import { clampPercent, fetchWithTimeout, isPermissionStatus, readErrorBody } from "@/lib/upstream"
 import { formatMoney, formatWindowLabel } from "@/lib/ai-usage/common"
 import { getProviderEntry, type ProviderCacheEntry, type ProviderFetchResult } from "@/lib/ai-usage/provider-cache"
 import {
@@ -392,10 +392,13 @@ async function fetchClaudeUsage(): Promise<ProviderFetchResult> {
                 usage: {
                     ...base,
                     status: "error",
+                    denied: isPermissionStatus(res.status) || undefined,
                     message:
                         res.status === 429
                             ? "レート制限中のため取得できませんでした"
-                            : res.status === 403
+                            : res.status === 401
+                              ? "認証されませんでした (401)。`claude login` でトークンを発行し直してください"
+                              : res.status === 403
                               ? "トークンに user:profile スコープがありません（`claude login` で発行したものを使う必要があります）"
                               : `使用状況を取得できませんでした (${res.status})`,
                 },

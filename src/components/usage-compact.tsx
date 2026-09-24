@@ -1,5 +1,6 @@
 "use client"
 
+import { AccessDenied } from "@/components/skeleton"
 import { UsageBar } from "@/components/usage-bar"
 import {
     formatRemaining,
@@ -67,6 +68,8 @@ export function AiUsageCompact({ snapshot, now }: { snapshot: AiUsageSnapshot; n
 
                     {provider.metered ? (
                         <MeteredUsageCompact usage={provider.metered} />
+                    ) : provider.windows.length === 0 && provider.denied ? (
+                        <AccessDenied reason={provider.message} compact />
                     ) : provider.windows.length === 0 ? (
                         <p className="text-[10px] text-muted-foreground">
                             {provider.message ?? "使用状況を取得できませんでした"}
@@ -103,6 +106,10 @@ export function GitHubUsageCompact({
     snapshot: GitHubUsageSnapshot
     now: number
 }) {
+    if (snapshot.status === "error" && snapshot.denied) {
+        return <AccessDenied reason={snapshot.message} compact />
+    }
+
     if (snapshot.status !== "ok") {
         return (
             <p className="text-[10px] text-muted-foreground">

@@ -1,4 +1,4 @@
-import { fetchWithTimeout } from "@/lib/upstream"
+import { fetchWithTimeout, isPermissionStatus } from "@/lib/upstream"
 import type {
     AideHealth,
     AideProbeResponse,
@@ -97,6 +97,11 @@ async function requestAide(
     return res.json()
 }
 
+/** 401（トークンのずれ）は権限不足として出す。503・404はAIDE側の未設定・未デプロイなので対象外 */
+function isAideDenied(error: unknown): boolean {
+    return error instanceof AideHttpError && isPermissionStatus(error.status)
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null
 }
@@ -154,6 +159,7 @@ export async function getAideStatusSnapshot(): Promise<AideStatusSnapshot> {
         console.error("AIDE status error:", error)
         return {
             status: "error",
+            denied: isAideDenied(error) || undefined,
             message: describeFailure(error, STATUS_TIMEOUT_MS),
             health: lastGood?.health ?? null,
             tools: lastGood?.tools ?? [],
