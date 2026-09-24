@@ -1,5 +1,6 @@
 "use client"
 
+import { Fragment, useEffect, useState } from "react"
 import { StatusDot, TEXT_TONES, type StatusTone } from "@/components/status-badge"
 import { formatAge, formatUptime } from "@/lib/host-stats/format"
 import {
@@ -49,6 +50,188 @@ function CommandTags({ session }: { session: TmuxSessionView }) {
 
 function sessionKey(session: TmuxSessionView): string {
     return `${session.hostId}/${session.user ?? ""}/${session.name}`
+}
+
+/** 依頼してからこの時間が過ぎても一覧に残っていれば、閉じられなかったものとして扱う（サーバーの期限と同じ） */
+const CLOSE_TIMEOUT_MS = 180_000
+
+type CloseState =
+    | { kind: "idle" }
+    | { kind: "confirming" }
+    | { kind: "sending" }
+    | { kind: "pending" }
+    | { kind: "failed"; message: string }
+
+interface CloseRequestEntry {
+    at: number
+    error?: string
+}
+
+/**
+ * 閉じる操作の状態。押す → 確認 → 依頼 → 一覧から消えたら完了。
+ *
+ * 実際に閉じるのはホストのエージェントで、依頼は次の受信で渡る（最大1分ほど）。
+ * 完了の通知は無いので、一覧から消えたことで判断する。
+ * 依頼の記録には作成時刻を含めており、同じ名前のセッションが立て直されても古い依頼を引き継がない。
+ */
+function useTmuxClose() {
+    const [confirmKey, setConfirmKey] = useState<string | null>(null)
+    const [requests, setRequests] = useState<Record<string, CloseRequestEntry>>({})
+    const [now, setNow] = useState(() => Date.now())
+
+    const waiting = Object.values(requests).some((entry) => !entry.error)
+    useEffect(() => {
+        if (!waiting) return
+        const timer = setInterval(() => setNow(Date.now()), 5_000)
+        return () => clearInterval(timer)
+    }, [waiting])
+
+    const keyOf = (session: TmuxSessionView) => `${sessionKey(session)}@${session.createdAt ?? ""}`
+
+    function stateOf(session: TmuxSessionView): CloseState {
+        const key = keyOf(session)
+        const entry = requests[key]
+
+        if (entry?.error) return { kind: "failed", message: entry.error }
+        if (entry === undefined) return { kind: confirmKey === key ? "confirming" : "idle" }
+        if (entry.at === 0) return { kind: "sending" }
+        if (now - entry.at > CLOSE_TIMEOUT_MS) {
+            return { kind: "failed", message: "閉じられませんでした。ホストのエージェントが止まっている可能性があります" }
+        }
+        return confirmKey === key ? { kind: "confirming" } : { kind: "pending" }
+    }
+
+    async function confirm(session: TmuxSessionView) {
+        const key = keyOf(session)
+        setConfirmKey(null)
+        setRequests((current) => ({ ...current, [key]: { at: 0 } }))
+
+        try {
+            const response = await fetch("/api/tmux-close", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    hostId: session.hostId,
+                    user: session.user,
+                    name: session.name,
+                }),
+            })
+            if (!response.ok) {
+                const body = (await response.json().catch(() => null)) as { error?: string } | null
+                throw new Error(body?.error ?? `HTTP ${response.status}`)
+            }
+            setNow(Date.now())
+            setRequests((current) => ({ ...current, [key]: { at: Date.now() } }))
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "依頼を送れませんでした"
+            setRequests((current) => ({ ...current, [key]: { at: 0, error: message } }))
+        }
+    }
+
+    return {
+        stateOf,
+        ask: (session: TmuxSessionView) => {
+            // 失敗の表示から「もう一度」を押したときは、前回の記録を捨てて確認からやり直す
+            setRequests((current) => {
+                const rest = { ...current }
+                delete rest[keyOf(session)]
+                return rest
+            })
+            setConfirmKey(keyOf(session))
+        },
+        cancel: () => setConfirmKey(null),
+        confirm,
+    }
+}
+
+type TmuxClose = ReturnType<typeof useTmuxClose>
+
+/** 閉じられるのは、持ち主（user）が分かるセッションだけ。古い世代のエージェントは送ってこない */
+function canClose(session: TmuxSessionView): boolean {
+    return session.user !== undefined
+}
+
+/** 行の操作。押すと確認が開く。依頼中は状態だけを出す */
+function CloseAction({ session, close }: { session: TmuxSessionView; close: TmuxClose }) {
+    if (!canClose(session)) return <span className="text-muted-foreground">-</span>
+
+    const state = close.stateOf(session)
+
+    if (state.kind === "sending" || state.kind === "pending") {
+        return (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span
+                    aria-hidden
+                    className="inline-block size-2.5 animate-spin rounded-full border-2 border-muted-foreground border-r-transparent motion-reduce:animate-none"
+                />
+                閉じています…
+            </span>
+        )
+    }
+
+    return (
+        <button
+            type="button"
+            onClick={() => close.ask(session)}
+            aria-expanded={state.kind === "confirming"}
+            aria-label={`${session.name} を閉じる`}
+            className={cn(
+                "rounded-md border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-red-400 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-400",
+                state.kind === "confirming" && "border-red-400 text-red-400"
+            )}
+        >
+            {state.kind === "failed" ? "もう一度" : "閉じる"}
+        </button>
+    )
+}
+
+/** 確認の行。何が失われるかを示してから確定する。失敗したときは理由もここに出す */
+function CloseConfirm({ session, close }: { session: TmuxSessionView; close: TmuxClose }) {
+    const state = close.stateOf(session)
+
+    if (state.kind === "failed") {
+        return (
+            <p role="alert" className={cn("text-[11px]", TEXT_TONES.danger)}>
+                {state.message}
+            </p>
+        )
+    }
+    if (state.kind !== "confirming") return null
+
+    const running = session.commands?.length ? session.commands.join("・") : null
+
+    return (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-red-400/40 bg-red-400/[0.08] px-3 py-2.5">
+            <p className="min-w-[14rem] flex-1 whitespace-normal text-[11.5px] leading-snug">
+                <span className="font-mono font-bold">{session.name}</span> を閉じますか？
+                {running && (
+                    <>
+                        {" "}
+                        実行中の <span className="font-mono font-bold">{running}</span> も終了し、作業中の内容は失われます。
+                    </>
+                )}
+                <span className="block text-[10.5px] text-muted-foreground">
+                    ホスト: {session.hostLabel}　閉じたセッションは元に戻せません。反映まで最大1分ほどかかります。
+                </span>
+            </p>
+            <div className="flex w-full gap-2 sm:w-auto">
+                <button
+                    type="button"
+                    onClick={close.cancel}
+                    className="flex-1 rounded-md border border-border px-3 py-1.5 text-[11px] hover:bg-muted sm:flex-none"
+                >
+                    やめる
+                </button>
+                <button
+                    type="button"
+                    onClick={() => void close.confirm(session)}
+                    className="flex-1 rounded-md bg-red-400 px-3 py-1.5 text-[11px] font-bold text-red-950 hover:bg-red-300 sm:flex-none"
+                >
+                    閉じる
+                </button>
+            </div>
+        </div>
+    )
 }
 
 /** フックのイベント名を、画面で意味の分かる言葉にする。知らない名前はそのまま出す */
@@ -211,6 +394,8 @@ export function TmuxSessionList({
 
 /** tmux タブの一覧。広い画面では表、狭い画面ではカードに切り替える */
 export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) {
+    const close = useTmuxClose()
+
     if (sessions.length === 0) {
         return <p className="text-sm text-muted-foreground">tmux のセッションはありません</p>
     }
@@ -229,12 +414,13 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                         <th className="whitespace-nowrap px-2 pb-2 font-semibold">アタッチ</th>
                         <th className="whitespace-nowrap px-2 pb-2 font-semibold">経過</th>
                         <th className="whitespace-nowrap px-2 pb-2 font-semibold">最終活動</th>
+                        <th className="whitespace-nowrap px-2 pb-2 font-semibold">操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     {sessions.map((session) => (
+                        <Fragment key={sessionKey(session)}>
                         <tr
-                            key={sessionKey(session)}
                             className={cn(
                                 "border-t border-border",
                                 session.state === "running" && "bg-status-ok/[0.06]",
@@ -285,7 +471,19 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                                     ? formatAge(session.inactiveSeconds)
                                     : "-"}
                             </td>
+                            <td className="whitespace-nowrap px-2 py-2">
+                                <CloseAction session={session} close={close} />
+                            </td>
                         </tr>
+                        {close.stateOf(session).kind === "confirming" ||
+                        close.stateOf(session).kind === "failed" ? (
+                            <tr>
+                                <td colSpan={10} className="px-2 pb-2.5">
+                                    <CloseConfirm session={session} close={close} />
+                                </td>
+                            </tr>
+                        ) : null}
+                        </Fragment>
                     ))}
                 </tbody>
             </table>
@@ -332,6 +530,12 @@ export function TmuxSessionTable({ sessions }: { sessions: TmuxSessionView[] }) 
                                 .join(" · ")}
                         </div>
                         <SessionNote session={session} />
+                        <div className="mt-2 flex flex-col gap-2">
+                            <div className="flex justify-end">
+                                <CloseAction session={session} close={close} />
+                            </div>
+                            <CloseConfirm session={session} close={close} />
+                        </div>
                     </div>
                 ))}
             </div>
