@@ -985,6 +985,50 @@ build_payload() {
     printf '}'
 }
 
+# ダッシュボードから頼まれた tmux セッションを閉じる（#409）。
+#
+# ダッシュボードへは送るだけで、こちらへ指示を出す経路が無いため、POSTの応答に載った
+# "closeSessions":["<ユーザー>|<セッション名>", ...] を読む。閉じたかどうかは報告せず、
+# 次回の送信でセッションが一覧から消えていれば、ダッシュボードが完了とみなす。
+#
+# **このエージェントは root で動くため、受け取った文字列をそのまま使わない。**
+# jq を要さず grep で取り出す代わりに、名前として許す文字だけに合うものしか拾わない
+# （ダッシュボード側の検査と同じ規則。先頭が - や . の名前は tmux のオプション・特殊指定に読まれうる）。
+# さらに、いま実際にそのユーザーのソケットに存在するセッションだけを、`=` 付きの完全一致で閉じる。
+close_requested_sessions() {
+    local body="$1" list entry user name dir uid socket_user socket
+    local user_re='[A-Za-z0-9_][A-Za-z0-9._:-]{0,63}'
+    local name_re='[A-Za-z0-9_][A-Za-z0-9._-]{0,127}'
+
+    command -v tmux > /dev/null 2>&1 || return 0
+
+    list="$(printf '%s' "$body" | grep -oE '"closeSessions":\[[^]]*\]' | head -n 1 || true)"
+    [ -n "$list" ] || return 0
+
+    while IFS= read -r entry; do
+        entry="${entry//\"/}"
+        user="${entry%%|*}"
+        name="${entry#*|}"
+
+        for dir in "$TMUX_SOCKET_ROOT"/tmux-*; do
+            [ -d "$dir" ] || continue
+            uid="${dir##*/tmux-}"
+            case "$uid" in "" | *[!0-9]*) continue ;; esac
+            socket_user="$(getent passwd "$uid" 2> /dev/null | cut -d: -f1)"
+            [ -n "$socket_user" ] || socket_user="uid:$uid"
+            [ "$socket_user" = "$user" ] || continue
+
+            for socket in "$dir"/*; do
+                [ -S "$socket" ] || continue
+                tmux -S "$socket" has-session -t "=$name" 2> /dev/null || continue
+                if tmux -S "$socket" kill-session -t "=$name" 2> /dev/null; then
+                    echo "tmux セッションを閉じました: ${user}/${name}" >&2
+                fi
+            done
+        done
+    done < <(printf '%s' "$list" | grep -oE "\"${user_re}\|${name_re}\"")
+}
+
 main() {
     local payload response status body
     payload="$(build_payload)"
@@ -1013,6 +1057,8 @@ main() {
         echo "host-stats の送信に失敗しました (HTTP ${status}): ${body}" >&2
         exit 1
     fi
+
+    close_requested_sessions "$body"
 }
 
 main "$@"

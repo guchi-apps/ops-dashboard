@@ -5,6 +5,7 @@ import { getAiUsageSnapshot } from "@/lib/ai-usage"
 import { HostStatsReportError, parseHostStatsReport } from "@/lib/host-stats/report"
 import { getHostStatsView, saveHostStatsReport } from "@/lib/host-stats/store"
 import { processTimerAlerts } from "@/lib/host-stats/timer-alerts"
+import { settleCloseRequests } from "@/lib/host-stats/close-requests"
 
 export const dynamic = "force-dynamic"
 
@@ -74,7 +75,21 @@ export async function POST(request: NextRequest) {
             console.error("AI usage sample error:", error)
         })
 
-        return NextResponse.json({ ok: true, receivedAt: snapshot.receivedAt })
+        // tmux セッションを閉じる依頼（#409）。ホストへ指示を送る経路が無いため、応答に載せて渡す。
+        // 古いエージェントは知らない項目を読み飛ばすので、載せても害は無い。
+        // 依頼の処理が落ちても受信は成功しているため、依頼が無い扱いで200を返す
+        let closeSessions: string[] = []
+        try {
+            closeSessions = await settleCloseRequests(report.id, report.tmuxSessions)
+        } catch (error) {
+            console.error("Close request error:", error)
+        }
+
+        return NextResponse.json({
+            ok: true,
+            receivedAt: snapshot.receivedAt,
+            ...(closeSessions.length > 0 && { closeSessions }),
+        })
     } catch (error) {
         if (error instanceof HostStatsReportError) {
             return NextResponse.json({ error: error.message }, { status: 400 })

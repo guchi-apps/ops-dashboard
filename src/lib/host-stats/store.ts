@@ -161,7 +161,7 @@ export async function saveHostStatsReport(
     return snapshot
 }
 
-async function readSnapshot(id: string): Promise<HostStatsSnapshot | null> {
+export async function readSnapshot(id: string): Promise<HostStatsSnapshot | null> {
     try {
         const raw = await fs.readFile(getSnapshotPath(id), "utf8")
         const parsed: unknown = JSON.parse(raw)
