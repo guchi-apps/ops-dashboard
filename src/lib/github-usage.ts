@@ -1,5 +1,5 @@
 import { trackRepositoryVisibility } from "@/lib/github-repo-visibility"
-import { describeError, fetchWithTimeout, readErrorBody } from "@/lib/upstream"
+import { describeError, fetchWithTimeout, isPermissionStatus, readErrorBody } from "@/lib/upstream"
 import {
     createSingleFlight,
     isUsageCacheFresh,
@@ -97,6 +97,17 @@ function getRunnerMultiplier(sku: string): number {
  * `label` は失敗時に画面へ出す表示名。パスをそのまま出すと、組織名の設定を
  * 誤ってトークンを入れてしまった場合にそれが画面へ露出するため、パスは含めない。
  */
+/** denied は権限不足（401・403でレート制限ではないもの）。画面で「表示できません」と出し分ける */
+class GitHubHttpError extends Error {
+    readonly denied: boolean
+
+    constructor(message: string, denied: boolean) {
+        super(message)
+        this.name = "GitHubHttpError"
+        this.denied = denied
+    }
+}
+
 async function githubFetch<T>(
     path: string,
     token: string,
@@ -121,7 +132,12 @@ async function githubFetch<T>(
     }
 
     if (!res.ok) {
-        throw new Error(`${label}の取得に失敗しました (${res.status}): ${await readErrorBody(res)}`)
+        // レート制限も403で返るため、残りが0のときは権限不足に含めない
+        const rateLimited = res.headers.get("x-ratelimit-remaining") === "0"
+        throw new GitHubHttpError(
+            `${label}の取得に失敗しました (${res.status}): ${await readErrorBody(res)}`,
+            isPermissionStatus(res.status) && !rateLimited
+        )
     }
 
     return (await res.json()) as T
@@ -379,6 +395,7 @@ async function buildSnapshot(
     } catch (error) {
         return {
             status: "error",
+            denied: (error instanceof GitHubHttpError && error.denied) || undefined,
             message: describeError(error),
             org,
             actions: null,

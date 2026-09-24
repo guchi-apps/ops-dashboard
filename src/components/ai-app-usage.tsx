@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useDashboardData } from "@/components/dashboard-data"
+import { SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { SectionHeading } from "@/components/section-heading"
 import { findModel, modelLabel, type ModelFamily } from "@/lib/ai-app-usage/models"
 import {
@@ -325,7 +326,22 @@ function okApps(apps: AiAppUsageApp[]): AiAppUsageApp[] {
 export function AiAppUsage() {
     const { aiAppUsage: snapshot } = useDashboardData()
 
-    return snapshot ? <AiAppUsageView snapshot={snapshot} /> : null
+    if (snapshot) return <AiAppUsageView snapshot={snapshot} />
+
+    // 取得前は骨組みを出す。連携先が無い環境では、取得後にこのセクションごと消える
+    return (
+        <section className="space-y-3 sm:space-y-4">
+            <SectionHeading title="アプリ別のAI利用" />
+            <SkeletonGroup
+                label="アプリ別のAI利用"
+                className="space-y-3 rounded-xl border border-border bg-card p-3 sm:p-4"
+            >
+                <SkeletonBar />
+                <SkeletonBar />
+                <SkeletonBar />
+            </SkeletonGroup>
+        </section>
+    )
 }
 
 /** 取得済みのスナップショットを描く部分。取得（`useDashboardData`）から切り離してあり、画面確認で作り物の値を渡せる */

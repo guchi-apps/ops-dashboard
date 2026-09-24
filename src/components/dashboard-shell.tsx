@@ -14,6 +14,7 @@ import { MonitorSections } from "@/components/monitor-sections"
 import { MonitorTiles, getMonitorStatusText } from "@/components/monitor-tiles"
 import { OnePasswordUsage } from "@/components/onepassword-usage"
 import { Panel } from "@/components/panel"
+import { SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { StatusBadge, TEXT_TONES, type StatusTone } from "@/components/status-badge"
 import { SwipeTabs } from "@/components/swipe-tabs"
 import { TmuxLegend, TmuxSessionList, TmuxSessionTable } from "@/components/tmux-sessions"
@@ -377,7 +378,17 @@ export function DashboardShell({
                             </Panel>
                         )}
 
-                        {aiUsage && (
+                        {!hostStats && (
+                            <Panel title="ホスト" className={hostSpan}>
+                                <SkeletonGroup label="ホストのメトリクス" className="space-y-3">
+                                    <SkeletonBar />
+                                    <SkeletonBar />
+                                    <SkeletonBar />
+                                </SkeletonGroup>
+                            </Panel>
+                        )}
+
+                        {aiUsage ? (
                             <Panel
                                 title="AI 使用状況"
                                 className="xl:col-span-3"
@@ -393,9 +404,16 @@ export function DashboardShell({
                             >
                                 <AiUsageCompact snapshot={aiUsage} now={now} />
                             </Panel>
+                        ) : (
+                            <Panel title="AI 使用状況" className="xl:col-span-3">
+                                <SkeletonGroup label="AI使用状況" className="space-y-3">
+                                    <SkeletonBar />
+                                    <SkeletonBar />
+                                </SkeletonGroup>
+                            </Panel>
                         )}
 
-                        {githubUsage && githubUsage.status !== "unconfigured" && (
+                        {githubUsage?.status === "unconfigured" ? null : githubUsage ? (
                             <Panel
                                 title="GitHub"
                                 className="xl:col-span-3"
@@ -406,6 +424,13 @@ export function DashboardShell({
                                 }
                             >
                                 <GitHubUsageCompact snapshot={githubUsage} now={now} />
+                            </Panel>
+                        ) : (
+                            <Panel title="GitHub" className="xl:col-span-3">
+                                <SkeletonGroup label="GitHub使用状況" className="space-y-3">
+                                    <SkeletonBar />
+                                    <SkeletonBar />
+                                </SkeletonGroup>
                             </Panel>
                         )}
 

@@ -8,6 +8,7 @@ import {
     getTemperatureColor,
     getUsageColor,
 } from "@/components/metric-card"
+import { SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { SectionHeading } from "@/components/section-heading"
 import { Sparkline } from "@/components/sparkline"
 import { StatusBadge, type StatusTone } from "@/components/status-badge"
@@ -374,8 +375,20 @@ function HostSection({
 export function HostStats() {
     const { hostStats: view } = useDashboardData()
 
-    // 一度も受信していない（エージェント未設置）ならセクションごと出さない
-    if (!view?.hosts.length) return null
+    // 取得前は骨組みを出す。取得できて0台（エージェント未設置）ならセクションごと出さない
+    if (!view) {
+        return (
+            <section className="space-y-3">
+                <SectionHeading title="ホスト" />
+                <SkeletonGroup label="ホストのメトリクス" className="grid gap-3 sm:grid-cols-3">
+                    <SkeletonBar />
+                    <SkeletonBar />
+                    <SkeletonBar />
+                </SkeletonGroup>
+            </section>
+        )
+    }
+    if (!view.hosts.length) return null
 
     return (
         <>
