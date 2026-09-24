@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Lock } from "lucide-react"
 import { useDashboardData } from "@/components/dashboard-data"
 import { DashboardCard } from "@/components/dashboard-card"
+import { AccessDenied, SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
 import {
@@ -229,7 +230,25 @@ export function GitHubUsage() {
     const { githubUsage: snapshot, now } = useDashboardData()
 
     // 未設定のときは、使わない環境で「未設定」のカードが出続けないようセクションごと隠す
-    if (!snapshot || snapshot.status === "unconfigured") return null
+    if (snapshot?.status === "unconfigured") return null
+
+    if (!snapshot) {
+        return (
+            <section className="space-y-3 sm:space-y-4">
+                <SectionHeading title="GitHub" />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    {[0, 1].map((index) => (
+                        <DashboardCard key={index} className="px-3 py-3 sm:px-4 sm:py-4">
+                            <SkeletonGroup label="GitHub使用状況" className="space-y-3">
+                                <SkeletonBar />
+                                <SkeletonBar />
+                            </SkeletonGroup>
+                        </DashboardCard>
+                    ))}
+                </div>
+            </section>
+        )
+    }
 
     return (
         <section className="space-y-3 sm:space-y-4">
@@ -246,7 +265,13 @@ export function GitHubUsage() {
                 }
             />
 
-            {snapshot.status === "error" ? (
+            {snapshot.status === "error" && snapshot.denied ? (
+                <DashboardCard className="px-3 py-3 sm:px-4 sm:py-4">
+                    <AccessDenied
+                        reason={`${snapshot.message ?? "GitHubの課金レポートを読む権限がありません"}。GH_USAGE_TOKEN は classic PAT（repo と read:org）が必要です`}
+                    />
+                </DashboardCard>
+            ) : snapshot.status === "error" ? (
                 <DashboardCard className="px-3 py-3 sm:px-4 sm:py-4">
                     <p className="text-[11px] sm:text-xs text-muted-foreground">
                         {snapshot.message ?? "使用状況を取得できませんでした"}

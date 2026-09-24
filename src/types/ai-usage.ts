@@ -165,6 +165,11 @@ export interface AiProviderUsage {
     status: AiUsageStatus
     /** status が ok 以外のときに表示する理由 */
     message?: string
+    /**
+     * 権限が足りず取得できないとき true（401・403・スコープ不足）。画面は「取得失敗」ではなく
+     * 「表示できません」と理由を出す。message には直し方を添える
+     */
+    denied?: boolean
     windows: AiUsageWindow[]
     credit?: AiProviderCredit
     /** TypeSafeのように上限ではなく実測値だけを返す提供元の使用量 */

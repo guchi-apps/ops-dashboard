@@ -24,6 +24,11 @@ export interface OnePasswordUsageSnapshot {
     status: OnePasswordUsageStatus
     /** status が ok 以外のときに表示する理由 */
     message?: string
+    /**
+     * 権限が足りず取得できないとき true（401・403・スコープ不足）。画面は「取得失敗」ではなく
+     * 「表示できません」と理由を出す。message には直し方を添える
+     */
+    denied?: boolean
     limits: OnePasswordRateLimit[]
     /** 1Passwordへ問い合わせた時刻（ISO 8601） */
     fetchedAt: string

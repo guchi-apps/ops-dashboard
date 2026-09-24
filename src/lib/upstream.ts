@@ -23,6 +23,16 @@ export function clampPercent(value: number): number {
     return Math.min(100, Math.max(0, Math.round(value * 10) / 10))
 }
 
+/** 権限が足りない（認証されない・許可されない）ことを示すHTTPステータス */
+export function isPermissionStatus(status: number): boolean {
+    return status === 401 || status === 403
+}
+
+/** CLIの出力など、ステータスが取れない失敗の文面から権限不足らしさを見分ける */
+export function looksLikePermissionError(message: string): boolean {
+    return /\b(401|403)\b|unauthori[sz]ed|forbidden|not authori[sz]ed|permission denied/i.test(message)
+}
+
 /** 例外の内容を画面に出せる長さへ縮める */
 export function describeError(error: unknown): string {
     const message = error instanceof Error ? error.message : String(error)
