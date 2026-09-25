@@ -30,7 +30,7 @@ const MAX_APPS = 30
 const MAX_TEXT_LENGTH = 120
 
 /** ホスト識別子に使える文字。保存先のディレクトリ名になるため、パス区切りなどを通さない */
-const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/
+export const ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/
 
 /**
  * Issueのリポジトリ名（owner/repo）。
