@@ -49,7 +49,13 @@ export function formatEta(seconds: number): string {
 
 /** CPUカードの補足行。機種を送っていないホストでは undefined（今までどおり何も出さない） */
 export function describeCpu(model: string | undefined, threads: number | undefined): string | undefined {
-    const name = model?.replace(/\s+/g, " ").trim()
+    // 狭いカードで折り返さないよう、機種の識別に要らない部分を削る（商標記号・内蔵GPU名・定格クロック）
+    const name = model
+        ?.replace(/\((R|TM|tm|r)\)/g, "")
+        .replace(/\s+with\s+.*$/i, "")
+        .replace(/\s+CPU(\s+@.*)?$/i, "")
+        .replace(/\s+/g, " ")
+        .trim()
     const count = threads && threads > 0 ? `${threads}スレッド` : undefined
     if (name && count) return `${name} · ${count}`
     return name || count

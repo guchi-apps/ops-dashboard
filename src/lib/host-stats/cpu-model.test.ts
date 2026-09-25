@@ -19,6 +19,11 @@ describe("CPU機種名", () => {
         assert.equal(describeCpu("AMD Athlon 200GE  with Radeon Vega", 4), "AMD Athlon 200GE with Radeon Vega · 4スレッド")
     })
 
+    it("内蔵GPU名・商標記号・定格クロックを削る", () => {
+        assert.equal(describeCpu("AMD Ryzen 5 PRO 4650G with Radeon Graphics", 12), "AMD Ryzen 5 PRO 4650G · 12スレッド")
+        assert.equal(describeCpu("Intel(R) Core(TM) i7-8700 CPU @ 3.20GHz", 12), "Intel Core i7-8700 · 12スレッド")
+    })
+
     it("片方だけでも出し、どちらも無ければ undefined", () => {
         assert.equal(describeCpu("Apple M4", undefined), "Apple M4")
         assert.equal(describeCpu(undefined, 10), "10スレッド")
