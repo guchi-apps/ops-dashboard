@@ -98,7 +98,11 @@ function Summary({
     return (
         <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-5 [&>*:last-child]:col-span-2 lg:[&>*:last-child]:col-span-1">
             <Stat value={totals.calls.toLocaleString("ja-JP")} label={`呼出回数（${periodText}）`} />
-            <Stat value={formatTokens(totals.inputTokens)} label="入力トークン" />
+            <Stat
+                value={totals.inputTokens === null ? "—" : formatTokens(totals.inputTokens)}
+                label="入力トークン"
+                note={totals.inputIncomplete && totals.inputTokens !== null ? "トークン未集計のアプリを除く" : undefined}
+            />
             <Stat
                 value={totals.outputTokens === null ? "—" : formatTokens(totals.outputTokens)}
                 label="出力トークン"
@@ -106,7 +110,15 @@ function Summary({
             <Stat
                 value={costText(totals)}
                 label="概算金額"
-                note={totals.costIncomplete && totals.costUsd !== null ? "単価不明のモデルを除く" : undefined}
+                note={
+                    totals.costUsd === null
+                        ? undefined
+                        : totals.costIncomplete
+                          ? "単価不明のモデルを除く"
+                          : totals.inputIncomplete
+                            ? "トークン未集計のアプリを除く"
+                            : undefined
+                }
             />
             <Stat value={`${modelCount} 種`} label={`使用モデル · ${appCount} アプリ`} />
         </div>
@@ -166,7 +178,7 @@ function FeatureRows({ features, period }: { features: AiAppFeatureUsage[]; peri
                         </span>
                         <span data-area="tok" className="font-mono tabular-nums md:text-right">
                             <span className="md:hidden">{totals.calls.toLocaleString("ja-JP")}回 · </span>
-                            {formatTokens(totals.inputTokens)} /{" "}
+                            {totals.inputTokens === null ? "—" : formatTokens(totals.inputTokens)} /{" "}
                             {totals.outputTokens === null ? "—" : formatTokens(totals.outputTokens)}
                         </span>
                         <span
@@ -251,7 +263,7 @@ function AppItem({
                     className="text-right font-mono text-xs tabular-nums md:text-[13px]"
                 >
                     <span className="mr-1.5 font-sans text-[11px] text-muted-foreground md:hidden">入力/出力</span>
-                    {formatTokens(totals.inputTokens)}
+                    {totals.inputTokens === null ? "—" : formatTokens(totals.inputTokens)}
                     <span className="text-[10px] text-muted-foreground md:block">
                         {" / "}
                         {totals.outputTokens === null ? "—" : formatTokens(totals.outputTokens)}

@@ -10,8 +10,8 @@
 export interface AiAppUsageTotals {
     /** 呼出回数 */
     calls: number
-    /** 入力ぶんのトークン数の合計。キャッシュの書き込み・読み出しを含む */
-    inputTokens: number
+    /** 入力ぶんのトークン数の合計。キャッシュの書き込み・読み出しを含む。連携先が数えていなければ null */
+    inputTokens: number | null
     /** 出力トークン数。連携先が数えていなければ null */
     outputTokens: number | null
     /** 単価表から計算したUSDの概算。単価の分からないモデルなど、計算できなければ null */

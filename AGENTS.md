@@ -234,6 +234,7 @@ AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/s
   「観測を積む」仕組みを検討する
 - **1行でも形が違う応答は全体を捨てる**（`parseAiAppUsageResponse`）。TypeSafeの `parse` は不正な行を
   捨てて表示を続けるが、こちらは合計が黙って少なくなるほうを避けている。揃えるべきは連携先のアプリ側
+- **`inputTokens` を省略した行は「数えていない」（`null`）で、金額も `null`**（#414。research-deskはChatGPT認証のCodex CLIで、DBにはモデル名と実行時間しか残らずトークン数が無い）。合計は数えた行だけを足し、画面に「トークン未集計のアプリを除く」と注記する。Issueの「workrelay」はresearch-deskのこと。連携先のURLは research-desk 側に使用量APIが入ってから `AI_APP_USAGE_SOURCES` へ足す（先に足すと「取得不可（HTTP 404）」の行が出る）
 - **単価表に無いモデルの金額は `null`（画面では「—」）。** 近いモデルの単価で推測しない。出力トークンを数えて
   いない行も、出力が有料のモデルなら `null`（入力だけの金額を全体の金額として出さないため）。
   合計に金額不明の行が混じるときは、画面に「+」と注記を出す
