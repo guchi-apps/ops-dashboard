@@ -12,7 +12,7 @@ import { SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { SectionHeading } from "@/components/section-heading"
 import { Sparkline } from "@/components/sparkline"
 import { StatusBadge, type StatusTone } from "@/components/status-badge"
-import { formatAge, formatBytes, formatUptime } from "@/lib/host-stats/format"
+import { describeCpu, formatAge, formatBytes, formatUptime } from "@/lib/host-stats/format"
 import { pickSeries as pick, sumSeries } from "@/lib/host-stats/history"
 import { describeTimer, evaluateTimers, type TimerState } from "@/lib/host-stats/timers"
 import { cn } from "@/lib/utils"
@@ -152,6 +152,7 @@ function HostSection({
                 <MetricCard
                     label="CPU"
                     value={`${latest.cpuPercent}%`}
+                    detail={describeCpu(latest.cpuModel, latest.cpuThreads)}
                     valueClassName={getUsageColor(latest.cpuPercent)}
                     dimmed={dimmed}
                     chart={
