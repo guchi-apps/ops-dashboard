@@ -5,6 +5,7 @@ import { useDashboardData } from "@/components/dashboard-data"
 import { SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { SectionHeading } from "@/components/section-heading"
 import { findModel, modelLabel, type ModelFamily } from "@/lib/ai-app-usage/models"
+import { countStates, resolvePurposes, type AiPurposeRow, type AiPurposeState } from "@/lib/ai-app-usage/purposes"
 import {
     sumTotals,
     summarizeApps,
@@ -327,6 +328,76 @@ function ModelPanel({ models }: { models: ModelSummary[] }) {
     )
 }
 
+const PURPOSE_STATE: Record<AiPurposeState, { text: string; className: string; hint: string }> = {
+    measured: { text: "計測中", className: "bg-status-ok/15 text-status-ok", hint: "上の一覧に表示" },
+    failed: { text: "取得不可", className: "bg-destructive/15 text-destructive", hint: "連携先から取得できていない" },
+    unlinked: { text: "未連携", className: "bg-amber-500/15 text-amber-400", hint: "使用量APIを読めていない" },
+    quota: { text: "枠のみ", className: "bg-muted text-muted-foreground", hint: "利用枠のカードで確認" },
+}
+
+function PurposeItem({ row }: { row: AiPurposeRow }) {
+    const state = PURPOSE_STATE[row.state]
+    return (
+        <li className="ai-purpose-row border-t border-border px-4 py-2.5 text-xs first:border-t-0">
+            <span data-area="name" className="truncate text-sm font-medium">
+                {row.app}
+            </span>
+            <span data-area="label" className="text-muted-foreground">
+                {row.label}
+            </span>
+            <span data-area="prov" className="text-muted-foreground">
+                {row.provider}
+                <span className="block text-[11px]">{state.hint}</span>
+            </span>
+            <span
+                data-area="state"
+                className={cn("whitespace-nowrap rounded-full px-2 py-px text-[11px]", state.className)}
+            >
+                {state.text}
+            </span>
+        </li>
+    )
+}
+
+/** AIを使っている用途の一覧。使用量を読めていないものを見つけるための区画 */
+function PurposeList({ apps }: { apps: AiAppUsageApp[] }) {
+    const rows = resolvePurposes(apps)
+    const counts = countStates(rows)
+    const groups: { title: string; rows: AiPurposeRow[] }[] = [
+        { title: "アプリが呼ぶAI（API課金）", rows: rows.filter((row) => row.kind === "metered") },
+        { title: "サブスクの枠を使うAI（アプリ別には数えられない）", rows: rows.filter((row) => row.kind === "quota") },
+    ]
+
+    return (
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+                <h3 className="text-sm font-medium">AIの用途一覧</h3>
+                <p className="flex flex-wrap gap-1.5 text-[11px]">
+                    {(["measured", "failed", "unlinked", "quota"] as const)
+                        .filter((key) => counts[key] > 0)
+                        .map((key) => (
+                            <span key={key} className={cn("rounded-full px-2 py-px", PURPOSE_STATE[key].className)}>
+                                {PURPOSE_STATE[key].text} {counts[key]}
+                            </span>
+                        ))}
+                </p>
+            </div>
+            {groups.map((group) => (
+                <div key={group.title}>
+                    <p className="bg-muted px-4 py-1.5 text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                        {group.title}
+                    </p>
+                    <ul>
+                        {group.rows.map((row) => (
+                            <PurposeItem key={row.app} row={row} />
+                        ))}
+                    </ul>
+                </div>
+            ))}
+        </div>
+    )
+}
+
 function okApps(apps: AiAppUsageApp[]): AiAppUsageApp[] {
     return apps.filter((app) => app.status === "ok")
 }
@@ -442,6 +513,8 @@ export function AiAppUsageView({ snapshot }: { snapshot: AiAppUsageSnapshot }) {
 
                 <ModelPanel models={models} />
             </div>
+
+            <PurposeList apps={snapshot.apps} />
 
             <p className="text-[11px] text-muted-foreground">
                 概算金額は、各アプリが数えたトークン数と単価表からの推計で、請求額そのものではありません。
