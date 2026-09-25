@@ -46,3 +46,17 @@ export function formatEta(seconds: number): string {
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}時間後`
     return `${Math.floor(seconds / 86400)}日後`
 }
+
+/** CPUカードの補足行。機種を送っていないホストでは undefined（今までどおり何も出さない） */
+export function describeCpu(model: string | undefined, threads: number | undefined): string | undefined {
+    // 狭いカードで折り返さないよう、機種の識別に要らない部分を削る（商標記号・内蔵GPU名・定格クロック）
+    const name = model
+        ?.replace(/\((R|TM|tm|r)\)/g, "")
+        .replace(/\s+with\s+.*$/i, "")
+        .replace(/\s+CPU(\s+@.*)?$/i, "")
+        .replace(/\s+/g, " ")
+        .trim()
+    const count = threads && threads > 0 ? `${threads}スレッド` : undefined
+    if (name && count) return `${name} · ${count}`
+    return name || count
+}

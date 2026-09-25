@@ -59,6 +59,28 @@ describe("parseAiAppUsageResponse", () => {
         assert.equal(result[0].last24h.costUsd, 0.042)
     })
 
+    it("入力トークンを省略した行は数えていないものとして扱い、金額も出さない（Codex CLIのアプリなど）", () => {
+        const result = parseAiAppUsageResponse({
+            features: [feature({ model: "gpt-6-sol", last24h: { calls: 12 }, last7d: { calls: 40, inputTokens: null } })],
+        })
+
+        assert.deepEqual(result?.[0].last24h, { calls: 12, inputTokens: null, outputTokens: null, costUsd: null })
+        assert.equal(result?.[0].last7d.inputTokens, null)
+    })
+
+    it("期間の途中でモデルを切り替えても、行ごとの単価で換算する（#418）", () => {
+        const usage = { calls: 1, inputTokens: 1_000_000, outputTokens: 0 }
+        const result = parseAiAppUsageResponse({
+            features: [
+                feature({ model: "gpt-5.6-sol", last24h: usage, last7d: usage }),
+                feature({ model: "gpt-6-sol", last24h: usage, last7d: usage }),
+            ],
+        })
+
+        assert.equal(result?.[0].last24h.costUsd, 4)
+        assert.equal(result?.[1].last24h.costUsd, 2)
+    })
+
     it("機能が0件の応答は、呼び出しが無かっただけの正常な応答", () => {
         assert.deepEqual(parseAiAppUsageResponse({ features: [] }), [])
     })

@@ -12,8 +12,8 @@ import type { AiAppFeatureUsage, AiAppUsageTotals } from "@/types/ai-app-usage"
  *                        "cacheReadTokens": 0, "cacheWriteTokens": 0 },
  *           "last7d": { ... } } ] }
  *
- * `outputTokens`・`cacheReadTokens`・`cacheWriteTokens` は省略できる。省略した出力トークンは
- * 「数えていない」（null）、キャッシュは 0 として扱う。
+ * `inputTokens`・`outputTokens`・`cacheReadTokens`・`cacheWriteTokens` は省略できる。省略した入力・出力トークンは
+ * 「数えていない」（null。入力が null の行は金額も null）、キャッシュは 0 として扱う。
  * 機能の配列が空なのは「取得できたが呼び出しが無かった」で、エラーではない。
  */
 
@@ -42,8 +42,15 @@ function toTotals(model: string, value: unknown): AiAppUsageTotals | null {
     const raw = value as RawTotals
 
     const calls = readCount(raw.calls)
-    const inputTokens = readCount(raw.inputTokens)
-    if (calls === null || inputTokens === null) return null
+    if (calls === null) return null
+
+    // 入力トークンも省略（undefined）・null は「数えていない」（Codex CLIのようにトークン数を持たないアプリ）。
+    // 値があるのに不正なものは応答ごと採用しない
+    let inputTokens: number | null = null
+    if (raw.inputTokens !== undefined && raw.inputTokens !== null) {
+        inputTokens = readCount(raw.inputTokens)
+        if (inputTokens === null) return null
+    }
 
     // 省略（undefined）と null は「数えていない」。値があるのに不正なものは応答ごと採用しない
     let outputTokens: number | null = null
@@ -55,6 +62,11 @@ function toTotals(model: string, value: unknown): AiAppUsageTotals | null {
     const cacheReadTokens = raw.cacheReadTokens === undefined ? 0 : readCount(raw.cacheReadTokens)
     const cacheWriteTokens = raw.cacheWriteTokens === undefined ? 0 : readCount(raw.cacheWriteTokens)
     if (cacheReadTokens === null || cacheWriteTokens === null) return null
+
+    if (inputTokens === null) {
+        // トークンを数えていない行は、キャッシュの内訳があっても金額を出さない（一部だけの金額になるため）
+        return { calls, inputTokens: null, outputTokens, costUsd: null }
+    }
 
     return {
         calls,

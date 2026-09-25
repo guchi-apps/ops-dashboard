@@ -183,6 +183,10 @@ export interface HostStatsReport {
     /** エージェント側の収集時刻（ISO 8601）。時刻ずれの調査用で、鮮度判定には使わない */
     collectedAt?: string
     cpuPercent: number
+    /** CPUの機種名（例: Apple M4）。これを送らない世代のエージェントでは undefined */
+    cpuModel?: string
+    /** 論理CPUの数（スレッド数）。これを送らない世代のエージェントでは undefined */
+    cpuThreads?: number
     memory: HostStatsUsage
     swap?: HostStatsUsage
     disks: HostStatsDisk[]

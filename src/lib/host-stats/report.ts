@@ -329,6 +329,8 @@ export function parseHostStatsReport(input: unknown): HostStatsReport & { id: st
         kernel: asOptionalText(record.kernel, "kernel"),
         collectedAt: asOptionalText(record.collectedAt, "collectedAt"),
         cpuPercent: clampPercent(asNumber(record.cpuPercent, "cpuPercent")),
+        cpuModel: asOptionalText(record.cpuModel, "cpuModel"),
+        cpuThreads: asOptionalCount(record.cpuThreads, "cpuThreads"),
         memory: parseUsage(record.memory, "memory"),
         swap,
         disks: parseDisks(record.disks),

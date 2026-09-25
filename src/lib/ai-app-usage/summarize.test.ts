@@ -16,10 +16,41 @@ function app(name: string, features: AiAppFeatureUsage[], status: AiAppUsageApp[
 }
 
 describe("sumTotals", () => {
+    it("入力トークンを数えていない行は、数えた行だけを足して不完全と記す", () => {
+        const none = { inputTokens: null, outputTokens: null, costUsd: null }
+        const mixed = sumTotals([totals(1, none), totals(2)])
+        assert.equal(mixed.inputTokens, 200)
+        assert.equal(mixed.inputIncomplete, true)
+        // トークン未集計の行の金額なしは、単価不明（costIncomplete）とは区別する
+        assert.equal(mixed.costIncomplete, false)
+
+        const allNone = sumTotals([totals(1, none)])
+        assert.equal(allNone.inputTokens, null)
+        assert.equal(allNone.calls, 1)
+    })
+
+    it("モデルを切り替えた期間は、行ごとの金額を足し、単価不明の行があれば不完全と記す（#418）", () => {
+        // parse が行ごとに換算した金額（gpt-5.6-sol と gpt-6-sol）を合計する
+        const switched = sumTotals([totals(1, { costUsd: 4 }), totals(1, { costUsd: 2 })])
+        assert.equal(switched.costUsd, 6)
+        assert.equal(switched.costIncomplete, false)
+
+        const unknown = sumTotals([totals(1, { costUsd: 4 }), totals(1, { costUsd: null })])
+        assert.equal(unknown.costUsd, 4)
+        assert.equal(unknown.costIncomplete, true)
+    })
+
     it("回数・トークン・金額を足す", () => {
         const sum = sumTotals([totals(2), totals(3)])
 
-        assert.deepEqual(sum, { calls: 5, inputTokens: 500, outputTokens: 50, costUsd: 0.05, costIncomplete: false })
+        assert.deepEqual(sum, {
+            calls: 5,
+            inputTokens: 500,
+            inputIncomplete: false,
+            outputTokens: 50,
+            costUsd: 0.05,
+            costIncomplete: false,
+        })
     })
 
     it("出力トークンを数えている行が無ければ null、金額を計算できない行が混じれば不完全と記す", () => {

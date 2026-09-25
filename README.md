@@ -303,6 +303,7 @@ macOSには `/proc`・`systemctl`・`/sys/class/*` が無く、`agent.sh` はそ
 | 項目 | agent.sh（Linux） | agent-macos.sh（macOS） |
 | --- | --- | --- |
 | CPU使用率 | `/proc/stat` | `top -l 2 -n 0`（2回サンプリングし、信頼できる2回目の値を使う） |
+| CPU機種名・スレッド数 | `/proc/cpuinfo` の `model name` と `nproc` | `sysctl machdep.cpu.brand_string` と `hw.ncpu`。ホストタブのCPUカードの補足行に出る（#419）。送らない世代のエージェントでは何も出ない |
 | メモリ使用率 | `/proc/meminfo` | `vm_stat` + `sysctl hw.memsize`（Activity Monitorの「使用中のメモリ」に合わせ、アクティブ+Wired+圧縮の合計） |
 | Swap使用率 | `/proc/meminfo` | `sysctl vm.swapusage`。使っていなければ送らない |
 | ディスク使用率 | `df -B1 -P` | `df -k` |
@@ -507,7 +508,7 @@ TypeSafeの公開APIはアカウントの残高・無料枠を返さず、POST /
 ```
 
 - 機能×モデルごとに1行。同じ機能でモデルを切り替えていれば2行に分ける
-- `outputTokens` `cacheReadTokens` `cacheWriteTokens` は省略できる。省略した出力トークンは「数えていない」（画面では「—」）
+- `inputTokens` `outputTokens` `cacheReadTokens` `cacheWriteTokens` は省略できる。省略した入力・出力トークンは「数えていない」（画面では「—」）。**入力を省略した行は金額も「—」**（トークンを持たないCodex CLI経由のアプリ向け。research-deskはこの形で `calls` だけを返す想定。`calls` は必須）
 - `inputTokens` は**キャッシュに載らなかった分**。画面の入力トークンはキャッシュの書き込み・読み出しを足した合計で出す
 - `features` が空なのは「取得できたが呼び出しが無かった」で、エラーではない
 - **1行でも形が違えば応答全体を採用せず**、そのアプリは「取得不可」（`応答の形式が想定と異なります`）になる。
@@ -516,6 +517,9 @@ TypeSafeの公開APIはアカウントの残高・無料枠を返さず、POST /
 金額はダッシュボード側の単価表（`src/lib/ai-app-usage/models.ts`）で換算した概算で、請求額そのものではない。
 **単価表に無いモデルは名前だけを出して金額は「不明」にする**（近いモデルの単価で推測しない）。
 モデルを増やしたら、単価表にも足す。日付付きのID（`claude-haiku-4-5-20251001`）は一覧のIDへ寄せて数える。
+**使わなくなったモデルの行は消さない**（期間の途中でモデルを切り替えたアプリは、行ごとに自分のモデルの単価で換算するため。#418）。
+GPT-5.6系（aide-botがCodex CLI経由で使う）はChatGPTの定額枠で請求が発生しないが、公開API単価での「換算の目安」として金額を出す。
+その単価は第三者サイトの値で、キャッシュの単価は仮定（`models.ts` のコメント参照）。公式の値が分かったら直す。
 
 - 取得できなかったアプリは「取得不可」と理由（`HTTP 500`・`接続できません`など。URLやトークンは含めない）を出し、
   合計には含めない。0件と区別するため
@@ -524,6 +528,18 @@ TypeSafeの公開APIはアカウントの残高・無料枠を返さず、POST /
   issue-deckの行（モデル `Jev`）として使う。`AI_APP_USAGE_SOURCES` に `issue-deck` を入れた時点で、
   そちらが正になり、TypeSafeからの補完は止まる（Jevの分が二重に数えられないため）
 - キャッシュは5分（失敗したアプリがあるときは30秒）。ヘッダーの更新ボタンからの取得（`?force=1`）は30秒の間隔を守る
+
+#### AIの用途一覧（[issue #415](https://github.com/guchi-apps/ops-dashboard/issues/415)）
+
+アプリ別の表は使用量APIを持つアプリしか出ないため、その下に「AIを使っている用途」の一覧を出し、数えられていないものを見つけられるようにする。
+用途は `src/lib/ai-app-usage/purposes.ts` の `AI_PURPOSES` に**手で登録する**（他リポジトリのソースは実行時に読めない）。
+**AIを呼ぶ機能をどのアプリに足しても、ここへ足す。**
+
+- 計測中 — 取得結果（スナップショット）にアプリがあり、取得できている（issue-deckのTypeSafe補完も含む）
+- 取得不可 — 連携先に載っているが取得できていない
+- 未連携 — AI APIを呼ぶが、使用量を読む連携先に載っていない（asset-manager・dayspan・portfolio・stockly・research-deskなど）。アプリ側に使用量APIを足して `AI_APP_USAGE_SOURCES` へ載せると「計測中」になる
+- 枠のみ — サブスクの利用枠を使う用途（Claude Code・5時間枠の先開け・Codex）。アプリ別には数えられず、提供元別の利用枠カードで見る
+- Claude.ai・ChatGPTの手動利用は取得手段が無いため載せない
 
 Gemini（Antigravity）は使用状況の確認手段がインタラクティブなTUI（`/usage`）だけで、
 非対話の出力もHTTP APIも公開されておらず取得できないため、表示対象に含めていない。

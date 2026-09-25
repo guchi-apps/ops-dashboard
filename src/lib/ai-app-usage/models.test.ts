@@ -24,6 +24,15 @@ describe("findModel", () => {
         assert.equal(findModel("claude-opus-5")?.id, "claude-opus-5")
     })
 
+    it("GPT-5.6のSol・Terra・LunaとFable 5.1も一覧から引ける（#418）", () => {
+        assert.equal(findModel("gpt-5.6-sol")?.id, "gpt-5.6-sol")
+        assert.equal(modelLabel("gpt-5.6-terra"), "GPT-5.6 Terra")
+        assert.equal(findModel("gpt-5.6-luna")?.id, "gpt-5.6-luna")
+        assert.equal(findModel("claude-fable-5-1")?.id, "claude-fable-5-1")
+        // 使わなくなった・これから使うモデルの行も残っている
+        assert.equal(findModel("gpt-6-sol")?.id, "gpt-6-sol")
+    })
+
     it("一覧に無いモデルは名前をそのまま出し、集計のキーも変えない", () => {
         assert.equal(findModel("gpt-9"), null)
         assert.equal(modelLabel("gpt-9"), "gpt-9")
@@ -98,5 +107,17 @@ describe("estimateCostUsd", () => {
         })
         assert.ok(luna !== null)
         assert.ok(Math.abs(luna - (0.1 + 0.05 + 0.02 + 0.05)) < 1e-9)
+    })
+
+    it("GPT-5.6系とFable 5.1はそれぞれの単価で計算する（#418）", () => {
+        const tokens = { inputTokens: 1_000_000, outputTokens: 100_000, cacheReadTokens: 2_000_000, cacheWriteTokens: 400_000 }
+        const near = (actual: number | null, expected: number) => {
+            assert.ok(actual !== null)
+            assert.ok(Math.abs(actual - expected) < 1e-9)
+        }
+        near(estimateCostUsd("gpt-5.6-sol", tokens), 4 + 2 + 0.8 + 1.6)
+        near(estimateCostUsd("gpt-5.6-terra", tokens), 2 + 1.2 + 0.4 + 0.8)
+        near(estimateCostUsd("gpt-5.6-luna", tokens), 0.2 + 0.12 + 0.04 + 0.08)
+        near(estimateCostUsd("claude-fable-5-1", tokens), 10 + 5 + 0.5 + 5)
     })
 })
