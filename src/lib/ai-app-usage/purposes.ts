@@ -6,7 +6,7 @@ import type { AiAppUsageApp } from "@/types/ai-app-usage"
  * 他リポジトリのソースは実行時に読めないので、自動検出はしない。
  * **AIを呼ぶ機能を足したら（どのアプリでも）ここへ足す。**
  *
- * - `app`: 使用量の連携先と同じアプリ名。`metered` の用途は、これが `AI_APP_USAGE_SOURCES` の `app` と一致すれば「計測中」
+ * - `app`: 使用量の連携先と同じアプリ名。`metered` の用途は、スナップショットの `apps` に同名のアプリがあり取得できていれば「計測中」
  * - `metered`: アプリが自分でAI APIを呼び、使用量APIで数えられる用途
  * - `quota`: サブスクの利用枠を消費する用途。アプリ別には数えられず、提供元別の利用枠カードで見る
  */
@@ -24,6 +24,8 @@ export const AI_PURPOSES: AiPurpose[] = [
     { app: "aide-bot", label: "チャット・ブリーフィング", provider: "Claude API", kind: "metered" },
     { app: "asset-manager", label: "レシート解析・リバランス助言", provider: "Claude API", kind: "metered" },
     { app: "dayspan", label: "旅行の所要時間見積もり", provider: "Claude Haiku 4.5", kind: "metered" },
+    { app: "stockly", label: "取り込み・消費量の解析", provider: "Claude API（OAuth。枠を使っている可能性あり）", kind: "metered" },
+    { app: "research-desk", label: "分析・週次ブリーフ（Codex CLI）", provider: "Codex CLI", kind: "metered" },
     { app: "portfolio", label: "プロジェクト要約", provider: "Claude Haiku 4.5", kind: "metered" },
     { app: "Claude Code", label: "実装・計画・レビュー・CI修正（サブPC・GitHub Actions）", provider: "Claude 利用枠", kind: "quota", quotaOf: "claude" },
     { app: "5時間枠の先開け", label: "issue-deckが最小の推論を送って枠を開ける", provider: "Claude 利用枠", kind: "quota", quotaOf: "claude" },
@@ -31,9 +33,9 @@ export const AI_PURPOSES: AiPurpose[] = [
 ]
 
 /**
- * measured — 連携先として読めている
- * failed   — 連携先に載っているが取得できていない
- * unlinked — 使用量を読む連携先に載っていない（AIは使っているのに数えられていない）
+ * measured — スナップショットの `apps` に載り、取得できている（issue-deckのTypeSafe補完も含む）
+ * failed   — スナップショットに載っているが取得できていない
+ * unlinked — スナップショットに載っていない（AIは使っているのに数えられていない）
  * quota    — 利用枠を消費する。アプリ別には数えられない
  */
 export type AiPurposeState = "measured" | "failed" | "unlinked" | "quota"

@@ -531,9 +531,9 @@ TypeSafeの公開APIはアカウントの残高・無料枠を返さず、POST /
 用途は `src/lib/ai-app-usage/purposes.ts` の `AI_PURPOSES` に**手で登録する**（他リポジトリのソースは実行時に読めない）。
 **AIを呼ぶ機能をどのアプリに足しても、ここへ足す。**
 
-- 計測中 — `AI_APP_USAGE_SOURCES`（issue-deckはTypeSafe補完を含む）に載り、取得できている
+- 計測中 — 取得結果（スナップショット）にアプリがあり、取得できている（issue-deckのTypeSafe補完も含む）
 - 取得不可 — 連携先に載っているが取得できていない
-- 未連携 — AI APIを呼ぶが、使用量を読む連携先に載っていない（asset-manager・dayspan・portfolioなど）。アプリ側に使用量APIを足して `AI_APP_USAGE_SOURCES` へ載せると「計測中」になる
+- 未連携 — AI APIを呼ぶが、使用量を読む連携先に載っていない（asset-manager・dayspan・portfolio・stockly・research-deskなど）。アプリ側に使用量APIを足して `AI_APP_USAGE_SOURCES` へ載せると「計測中」になる
 - 枠のみ — サブスクの利用枠を使う用途（Claude Code・5時間枠の先開け・Codex）。アプリ別には数えられず、提供元別の利用枠カードで見る
 - Claude.ai・ChatGPTの手動利用は取得手段が無いため載せない
 

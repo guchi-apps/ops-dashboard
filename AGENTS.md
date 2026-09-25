@@ -252,7 +252,7 @@ AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/s
 
 **「AIの用途一覧」は手で保守する登録簿**（`src/lib/ai-app-usage/purposes.ts` の `AI_PURPOSES`。#415）。
 他リポジトリのAI呼び出しは実行時に検出できないため、AIを使う機能が増えたらここへ足す。状態は
-`AI_APP_USAGE_SOURCES` に `app` が載っているか（計測中・取得不可・未連携）で決まり、`kind: "quota"` は常に「枠のみ」。
+スナップショットの `apps` に同名のアプリがあるか・`status` が `ok` か（計測中・取得不可・未連携）で決まり（環境変数ではなく取得結果で判定するため、issue-deckのTypeSafe補完も計測中になる）、`kind: "quota"` は常に「枠のみ」。
 `app` は `AI_APP_USAGE_SOURCES` のアプリ名と同じ綴りにする。
 
 ## AI利用枠のクレジット（サブスク外）
