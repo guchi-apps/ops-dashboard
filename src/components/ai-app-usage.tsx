@@ -445,6 +445,7 @@ export function AiAppUsageView({ snapshot }: { snapshot: AiAppUsageSnapshot }) {
 
             <p className="text-[11px] text-muted-foreground">
                 概算金額は、各アプリが数えたトークン数と単価表からの推計で、請求額そのものではありません。
+                GPT-5.6系（Codex経由）はChatGPTの定額枠で動くため請求は発生せず、公開API単価での換算の目安です。
                 行を押すと機能ごとの内訳を開閉します。
             </p>
         </section>
