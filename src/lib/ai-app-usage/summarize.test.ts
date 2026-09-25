@@ -29,6 +29,17 @@ describe("sumTotals", () => {
         assert.equal(allNone.calls, 1)
     })
 
+    it("モデルを切り替えた期間は、行ごとの金額を足し、単価不明の行があれば不完全と記す（#418）", () => {
+        // parse が行ごとに換算した金額（gpt-5.6-sol と gpt-6-sol）を合計する
+        const switched = sumTotals([totals(1, { costUsd: 4 }), totals(1, { costUsd: 2 })])
+        assert.equal(switched.costUsd, 6)
+        assert.equal(switched.costIncomplete, false)
+
+        const unknown = sumTotals([totals(1, { costUsd: 4 }), totals(1, { costUsd: null })])
+        assert.equal(unknown.costUsd, 4)
+        assert.equal(unknown.costIncomplete, true)
+    })
+
     it("回数・トークン・金額を足す", () => {
         const sum = sumTotals([totals(2), totals(3)])
 

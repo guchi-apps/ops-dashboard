@@ -32,9 +32,29 @@ export interface ModelInfo {
  * **Anthropicが単価を変えたら、または連携先が新しいモデルを使い始めたらここを直す。**
  * 表に無いモデルは、名前だけを出して金額は「不明」にする（近いモデルの単価で推測すると、
  * 実際より安く見えたり高く見えたりするため）。
- * Claude系の単価は aide-bot の `MODEL_PRICING`（出典: https://claude.com/pricing#api）と同じ値。
+ * Claude系の単価の出典は https://claude.com/pricing#api（2026-09-25時点。aide-bot の `MODEL_PRICING` と同じ値）。
+ *
+ * **使わなくなったモデルの行も消さない**（#418）。連携先は期間の途中でモデルを切り替えることがあり、
+ * 行ごとに自分のモデルの単価で換算するため、消すとその期間の金額が「不明」に化ける。
+ *
+ * GPT-5.6系（aide-bot が Codex CLI 経由で使う）は、ChatGPTの定額枠で動くため実際の請求は発生しない。
+ * ここの単価は公開API価格での「換算の目安」。出典は第三者サイトの2026-09-25時点の値（公式ページは
+ * 取得できなかった。Solは2026-11-21までの期間限定価格の可能性）で、**キャッシュ読み出し（入力の1/10）と
+ * 書き込み（入力と同額）は仮定**。公式の値が分かったら直す。
+ *
+ * **`gpt-6-*` の単価は出典が確認できていない**（#377で追加。Sonnet 5と同じ値）。aide-botがGPT-6へ
+ * 切り替えても金額が出るよう残してあるが、公式の単価が出たら必ず確かめ直す。Terraなど未登録の
+ * モデルは、名前だけを出して金額は「不明」になる。
  */
 const MODELS: ModelInfo[] = [
+    {
+        id: "claude-fable-5-1",
+        label: "Fable 5.1",
+        provider: "Anthropic",
+        // 画面の色分けに専用の系統が無いため、いちばん上位の opus に寄せる
+        family: "opus",
+        price: { input: 10, output: 50, cacheWrite: 12.5, cacheRead: 0.25 },
+    },
     {
         id: "claude-opus-5-5",
         label: "Opus 5.5",
@@ -71,6 +91,27 @@ const MODELS: ModelInfo[] = [
         provider: "TypeSafe",
         family: "jev",
         price: { input: 0.042, output: 0, cacheWrite: 0, cacheRead: 0 },
+    },
+    {
+        id: "gpt-5.6-sol",
+        label: "GPT-5.6 Sol",
+        provider: "OpenAI",
+        family: "gpt",
+        price: { input: 4, output: 20, cacheWrite: 4, cacheRead: 0.4 },
+    },
+    {
+        id: "gpt-5.6-terra",
+        label: "GPT-5.6 Terra",
+        provider: "OpenAI",
+        family: "gpt",
+        price: { input: 2, output: 12, cacheWrite: 2, cacheRead: 0.2 },
+    },
+    {
+        id: "gpt-5.6-luna",
+        label: "GPT-5.6 Luna",
+        provider: "OpenAI",
+        family: "gpt",
+        price: { input: 0.2, output: 1.2, cacheWrite: 0.2, cacheRead: 0.02 },
     },
     {
         id: "gpt-6-sol",
