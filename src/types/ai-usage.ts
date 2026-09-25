@@ -78,6 +78,11 @@ export interface AiProviderCredit {
     detailText: string | null
     /** 枠がリセットされる時刻（ISO 8601）。期限が無ければ null */
     resetsAt: string | null
+    /**
+     * 購入クレジットの失効日時（ISO 8601、Jevのみ）。resetsAtと違い、この時刻が来ても残高は
+     * 補充されず、使い切っていない分が消える。resetsAtとは文言を分けるため別フィールドにしている
+     */
+    expiresAt?: string | null
     /** 当月の追加利用の生の値（Claudeのみ）。台帳の使用額の積み上げに使う */
     monthly?: AiCreditMonthly
     /** 手入力の購入・残高の台帳（Claudeのみ）。画面から編集するための値 */

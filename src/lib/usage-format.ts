@@ -48,6 +48,21 @@ export function formatRemaining(resetsAt: string, now: number): string | null {
     return `あと${minutes}分でリセット`
 }
 
+/** 購入クレジットの失効までの残り時間を表示文にする。resetsAtの「リセット」と違い、来ても補充されないため文言を分ける */
+export function formatExpiry(expiresAt: string, now: number): string | null {
+    const remainingMs = new Date(expiresAt).getTime() - now
+    if (Number.isNaN(remainingMs)) return null
+    if (remainingMs <= 0) return "期限切れ"
+
+    const minutes = Math.floor(remainingMs / 60_000)
+    const hours = Math.floor(minutes / 60)
+    const days = Math.floor(hours / 24)
+
+    if (days >= 1) return `期限まであと${days}日${hours % 24}時間`
+    if (hours >= 1) return `期限まであと${hours}時間${minutes % 60}分`
+    return `期限まであと${minutes}分`
+}
+
 /**
  * 制限枠のうち何割の時間が過ぎたかを返す。
  * 枠の開始と終了が両方分からないと出せないため、その場合は null を返す。

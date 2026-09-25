@@ -70,7 +70,8 @@ export function toTypeSafeCredit(
         valueText: ledger.balanceText ? `残り ${ledger.balanceText}` : "未記録",
         usedPercent: usedPercent === null ? null : Math.round(usedPercent * 10) / 10,
         detailText: [purchasedText, pendingText].filter(Boolean).join(" · ") || null,
-        resetsAt: earliestExpiry,
+        resetsAt: null,
+        expiresAt: earliestExpiry,
         reservedPercent: usedPercent === null ? undefined : Math.round((100 - usedPercent) * 10) / 10,
         ledger,
     }

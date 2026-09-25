@@ -7,7 +7,7 @@ import { DashboardCard } from "@/components/dashboard-card"
 import { AccessDenied, SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
-import { formatRemaining, formatTokens, formatUsd, getElapsedPercent, toDayMarkers } from "@/lib/usage-format"
+import { formatExpiry, formatRemaining, formatTokens, formatUsd, getElapsedPercent, toDayMarkers } from "@/lib/usage-format"
 import type { AiProviderCredit, AiProviderMeteredUsage, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
 
 /** サブスク枠と区別が付くよう、クレジット枠の行にはこの補足を添える */
@@ -43,6 +43,13 @@ function UsageWindowRow({ window: usageWindow, now }: { window: AiUsageWindow; n
  * サブスク枠と違い経過率は出さない。「経過◯%」は時間の進みでしかなく、
  * Issueで求められた「使用 $X / 上限 $Y」の金額内訳（detailText）のほうが実態を表す（#250）。
  */
+/** クレジット枠の残り時間の文言。resetsAtは「リセット」、expiresAtは補充されない「失効」なので分ける */
+function creditRemainingText(credit: AiProviderCredit, now: number): string | null {
+    if (credit.expiresAt) return formatExpiry(credit.expiresAt, now)
+    if (credit.resetsAt) return formatRemaining(credit.resetsAt, now)
+    return null
+}
+
 function CreditRow({ credit, now }: { credit: AiProviderCredit; now: number }) {
     if (credit.usedPercent !== null) {
         return (
@@ -53,7 +60,7 @@ function CreditRow({ credit, now }: { credit: AiProviderCredit; now: number }) {
                 valueText={credit.valueText}
                 usedText={credit.detailText ?? undefined}
                 reservedPercent={credit.reservedPercent}
-                remainingText={credit.resetsAt ? formatRemaining(credit.resetsAt, now) : null}
+                remainingText={creditRemainingText(credit, now)}
             />
         )
     }
