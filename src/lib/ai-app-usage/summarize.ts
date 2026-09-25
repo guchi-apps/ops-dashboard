@@ -8,24 +8,30 @@ import type { AiAppPeriod, AiAppUsageApp, AiAppUsageTotals } from "@/types/ai-ap
 
 export interface SummedTotals {
     calls: number
-    inputTokens: number
+    /** 入力トークンを数えている行が1つも無ければ null */
+    inputTokens: number | null
+    /** 入力トークンを数えていない行が混じっている（合計は実際より少ない） */
+    inputIncomplete: boolean
     /** 出力トークンを数えている行が1つも無ければ null */
     outputTokens: number | null
     /** 金額を計算できた行の合計。1行も計算できなければ null */
     costUsd: number | null
-    /** 金額を計算できなかった行が混じっている（合計は実際より少ない） */
+    /** 単価が分からず金額を計算できなかった行が混じっている（合計は実際より少ない）。トークン未集計の行は含めない */
     costIncomplete: boolean
 }
 
 export function sumTotals(list: AiAppUsageTotals[]): SummedTotals {
-    const sum: SummedTotals = { calls: 0, inputTokens: 0, outputTokens: null, costUsd: null, costIncomplete: false }
+    const sum: SummedTotals = { calls: 0, inputTokens: null, inputIncomplete: false, outputTokens: null, costUsd: null, costIncomplete: false }
 
     for (const totals of list) {
         sum.calls += totals.calls
-        sum.inputTokens += totals.inputTokens
+        if (totals.inputTokens === null) sum.inputIncomplete = true
+        else sum.inputTokens = (sum.inputTokens ?? 0) + totals.inputTokens
         if (totals.outputTokens !== null) sum.outputTokens = (sum.outputTokens ?? 0) + totals.outputTokens
-        if (totals.costUsd === null) sum.costIncomplete = true
-        else sum.costUsd = (sum.costUsd ?? 0) + totals.costUsd
+        // 入力トークンを数えていない行の金額が無いのは単価不明ではないため、costIncomplete にしない（inputIncomplete で示す）
+        if (totals.costUsd === null) {
+            if (totals.inputTokens !== null) sum.costIncomplete = true
+        } else sum.costUsd = (sum.costUsd ?? 0) + totals.costUsd
     }
 
     return sum

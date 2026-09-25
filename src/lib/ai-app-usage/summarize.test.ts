@@ -16,10 +16,30 @@ function app(name: string, features: AiAppFeatureUsage[], status: AiAppUsageApp[
 }
 
 describe("sumTotals", () => {
+    it("入力トークンを数えていない行は、数えた行だけを足して不完全と記す", () => {
+        const none = { inputTokens: null, outputTokens: null, costUsd: null }
+        const mixed = sumTotals([totals(1, none), totals(2)])
+        assert.equal(mixed.inputTokens, 200)
+        assert.equal(mixed.inputIncomplete, true)
+        // トークン未集計の行の金額なしは、単価不明（costIncomplete）とは区別する
+        assert.equal(mixed.costIncomplete, false)
+
+        const allNone = sumTotals([totals(1, none)])
+        assert.equal(allNone.inputTokens, null)
+        assert.equal(allNone.calls, 1)
+    })
+
     it("回数・トークン・金額を足す", () => {
         const sum = sumTotals([totals(2), totals(3)])
 
-        assert.deepEqual(sum, { calls: 5, inputTokens: 500, outputTokens: 50, costUsd: 0.05, costIncomplete: false })
+        assert.deepEqual(sum, {
+            calls: 5,
+            inputTokens: 500,
+            inputIncomplete: false,
+            outputTokens: 50,
+            costUsd: 0.05,
+            costIncomplete: false,
+        })
     })
 
     it("出力トークンを数えている行が無ければ null、金額を計算できない行が混じれば不完全と記す", () => {
