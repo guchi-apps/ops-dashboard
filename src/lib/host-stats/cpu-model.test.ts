@@ -16,7 +16,7 @@ const BASE = {
 
 describe("CPU機種名", () => {
     it("機種名とスレッド数を1行にまとめる", () => {
-        assert.equal(describeCpu("AMD Athlon 200GE  with Radeon Vega", 4), "AMD Athlon 200GE with Radeon Vega · 4スレッド")
+        assert.equal(describeCpu("AMD  Athlon 200GE", 4), "AMD Athlon 200GE · 4スレッド")
     })
 
     it("内蔵GPU名・商標記号・定格クロックを削る", () => {
