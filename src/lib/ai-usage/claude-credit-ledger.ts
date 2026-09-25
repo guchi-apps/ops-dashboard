@@ -32,6 +32,8 @@ export interface LedgerConfig {
     decimals: number
     envVar: string
     fileName: string
+    /** 観測値が通算の累計なら true。減ったときはリセットではなく集計の欠けなので、足さずに基準だけ置き直す */
+    cumulative?: boolean
 }
 
 export const CLAUDE_LEDGER: LedgerConfig = {
@@ -154,7 +156,8 @@ export function recordCreditUsage(usedMinor: number, config: LedgerConfig): Prom
         if (last === usedMinor) return
 
         // 減っていれば月が替わってリセットされた。前の月の取りこぼし（最後の観測から月末まで）は拾えない
-        state.usedTotalMinor += last === null ? 0 : usedMinor >= last ? usedMinor - last : usedMinor
+        const increase = last === null ? 0 : usedMinor >= last ? usedMinor - last : config.cumulative ? 0 : usedMinor
+        state.usedTotalMinor += increase
         state.lastObservedMinor = usedMinor
         await writeState(state, config)
     })

@@ -58,4 +58,17 @@ describe("applyTypeSafeCreditLedger", () => {
         assert.equal(credit?.reservedPercent, 38)
         assert.doesNotMatch(credit?.detailText ?? "", /累計待ち/)
     })
+
+    it("累計が減っても（集計の欠け）二重に足さず、その後の増分だけを積む", async (t) => {
+        redirectStateFile(t, "TYPESAFE_CREDIT_LEDGER_PATH")
+        await addTypeSafeCreditPurchase(today(), 100_000)
+        await correctTypeSafeCreditBalance(100_000)
+
+        await recordTypeSafeCreditUsage(100_000_000) // 最初の観測は基準になるだけ
+        await recordTypeSafeCreditUsage(50_000_000) // 減った: 足さない
+        await recordTypeSafeCreditUsage(60_000_000) // +10M = $0.42
+        const credit = (await applyTypeSafeCreditLedger(makeSnapshot([makeProvider("typesafe", [])]))).providers[0].credit
+
+        assert.equal(credit?.valueText, "残り $9.58")
+    })
 })

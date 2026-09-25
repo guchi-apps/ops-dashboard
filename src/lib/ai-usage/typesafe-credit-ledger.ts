@@ -24,6 +24,7 @@ export const TYPESAFE_LEDGER: LedgerConfig = {
     decimals: 4,
     envVar: "TYPESAFE_CREDIT_LEDGER_PATH",
     fileName: "typesafe-credit-ledger.json",
+    cumulative: true,
 }
 
 /** 累計入力トークン数を、台帳の最小単位の使用額へ */
