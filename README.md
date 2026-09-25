@@ -303,6 +303,7 @@ macOSには `/proc`・`systemctl`・`/sys/class/*` が無く、`agent.sh` はそ
 | 項目 | agent.sh（Linux） | agent-macos.sh（macOS） |
 | --- | --- | --- |
 | CPU使用率 | `/proc/stat` | `top -l 2 -n 0`（2回サンプリングし、信頼できる2回目の値を使う） |
+| CPU機種名・スレッド数 | `/proc/cpuinfo` の `model name` と `nproc` | `sysctl machdep.cpu.brand_string` と `hw.ncpu`。ホストタブのCPUカードの補足行に出る（#419）。送らない世代のエージェントでは何も出ない |
 | メモリ使用率 | `/proc/meminfo` | `vm_stat` + `sysctl hw.memsize`（Activity Monitorの「使用中のメモリ」に合わせ、アクティブ+Wired+圧縮の合計） |
 | Swap使用率 | `/proc/meminfo` | `sysctl vm.swapusage`。使っていなければ送らない |
 | ディスク使用率 | `df -B1 -P` | `df -k` |

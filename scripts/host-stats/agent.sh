@@ -158,6 +158,12 @@ rate_json() {
     }'
 }
 
+# CPUの機種名。/proc/cpuinfo の `model name`（ARMなど持たない機種は Hardware・Model の順に代用）。
+# 読めなければ何も出さず、項目ごと送らない
+collect_cpu_model() {
+    awk -F': *' '/^model name|^Hardware|^Model[ \t]*:/ { print $2; exit }' /proc/cpuinfo 2>/dev/null || true
+}
+
 collect_memory() {
     local total available
     total=$(awk '/^MemTotal:/ { print $2 * 1024; exit }' /proc/meminfo)
@@ -939,7 +945,7 @@ os_name() {
 }
 
 build_payload() {
-    local swap temperature tmux_output tmux_sessions tmux_total timers apps
+    local swap temperature tmux_output tmux_sessions tmux_total timers apps cpu_model cpu_threads
     collect_samples
     swap="$(collect_swap)"
     temperature="$(collect_temperature)"
@@ -965,6 +971,10 @@ build_payload() {
     printf '"kernel":"%s",' "$(json_escape "$(uname -r)")"
     printf '"collectedAt":"%s",' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf '"cpuPercent":%s,' "$CPU_PERCENT"
+    cpu_model="$(collect_cpu_model)"
+    [ -z "$cpu_model" ] || printf '"cpuModel":"%s",' "$(json_escape "$cpu_model")"
+    cpu_threads="$(nproc 2>/dev/null || true)"
+    case "$cpu_threads" in "" | *[!0-9]*) ;; *) printf '"cpuThreads":%d,' "$cpu_threads" ;; esac
     printf '"memory":%s,' "$(collect_memory)"
     [ -z "$swap" ] || printf '"swap":%s,' "$swap"
     printf '"disks":%s,' "$(collect_disks)"

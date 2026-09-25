@@ -150,7 +150,7 @@ os_name() {
 }
 
 build_payload() {
-    local swap
+    local swap cpu_model cpu_threads
     swap="$(collect_swap)"
 
     printf '{'
@@ -162,6 +162,10 @@ build_payload() {
     printf '"kernel":"%s",' "$(json_escape "$(uname -r)")"
     printf '"collectedAt":"%s",' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf '"cpuPercent":%s,' "$(collect_cpu_percent)"
+    cpu_model="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)"
+    [ -z "$cpu_model" ] || printf '"cpuModel":"%s",' "$(json_escape "$cpu_model")"
+    cpu_threads="$(sysctl -n hw.ncpu 2>/dev/null || true)"
+    case "$cpu_threads" in "" | *[!0-9]*) ;; *) printf '"cpuThreads":%d,' "$cpu_threads" ;; esac
     printf '"memory":%s,' "$(collect_memory)"
     [ -z "$swap" ] || printf '"swap":%s,' "$swap"
     printf '"disks":%s,' "$(collect_disks)"
