@@ -3,6 +3,7 @@ import { getChatGptUsageEntry } from "@/lib/ai-usage/chatgpt"
 import { getClaudeUsageEntry } from "@/lib/ai-usage/claude"
 import { getTypeSafeUsageEntry } from "@/lib/ai-usage/typesafe"
 import { applyClaudeCreditLedger, recordClaudeCreditUsage } from "@/lib/ai-usage/claude-credit-ledger"
+import { applyTypeSafeCreditLedger, recordTypeSafeCreditUsage } from "@/lib/ai-usage/typesafe-credit-ledger"
 import { attachDayMarks } from "@/lib/ai-usage/day-marks"
 import { applyAiUsageHistory } from "@/lib/ai-usage/history"
 import type { ProviderCacheEntry } from "@/lib/ai-usage/provider-cache"
@@ -52,6 +53,10 @@ async function record(entry: ProviderCacheEntry): Promise<{ usage: AiProviderUsa
     const claudeMonthly = usage.id === "claude" && usage.status === "ok" ? usage.credit?.monthly : undefined
     if (claudeMonthly) await recordClaudeCreditUsage(claudeMonthly.usedMinor)
 
+    // Jevのクレジット残高の消費額は、連携先の累計入力トークンから積む（#426）
+    const totalInputTokens = usage.id === "typesafe" && usage.status === "ok" ? usage.metered?.totalInputTokens : undefined
+    if (totalInputTokens !== undefined) await recordTypeSafeCreditUsage(totalInputTokens)
+
     recorded.set(entry, usage)
     return { usage, fresh: true }
 }
@@ -85,8 +90,10 @@ export async function getAiUsageSnapshot({
     const oldest = Math.min(...entries.map((entry) => entry.fetchedAtMs))
 
     // 台帳の値は記録直後に画面へ出すため、キャッシュを返す回も毎回載せ直す
-    return applyClaudeCreditLedger({
-        providers: results.map((result) => result.usage),
-        fetchedAt: new Date(oldest).toISOString(),
-    })
+    return applyTypeSafeCreditLedger(
+        await applyClaudeCreditLedger({
+            providers: results.map((result) => result.usage),
+            fetchedAt: new Date(oldest).toISOString(),
+        })
+    )
 }
