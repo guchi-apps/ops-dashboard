@@ -14,6 +14,18 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.42.0",
+        date: "2026-09-26",
+        changes: [
+            "AI利用状況の画面に、Jev（TypeSafe）のクレジット残高を管理する機能を追加しました。購入したクレジットの金額や、その時点の残高を記録しておくと、Claudeのクレジット枠と同じ見た目で残高の推移を確認できます。",
+        ],
+        usage: [
+            "ダッシュボードのAI利用状況カードでJev（TypeSafe）のカードを開く",
+            "「購入・残高を記録」から、購入した日付と金額、またはいまの残高を入力して登録する",
+            "登録後、カードに残りの残高と使用率のバーが表示されれば設定完了",
+        ],
+    },
+    {
         version: "0.41.0",
         date: "2026-09-25",
         changes: [

@@ -484,6 +484,8 @@ Claude / ChatGPT のトークン使用状況と課金プランをダッシュボ
 
 TypeSafeの公開APIはアカウントの残高・無料枠を返さず、POST /v1/systemone の応答にその呼び出しのトークン数だけを返す。そのため、TypeSafeを呼ぶアプリが集計したAPIを `TYPESAFE_USAGE_URL` に、同APIのBearerトークンを `TYPESAFE_USAGE_TOKEN` に設定する。両方未設定ならカードは表示しない。表示する金額は入力単価 `$0.042 / 100万トークン` を使った概算で、請求額そのものではない。
 
+**Jevのクレジット枠**（[#426](https://github.com/guchi-apps/ops-dashboard/issues/426)）: 購入したクレジットを消費する形をClaudeのクレジット枠と同じ見た目で出す。TypeSafeにも連携先の集計APIにも残高・購入額を返す項目は無いため、Claudeと同じく画面の「購入・残高を記録」から購入と補正残高を登録し（`.data/typesafe-credit-ledger.json`。`TYPESAFE_CREDIT_LEDGER_PATH` で変更可）、そこから消費を差し引いて残高を推定する。消費額は連携先の応答に**任意の `totalInputTokens`（集計開始からの累計入力トークン）** が含まれるときだけ積む（直近24時間・7日間のローリング値からは累計を作れないため）。含まれない間は「使用額は累計待ち」と表示し、残高は補正値＋その後の購入のままになる。
+
 ### アプリ別のAI利用
 
 「どのアプリが、どのモデルで、どれくらいAIを使っているか」を、上の提供元別の利用枠とは別の軸で出す
