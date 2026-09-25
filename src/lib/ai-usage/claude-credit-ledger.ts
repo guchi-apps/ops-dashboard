@@ -22,9 +22,24 @@ import type {
  * 提供元がどのタイムゾーンで月を切っているかに依存させないため。
  */
 
-/** Claudeのクレジットは1クレジット = 1USD として扱う */
-const CURRENCY = "USD"
-const DECIMALS = 2
+/**
+ * 台帳の単位と保存先。Claudeは1クレジット = 1USD（セント単位）。
+ * TypeSafe（Jev）の台帳（#426）も同じ仕組みを使うため、通貨・桁数・保存先だけを差し替えられる。
+ * Jevは1回の消費が数セント未満になるため、最小単位を小さく取る。
+ */
+export interface LedgerConfig {
+    currency: string
+    decimals: number
+    envVar: string
+    fileName: string
+}
+
+export const CLAUDE_LEDGER: LedgerConfig = {
+    currency: "USD",
+    decimals: 2,
+    envVar: "CLAUDE_CREDIT_LEDGER_PATH",
+    fileName: "claude-credit-ledger.json",
+}
 
 interface StoredPurchase {
     id: string
@@ -44,7 +59,7 @@ interface StoredCorrection {
     usedTotalMinor: number
 }
 
-interface LedgerState {
+export interface LedgerState {
     purchases: StoredPurchase[]
     correction: StoredCorrection | null
     /** 観測を始めてからの使用額の累計（最小単位） */
@@ -60,16 +75,13 @@ const EMPTY_STATE: LedgerState = {
     lastObservedMinor: null,
 }
 
-function getStatePath(): string {
-    return (
-        process.env.CLAUDE_CREDIT_LEDGER_PATH ||
-        path.join(process.cwd(), ".data", "claude-credit-ledger.json")
-    )
+function getStatePath(config: LedgerConfig): string {
+    return process.env[config.envVar] || path.join(process.cwd(), ".data", config.fileName)
 }
 
-async function readState(): Promise<LedgerState> {
+export async function readState(config: LedgerConfig = CLAUDE_LEDGER): Promise<LedgerState> {
     try {
-        const parsed: unknown = JSON.parse(await fs.readFile(getStatePath(), "utf8"))
+        const parsed: unknown = JSON.parse(await fs.readFile(getStatePath(config), "utf8"))
         if (!parsed || typeof parsed !== "object") return { ...EMPTY_STATE }
 
         const state = parsed as Partial<LedgerState>
@@ -85,8 +97,8 @@ async function readState(): Promise<LedgerState> {
     }
 }
 
-async function writeState(state: LedgerState): Promise<void> {
-    const file = getStatePath()
+async function writeState(state: LedgerState, config: LedgerConfig): Promise<void> {
+    const file = getStatePath(config)
     await fs.mkdir(path.dirname(file), { recursive: true })
 
     // 書き込み中に読まれても壊れないよう、一時ファイル経由で差し替える
@@ -127,49 +139,49 @@ export function isValidDateKey(value: string): boolean {
 }
 
 /** 画面で入力された金額（USD）を最小単位へ。負の値や桁の多すぎる値は受け付けない */
-export function toMinorUnits(amount: number): number | null {
+export function toMinorUnits(amount: number, config: LedgerConfig = CLAUDE_LEDGER): number | null {
     if (!Number.isFinite(amount) || amount < 0 || amount > 1_000_000) return null
-    return Math.round(amount * 10 ** DECIMALS)
+    return Math.round(amount * 10 ** config.decimals)
 }
 
 /** 取得のたびに当月の使用額を観測し、累計へ積む */
-export function recordClaudeCreditUsage(usedMinor: number): Promise<void> {
+export function recordCreditUsage(usedMinor: number, config: LedgerConfig): Promise<void> {
     if (!Number.isFinite(usedMinor) || usedMinor < 0) return Promise.resolve()
 
     return serialize(async () => {
-        const state = await readState()
+        const state = await readState(config)
         const last = state.lastObservedMinor
         if (last === usedMinor) return
 
         // 減っていれば月が替わってリセットされた。前の月の取りこぼし（最後の観測から月末まで）は拾えない
         state.usedTotalMinor += last === null ? 0 : usedMinor >= last ? usedMinor - last : usedMinor
         state.lastObservedMinor = usedMinor
-        await writeState(state)
+        await writeState(state, config)
     })
 }
 
-export function addClaudeCreditPurchase(date: string, amountMinor: number): Promise<void> {
+export function addCreditPurchase(date: string, amountMinor: number, config: LedgerConfig): Promise<void> {
     return serialize(async () => {
-        const state = await readState()
+        const state = await readState(config)
         state.purchases.push({
             id: randomUUID(),
             date,
             amountMinor,
             recordedAt: new Date().toISOString(),
         })
-        await writeState(state)
+        await writeState(state, config)
     })
 }
 
 /** 見つからなければ false */
-export function removeClaudeCreditPurchase(id: string): Promise<boolean> {
+export function removeCreditPurchase(id: string, config: LedgerConfig): Promise<boolean> {
     return serialize(async () => {
-        const state = await readState()
+        const state = await readState(config)
         const next = state.purchases.filter((purchase) => purchase.id !== id)
         if (next.length === state.purchases.length) return false
 
         state.purchases = next
-        await writeState(state)
+        await writeState(state, config)
         return true
     })
 }
@@ -178,9 +190,9 @@ export function removeClaudeCreditPurchase(id: string): Promise<boolean> {
  * Claude.aiの画面に出ている残高で推定をやり直す。
  * 呼ぶ前に使用額を観測しておくこと（補正時点の累計を起点にするため）。
  */
-export function correctClaudeCreditBalance(balanceMinor: number): Promise<void> {
+export function correctCreditBalance(balanceMinor: number, config: LedgerConfig): Promise<void> {
     return serialize(async () => {
-        const state = await readState()
+        const state = await readState(config)
         const now = new Date()
         state.correction = {
             balanceMinor,
@@ -188,16 +200,20 @@ export function correctClaudeCreditBalance(balanceMinor: number): Promise<void> 
             date: localDateKey(now),
             usedTotalMinor: state.usedTotalMinor,
         }
-        await writeState(state)
+        await writeState(state, config)
     })
 }
 
-function money(minor: number): string {
-    return formatMoney(minor, CURRENCY, DECIMALS)
+function money(minor: number, config: LedgerConfig): string {
+    return formatMoney(minor, config.currency, config.decimals)
 }
 
 /** 台帳から画面に出す値を組み立てる */
-export function describeLedger(state: LedgerState, now = new Date()): ClaudeCreditLedgerView {
+export function describeLedger(
+    state: LedgerState,
+    now = new Date(),
+    config: LedgerConfig = CLAUDE_LEDGER
+): ClaudeCreditLedgerView {
     const today = localDateKey(now)
 
     const purchases: ClaudeCreditPurchaseView[] = [...state.purchases]
@@ -207,7 +223,7 @@ export function describeLedger(state: LedgerState, now = new Date()): ClaudeCred
             return {
                 id: purchase.id,
                 date: purchase.date,
-                amount: purchase.amountMinor / 10 ** DECIMALS,
+                amount: purchase.amountMinor / 10 ** config.decimals,
                 expiresOn: expires,
                 expired: expires <= today,
             }
@@ -227,16 +243,16 @@ export function describeLedger(state: LedgerState, now = new Date()): ClaudeCred
             .reduce((sum, purchase) => sum + purchase.amountMinor, 0)
         const usedAfter = Math.max(0, state.usedTotalMinor - correction.usedTotalMinor)
         balanceMinor = Math.max(0, correction.balanceMinor + purchasedAfter - usedAfter)
-        balanceText = money(balanceMinor)
+        balanceText = money(balanceMinor, config)
     }
 
     return {
         purchases,
-        activePurchasedText: state.purchases.length > 0 ? money(activeMinor) : null,
+        activePurchasedText: state.purchases.length > 0 ? money(activeMinor, config) : null,
         balanceText,
         balanceMinor,
         correctedAt: correction?.at ?? null,
-        correctedBalanceText: correction ? money(correction.balanceMinor) : null,
+        correctedBalanceText: correction ? money(correction.balanceMinor, config) : null,
     }
 }
 
@@ -252,12 +268,19 @@ export function getReservedPercent(
     const monthly = credit.monthly
     if (balanceMinor === null || balanceMinor <= 0 || credit.usedPercent === null) return undefined
     if (!monthly || monthly.limitMinor === null || monthly.limitMinor <= 0) return undefined
-    if (monthly.currency !== CURRENCY || monthly.decimals !== DECIMALS) return undefined
+    if (monthly.currency !== CLAUDE_LEDGER.currency || monthly.decimals !== CLAUDE_LEDGER.decimals) return undefined
 
     const balancePercent = (balanceMinor / monthly.limitMinor) * 100
     const percent = Math.min(balancePercent, 100 - credit.usedPercent)
     return percent > 0 ? Math.round(percent * 10) / 10 : undefined
 }
+
+export const recordClaudeCreditUsage = (usedMinor: number) => recordCreditUsage(usedMinor, CLAUDE_LEDGER)
+export const addClaudeCreditPurchase = (date: string, amountMinor: number) =>
+    addCreditPurchase(date, amountMinor, CLAUDE_LEDGER)
+export const removeClaudeCreditPurchase = (id: string) => removeCreditPurchase(id, CLAUDE_LEDGER)
+export const correctClaudeCreditBalance = (balanceMinor: number) =>
+    correctCreditBalance(balanceMinor, CLAUDE_LEDGER)
 
 function withLedger(
     credit: AiProviderCredit | undefined,
@@ -295,7 +318,7 @@ function withLedger(
 export async function applyClaudeCreditLedger(snapshot: AiUsageSnapshot): Promise<AiUsageSnapshot> {
     if (!snapshot.providers.some((provider) => provider.id === "claude")) return snapshot
 
-    const ledger = describeLedger(await readState())
+    const ledger = describeLedger(await readState(CLAUDE_LEDGER))
 
     return {
         ...snapshot,

@@ -152,7 +152,16 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
             {provider.credit && (
                 <div className="mt-auto space-y-2 border-t border-border pt-2.5">
                     <CreditRow credit={provider.credit} now={now} />
-                    {provider.credit.ledger && <ClaudeCreditLedger ledger={provider.credit.ledger} />}
+                    {provider.credit.ledger &&
+                        (provider.id === "typesafe" ? (
+                            <ClaudeCreditLedger
+                                ledger={provider.credit.ledger}
+                                endpoint="/api/ai-usage/typesafe-credits"
+                                balanceHint="Jevの購入クレジットの残り。USD"
+                            />
+                        ) : (
+                            <ClaudeCreditLedger ledger={provider.credit.ledger} />
+                        ))}
                 </div>
             )}
         </DashboardCard>

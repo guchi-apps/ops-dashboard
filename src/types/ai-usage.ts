@@ -60,6 +60,8 @@ export interface AiProviderMeteredUsage {
     last24h: AiMeteredTotals
     last7d: AiMeteredTotals
     features: AiMeteredFeatureUsage[]
+    /** 集計の開始からの累計入力トークン数。連携先が返さなければ無い（クレジット残高の消費額に使う。#426） */
+    totalInputTokens?: number
 }
 
 /**

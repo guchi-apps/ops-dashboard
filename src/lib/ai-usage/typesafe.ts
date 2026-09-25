@@ -20,6 +20,7 @@ interface RawUsageResponse {
     last24h?: RawTotals
     last7d?: RawTotals
     features?: unknown
+    totalInputTokens?: unknown
 }
 
 function readNonNegativeInteger(value: unknown): number | null {
@@ -59,7 +60,10 @@ export function parseTypeSafeUsageResponse(data: unknown): AiProviderUsage["mete
           })
         : []
 
-    return { last24h, last7d, features }
+    const totalInputTokens = readNonNegativeInteger(response.totalInputTokens)
+    return totalInputTokens === null
+        ? { last24h, last7d, features }
+        : { last24h, last7d, features, totalInputTokens }
 }
 
 function unconfigured(message: string): ProviderFetchResult {

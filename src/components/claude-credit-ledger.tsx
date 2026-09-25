@@ -9,7 +9,7 @@ import type { ClaudeCreditLedgerView } from "@/types/ai-usage"
 const INPUT_CLASS =
     "h-8 w-full rounded-md border bg-background px-2 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:opacity-50"
 
-const ENDPOINT = "/api/ai-usage/claude-credits"
+const CLAUDE_ENDPOINT = "/api/ai-usage/claude-credits"
 
 type SubmitState =
     | { kind: "idle" }
@@ -38,8 +38,8 @@ function formatCorrectedAt(iso: string): string {
     })
 }
 
-async function send(init: RequestInit & { url?: string }): Promise<string | null> {
-    const res = await fetch(init.url ?? ENDPOINT, {
+async function send(init: RequestInit & { url: string }): Promise<string | null> {
+    const res = await fetch(init.url, {
         ...init,
         headers: { "Content-Type": "application/json" },
     })
@@ -55,7 +55,16 @@ async function send(init: RequestInit & { url?: string }): Promise<string | null
  * claude.ai の残高・購入履歴はCloudflareに阻まれてサーバーから取れないため、Claude.aiの
  * 「使用クレジット」画面で見た値をここで登録する。残高は補正した時点から使用額を差し引いて推定される。
  */
-export function ClaudeCreditLedger({ ledger }: { ledger: ClaudeCreditLedgerView }) {
+export function ClaudeCreditLedger({
+    ledger,
+    endpoint = CLAUDE_ENDPOINT,
+    balanceHint = "Claude.aiの画面の値。USD",
+}: {
+    ledger: ClaudeCreditLedgerView
+    /** 記録先のAPI。Jev（TypeSafe）のカードも同じフォームを使う（#426） */
+    endpoint?: string
+    balanceHint?: string
+}) {
     const { refreshAiUsage } = useDashboardData()
     const balanceId = useId()
     const dateId = useId()
@@ -92,7 +101,7 @@ export function ClaudeCreditLedger({ ledger }: { ledger: ClaudeCreditLedgerView 
     const submitBalance = async (event: React.FormEvent) => {
         event.preventDefault()
         const ok = await run(
-            () => send({ method: "POST", body: JSON.stringify({ kind: "balance", amount: Number(balance) }) }),
+            () => send({ url: endpoint, method: "POST", body: JSON.stringify({ kind: "balance", amount: Number(balance) }) }),
             "残高を補正しました。"
         )
         if (ok) setBalance("")
@@ -103,6 +112,7 @@ export function ClaudeCreditLedger({ ledger }: { ledger: ClaudeCreditLedgerView 
         const ok = await run(
             () =>
                 send({
+                    url: endpoint,
                     method: "POST",
                     body: JSON.stringify({ kind: "purchase", date, amount: Number(amount) }),
                 }),
@@ -113,7 +123,7 @@ export function ClaudeCreditLedger({ ledger }: { ledger: ClaudeCreditLedgerView 
 
     const removePurchase = (id: string) =>
         run(
-            () => send({ method: "DELETE", url: `${ENDPOINT}?id=${encodeURIComponent(id)}` }),
+            () => send({ method: "DELETE", url: `${endpoint}?id=${encodeURIComponent(id)}` }),
             "購入を削除しました。"
         )
 
@@ -145,7 +155,7 @@ export function ClaudeCreditLedger({ ledger }: { ledger: ClaudeCreditLedgerView 
                     <form onSubmit={submitBalance} className="flex items-end gap-2">
                         <div className="min-w-0 flex-1 space-y-1">
                             <label htmlFor={balanceId} className="block text-[10px] sm:text-xs text-muted-foreground">
-                                いまの残高（Claude.aiの画面の値。USD）
+                                いまの残高（{balanceHint}）
                             </label>
                             <input
                                 id={balanceId}
