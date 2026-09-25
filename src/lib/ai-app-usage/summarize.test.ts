@@ -21,6 +21,8 @@ describe("sumTotals", () => {
         const mixed = sumTotals([totals(1, none), totals(2)])
         assert.equal(mixed.inputTokens, 200)
         assert.equal(mixed.inputIncomplete, true)
+        // トークン未集計の行の金額なしは、単価不明（costIncomplete）とは区別する
+        assert.equal(mixed.costIncomplete, false)
 
         const allNone = sumTotals([totals(1, none)])
         assert.equal(allNone.inputTokens, null)

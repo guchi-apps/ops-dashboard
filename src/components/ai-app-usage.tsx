@@ -109,7 +109,15 @@ function Summary({
             <Stat
                 value={costText(totals)}
                 label="概算金額"
-                note={totals.costIncomplete && totals.costUsd !== null ? "単価不明のモデルを除く" : undefined}
+                note={
+                    totals.costUsd === null
+                        ? undefined
+                        : totals.costIncomplete
+                          ? "単価不明のモデルを除く"
+                          : totals.inputIncomplete
+                            ? "トークン未集計のアプリを除く"
+                            : undefined
+                }
             />
             <Stat value={`${modelCount} 種`} label={`使用モデル · ${appCount} アプリ`} />
         </div>
