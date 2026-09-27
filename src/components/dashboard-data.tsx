@@ -79,6 +79,8 @@ interface DashboardData extends DashboardInitialData {
      * サーバー側のキャッシュは飛ばさない（台帳の値はキャッシュを返す回も載せ直されるため）。
      */
     refreshAiUsage: () => Promise<boolean>
+    /** アプリ別AI利用だけを、連携先の設定変更直後などに取り直す。 */
+    refreshAiAppUsage: () => Promise<boolean>
 }
 
 const DashboardDataContext = createContext<DashboardData | null>(null)
@@ -186,6 +188,9 @@ export function DashboardDataProvider({
     const refreshAiUsageOnly = aiUsage.refresh
     const refreshAiUsage = useCallback(() => refreshAiUsageOnly(false), [refreshAiUsageOnly])
 
+    const refreshAiAppUsageOnly = aiAppUsage.refresh
+    const refreshAiAppUsage = useCallback(() => refreshAiAppUsageOnly(true), [refreshAiAppUsageOnly])
+
     const value = useMemo<DashboardData>(
         () => ({
             hostStats: hostStats.value,
@@ -212,10 +217,12 @@ export function DashboardDataProvider({
             refreshCooldownSeconds: manualRefresh.cooldownSeconds,
             refreshUptimeKuma,
             refreshAiUsage,
+            refreshAiAppUsage,
         }),
         [
             refreshUptimeKuma,
             refreshAiUsage,
+            refreshAiAppUsage,
             hostStats,
             aiUsage,
             aiAppUsage,

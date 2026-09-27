@@ -121,4 +121,16 @@ describe("アプリ別AI利用の連携先設定", () => {
         )
         assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), [{ app: "aide", url: "https://aide.example/api/ai-usage" }])
     })
+
+    it("複数の連携先を保存し、片方を削除した一覧で置き換えられる", async (t) => {
+        const file = redirectStateFile(t, "AI_APP_USAGE_SOURCES_PATH")
+        const saved = await saveAiAppUsageSources([
+            { app: "issue-deck", url: "https://issue-deck.example/api/ai-usage" },
+            { app: "aide", url: "https://aide.example/api/ai-usage" },
+        ])
+        assert.equal(saved.length, 2)
+
+        await saveAiAppUsageSources(saved.filter((source) => source.app !== "issue-deck"))
+        assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), [{ app: "aide", url: "https://aide.example/api/ai-usage" }])
+    })
 })
