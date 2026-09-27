@@ -113,13 +113,15 @@ export async function getAiAppUsageSources(): Promise<ParsedSources> {
         }
 
         const legacy = parseSources(process.env.AI_APP_USAGE_SOURCES)
-        if (legacy.error) return legacy
+        // 壊れた旧設定では移行を止めず、画面から連携先を登録し直せるようにする（#435）。
+        if (legacy.error) console.warn(`AI app usage: ${legacy.error}。旧設定の移行をスキップしました`)
+        const sources = legacy.error ? [] : legacy.sources
         try {
-            await writeSources(legacy.sources)
+            await writeSources(sources)
         } catch {
             return { sources: [], error: "連携先の設定ファイルを作成できません" }
         }
-        return legacy
+        return { sources, error: null }
     }
 }
 
