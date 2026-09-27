@@ -1,6 +1,13 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { describe, it } from "node:test"
-import { parseSources } from "@/lib/ai-app-usage/sources"
+import { redirectStateFile } from "@/lib/ai-usage/test-support"
+import {
+    AiAppUsageSourcesError,
+    getAiAppUsageSources,
+    parseSources,
+    saveAiAppUsageSources,
+} from "@/lib/ai-app-usage/sources"
 
 describe("parseSources", () => {
     it("未設定・空文字は連携先なし（エラーにしない）", () => {
@@ -46,5 +53,41 @@ describe("parseSources", () => {
             assert.deepEqual(result.sources, [], raw)
             assert.ok(result.error, raw)
         }
+    })
+})
+
+describe("アプリ別AI利用の連携先設定", () => {
+    it("初回だけ旧環境変数を永続ファイルへ移し、以後はファイルを正とする", async (t) => {
+        const file = redirectStateFile(t, "AI_APP_USAGE_SOURCES_PATH")
+        const previous = process.env.AI_APP_USAGE_SOURCES
+        process.env.AI_APP_USAGE_SOURCES = JSON.stringify([{ app: "legacy", url: "https://legacy.example/api/ai-usage" }])
+        t.after(() => {
+            if (previous === undefined) delete process.env.AI_APP_USAGE_SOURCES
+            else process.env.AI_APP_USAGE_SOURCES = previous
+        })
+
+        assert.deepEqual(await getAiAppUsageSources(), {
+            sources: [{ app: "legacy", url: "https://legacy.example/api/ai-usage" }],
+            error: null,
+        })
+        assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), [{ app: "legacy", url: "https://legacy.example/api/ai-usage" }])
+
+        process.env.AI_APP_USAGE_SOURCES = "[]"
+        assert.deepEqual(await getAiAppUsageSources(), {
+            sources: [{ app: "legacy", url: "https://legacy.example/api/ai-usage" }],
+            error: null,
+        })
+    })
+
+    it("検証済みの一覧だけを保存し、不正な値で既存設定を壊さない", async (t) => {
+        const file = redirectStateFile(t, "AI_APP_USAGE_SOURCES_PATH")
+        const saved = await saveAiAppUsageSources([{ app: "aide", url: "https://aide.example/api/ai-usage" }])
+        assert.deepEqual(saved, [{ app: "aide", url: "https://aide.example/api/ai-usage" }])
+
+        await assert.rejects(
+            saveAiAppUsageSources([{ app: "aide", url: "http://outside.example/api/ai-usage" }]),
+            AiAppUsageSourcesError
+        )
+        assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), [{ app: "aide", url: "https://aide.example/api/ai-usage" }])
     })
 })

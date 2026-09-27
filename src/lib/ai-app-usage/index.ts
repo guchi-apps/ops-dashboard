@@ -1,5 +1,5 @@
 import { collectAiAppUsage } from "@/lib/ai-app-usage/collect"
-import { parseSources } from "@/lib/ai-app-usage/sources"
+import { getAiAppUsageSources } from "@/lib/ai-app-usage/sources"
 import { getTypeSafeUsageEntry } from "@/lib/ai-usage/typesafe"
 import {
     createSingleFlight,
@@ -27,7 +27,7 @@ const singleFlight = createSingleFlight<UsageCacheEntry<AiAppUsageSnapshot>>()
 let lastConfigError: string | null = null
 
 async function fetchSnapshot(force: boolean): Promise<UsageCacheEntry<AiAppUsageSnapshot>> {
-    const { sources, error } = parseSources(process.env.AI_APP_USAGE_SOURCES)
+    const { sources, error } = await getAiAppUsageSources()
     if (error !== lastConfigError) {
         lastConfigError = error
         if (error) console.error(`AI app usage: ${error}`)
@@ -57,4 +57,9 @@ export async function getAiAppUsageSnapshot({ force = false }: UsageFetchOptions
         return fetched
     })
     return entry.snapshot
+}
+
+/** 設定を保存した直後の次の取得には、古い連携先のキャッシュを使わない。 */
+export function invalidateAiAppUsageCache(): void {
+    cache = null
 }
