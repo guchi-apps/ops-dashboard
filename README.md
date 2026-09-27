@@ -499,6 +499,7 @@ TypeSafeの公開APIはアカウントの残高・無料枠を返さず、POST /
 `Authorization: Bearer <OPS_API_TOKEN>` を付けてGETする（連携先は同じ値で検証する）。
 `url` は https か、同じホスト内のループバックの http だけを受け付ける（トークンを平文で送らないため）。
 以前の `AI_APP_USAGE_SOURCES` は初回起動時の移行元としてだけ読み、移行後は使わない。
+旧値が不正で読み取れない場合はサーバーログに理由を残し、空の一覧で初期化するため、画面から連携先を登録し直す。
 
 連携先の応答の形（`src/lib/ai-app-usage/parse.ts` が検証する）:
 

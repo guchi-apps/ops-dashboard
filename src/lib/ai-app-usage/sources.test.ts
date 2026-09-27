@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
-import { describe, it } from "node:test"
+import { readFileSync, writeFileSync } from "node:fs"
+import { describe, it, mock } from "node:test"
 import { redirectStateFile } from "@/lib/ai-usage/test-support"
 import {
     AiAppUsageSourcesError,
@@ -76,6 +76,37 @@ describe("アプリ別AI利用の連携先設定", () => {
         assert.deepEqual(await getAiAppUsageSources(), {
             sources: [{ app: "legacy", url: "https://legacy.example/api/ai-usage" }],
             error: null,
+        })
+    })
+
+    it("壊れた旧設定はスキップして空の一覧を保存し、画面から登録し直せる", async (t) => {
+        const file = redirectStateFile(t, "AI_APP_USAGE_SOURCES_PATH")
+        const previous = process.env.AI_APP_USAGE_SOURCES
+        const warning = mock.method(console, "warn", () => undefined)
+        t.after(() => {
+            warning.mock.restore()
+            if (previous === undefined) delete process.env.AI_APP_USAGE_SOURCES
+            else process.env.AI_APP_USAGE_SOURCES = previous
+        })
+
+        process.env.AI_APP_USAGE_SOURCES = "{"
+        assert.deepEqual(await getAiAppUsageSources(), { sources: [], error: null })
+        assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), [])
+        assert.equal(warning.mock.callCount(), 1)
+        assert.match(warning.mock.calls[0].arguments[0], /AI_APP_USAGE_SOURCES がJSONとして読めません/)
+
+        const saved = [{ app: "aide", url: "https://aide.example/api/ai-usage" }]
+        await saveAiAppUsageSources(saved)
+        assert.deepEqual(await getAiAppUsageSources(), { sources: saved, error: null })
+        assert.equal(warning.mock.callCount(), 1)
+    })
+
+    it("保存済みファイルが壊れている場合はエラーを維持する", async (t) => {
+        const file = redirectStateFile(t, "AI_APP_USAGE_SOURCES_PATH")
+        writeFileSync(file, "{")
+        assert.deepEqual(await getAiAppUsageSources(), {
+            sources: [],
+            error: "連携先の設定ファイルがJSONとして読めません",
         })
     })
 
