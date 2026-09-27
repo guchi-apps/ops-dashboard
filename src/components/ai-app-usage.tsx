@@ -1,11 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useDashboardData } from "@/components/dashboard-data"
 import { SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { SectionHeading } from "@/components/section-heading"
+import { Button } from "@/components/ui/button"
 import { findModel, modelLabel, type ModelFamily } from "@/lib/ai-app-usage/models"
 import { countStates, resolvePurposes, type AiPurposeRow, type AiPurposeState } from "@/lib/ai-app-usage/purposes"
+import type { AiAppUsageSource } from "@/lib/ai-app-usage/sources"
 import {
     sumTotals,
     summarizeApps,
@@ -32,6 +35,118 @@ const FAMILY_DOT: Record<ModelFamily, string> = {
     gpt: "bg-[#f0a15c]",
 }
 const UNKNOWN_DOT = "bg-slate-400"
+
+type SourceDraft = AiAppUsageSource
+
+function emptySource(): SourceDraft {
+    return { app: "", url: "" }
+}
+
+/**
+ * 連携先は画面を開く人だけでなく、issue-deckなどのエージェントも設定APIから更新する。
+ * タブ切り替えの transform に固定配置が閉じ込められないよう、モーダルは body へ出す。
+ */
+function AiAppUsageSourcesModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+    const closeRef = useRef<HTMLButtonElement>(null)
+    const [sources, setSources] = useState<SourceDraft[]>([])
+    const [loading, setLoading] = useState(true)
+    const [saving, setSaving] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+
+    useEffect(() => {
+        const controller = new AbortController()
+        const load = async () => {
+            try {
+                const response = await fetch("/api/ai-app-usage/sources", { signal: controller.signal })
+                const result = (await response.json()) as { sources?: unknown; error?: unknown }
+                if (!response.ok || !Array.isArray(result.sources)) {
+                    throw new Error(typeof result.error === "string" ? result.error : "連携先を読み込めません")
+                }
+                setSources(result.sources.map((source) => {
+                    const value = source as Partial<AiAppUsageSource>
+                    return { app: value.app ?? "", url: value.url ?? "" }
+                }))
+            } catch (cause) {
+                if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "連携先を読み込めません")
+            } finally {
+                if (!controller.signal.aborted) setLoading(false)
+            }
+        }
+        void load()
+
+        const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+        const previousOverflow = document.body.style.overflow
+        document.body.style.overflow = "hidden"
+        closeRef.current?.focus()
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") onClose()
+        }
+        document.addEventListener("keydown", onKeyDown)
+        return () => {
+            controller.abort()
+            document.removeEventListener("keydown", onKeyDown)
+            document.body.style.overflow = previousOverflow
+            previouslyFocused?.focus()
+        }
+    }, [onClose])
+
+    const updateSource = (index: number, field: keyof SourceDraft, value: string) => {
+        setSources((current) => current.map((source, sourceIndex) => (sourceIndex === index ? { ...source, [field]: value } : source)))
+    }
+
+    const save = async () => {
+        setSaving(true)
+        setError(null)
+        try {
+            const response = await fetch("/api/ai-app-usage/sources", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sources }),
+            })
+            const result = (await response.json()) as { error?: unknown }
+            if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "連携先を保存できません")
+            onSaved()
+            onClose()
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : "連携先を保存できません")
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    return createPortal(
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 sm:items-center sm:p-5" onClick={onClose}>
+            <div role="dialog" aria-modal="true" aria-label="AI利用の連携先を管理" onClick={(event) => event.stopPropagation()} className="flex max-h-[86dvh] w-full max-w-[640px] flex-col overflow-hidden rounded-t-2xl border border-border bg-popover text-popover-foreground shadow-2xl sm:max-h-[min(82dvh,720px)] sm:rounded-2xl">
+                <div className="flex shrink-0 items-start gap-3 border-b border-border px-4 pb-3 pt-3.5">
+                    <div className="min-w-0 flex-1">
+                        <h2 className="text-sm font-bold">連携先を管理</h2>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">使用量APIを持つアプリを追加します。変更は次回の取得から反映されます。</p>
+                    </div>
+                    <button ref={closeRef} type="button" onClick={onClose} aria-label="閉じる" className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">✕</button>
+                </div>
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+                    {loading ? <SkeletonGroup label="連携先を読み込み中" className="space-y-2"><SkeletonBar /><SkeletonBar /></SkeletonGroup> : <>
+                        {sources.length === 0 && <p className="py-4 text-center text-xs text-muted-foreground">連携先はまだありません。</p>}
+                        {sources.map((source, index) => (
+                            <div key={index} className="grid gap-2 rounded-lg border border-border bg-card p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end">
+                                <label className="grid gap-1 text-xs font-medium">アプリ名<input value={source.app} onChange={(event) => updateSource(index, "app", event.target.value)} placeholder="issue-deck" className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal" /></label>
+                                <label className="grid gap-1 text-xs font-medium">使用量API URL<input value={source.url} onChange={(event) => updateSource(index, "url", event.target.value)} placeholder="https://example.com/api/ai-usage" inputMode="url" className="h-9 rounded-md border border-input bg-background px-2 text-sm font-normal" /></label>
+                                <Button type="button" variant="ghost" size="sm" onClick={() => setSources((current) => current.filter((_, sourceIndex) => sourceIndex !== index))}>削除</Button>
+                            </div>
+                        ))}
+                        <Button type="button" variant="outline" size="sm" onClick={() => setSources((current) => [...current, emptySource()])}>連携先を追加</Button>
+                    </>}
+                    {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+                </div>
+                <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3">
+                    <Button type="button" variant="outline" size="sm" onClick={onClose}>キャンセル</Button>
+                    <Button type="button" size="sm" onClick={save} disabled={loading || saving}>{saving ? "保存中…" : "保存"}</Button>
+                </div>
+            </div>
+        </div>,
+        document.body
+    )
+}
 
 function dotClass(model: string): string {
     const info = findModel(model)
@@ -402,38 +517,70 @@ function okApps(apps: AiAppUsageApp[]): AiAppUsageApp[] {
     return apps.filter((app) => app.status === "ok")
 }
 
-/**
- * アプリごとのAI利用。どのアプリが、どのモデルで、どれだけ使っているかを見る。
- * 連携先が1つも無ければ何も出さない（TypeSafeカードと同じく、未設定の系統は数えない）。
- */
+/** アプリごとのAI利用。どのアプリが、どのモデルで、どれだけ使っているかを見る。 */
 export function AiAppUsage() {
-    const { aiAppUsage: snapshot } = useDashboardData()
+    const { aiAppUsage: snapshot, refresh } = useDashboardData()
+    const [settingsOpen, setSettingsOpen] = useState(false)
+    const onSaved = () => {
+        void refresh()
+    }
 
-    if (snapshot) return <AiAppUsageView snapshot={snapshot} />
+    if (snapshot) {
+        return (
+            <>
+                <AiAppUsageView snapshot={snapshot} onManageSources={() => setSettingsOpen(true)} />
+                {settingsOpen && <AiAppUsageSourcesModal onClose={() => setSettingsOpen(false)} onSaved={onSaved} />}
+            </>
+        )
+    }
 
-    // 取得前は骨組みを出す。連携先が無い環境では、取得後にこのセクションごと消える
+    // 取得前も管理画面を開けるよう、骨組みと設定ボタンは残す。
     return (
-        <section className="space-y-3 sm:space-y-4">
-            <SectionHeading title="アプリ別のAI利用" />
-            <SkeletonGroup
-                label="アプリ別のAI利用"
-                className="space-y-3 rounded-xl border border-border bg-card p-3 sm:p-4"
-            >
-                <SkeletonBar />
-                <SkeletonBar />
-                <SkeletonBar />
-            </SkeletonGroup>
-        </section>
+        <>
+            <section className="space-y-3 sm:space-y-4">
+                <SectionHeading
+                    title="アプリ別のAI利用"
+                    trailing={<Button type="button" variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>連携先を管理</Button>}
+                />
+                <SkeletonGroup
+                    label="アプリ別のAI利用"
+                    className="space-y-3 rounded-xl border border-border bg-card p-3 sm:p-4"
+                >
+                    <SkeletonBar />
+                    <SkeletonBar />
+                    <SkeletonBar />
+                </SkeletonGroup>
+            </section>
+            {settingsOpen && <AiAppUsageSourcesModal onClose={() => setSettingsOpen(false)} onSaved={onSaved} />}
+        </>
     )
 }
 
 /** 取得済みのスナップショットを描く部分。取得（`useDashboardData`）から切り離してあり、画面確認で作り物の値を渡せる */
-export function AiAppUsageView({ snapshot }: { snapshot: AiAppUsageSnapshot }) {
+export function AiAppUsageView({
+    snapshot,
+    onManageSources,
+}: {
+    snapshot: AiAppUsageSnapshot
+    onManageSources?: () => void
+}) {
     const [period, setPeriod] = useState<AiAppPeriod>("last24h")
     // 行を開閉した結果だけを持つ。触っていない行は、呼出回数が最も多いアプリだけ開いておく
     const [toggled, setToggled] = useState<Record<string, boolean>>({})
 
-    if (snapshot.apps.length === 0) return null
+    if (snapshot.apps.length === 0) {
+        return (
+            <section className="space-y-3 sm:space-y-4">
+                <SectionHeading
+                    title="アプリ別のAI利用"
+                    trailing={onManageSources && <Button type="button" variant="outline" size="sm" onClick={onManageSources}>連携先を管理</Button>}
+                />
+                <p className="rounded-xl border border-border bg-card px-4 py-5 text-center text-xs text-muted-foreground">
+                    連携先を追加すると、アプリ別のAI利用をここに表示します。
+                </p>
+            </section>
+        )
+    }
 
     const periodText = PERIODS.find((item) => item.id === period)?.text ?? ""
     const summaries = summarizeApps(snapshot.apps, period)
@@ -449,6 +596,7 @@ export function AiAppUsageView({ snapshot }: { snapshot: AiAppUsageSnapshot }) {
                 title="アプリ別のAI利用"
                 trailing={
                     <>
+                        {onManageSources && <Button type="button" variant="outline" size="sm" onClick={onManageSources}>連携先を管理</Button>}
                         <span className="hidden truncate font-mono text-xs text-muted-foreground sm:inline">
                             {new Date(snapshot.fetchedAt).toLocaleTimeString("ja-JP", {
                                 hour: "2-digit",
