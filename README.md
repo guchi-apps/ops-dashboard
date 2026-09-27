@@ -494,10 +494,11 @@ TypeSafeの公開APIはアカウントの残高・無料枠を返さず、POST /
 
 **各アプリが使用量APIを持ち、ダッシュボードのサーバーがそれを読みにいく**（TypeSafe・AIDEと同じ向き）。
 アプリ側から送りつける形にはしていないため、ダッシュボードは使用量を保存せず、見えるのは各アプリが
-いま持っている直近24時間・7日間の集計だけになる。連携先は環境変数 `AI_APP_USAGE_SOURCES` に
-`[{"app":"aide-bot","url":"https://…/api/ai-usage"}]` のJSON配列で渡し、各アプリへは
+いま持っている直近24時間・7日間の集計だけになる。連携先は「アプリ別のAI利用」の
+**連携先を管理**から追加・編集・削除し、`.data/ai-app-usage-sources.json` に保存する。各アプリへは
 `Authorization: Bearer <OPS_API_TOKEN>` を付けてGETする（連携先は同じ値で検証する）。
 `url` は https か、同じホスト内のループバックの http だけを受け付ける（トークンを平文で送らないため）。
+以前の `AI_APP_USAGE_SOURCES` は初回起動時の移行元としてだけ読み、移行後は使わない。
 
 連携先の応答の形（`src/lib/ai-app-usage/parse.ts` が検証する）:
 
@@ -525,9 +526,9 @@ GPT-5.6系（aide-botがCodex CLI経由で使う）はChatGPTの定額枠で請�
 
 - 取得できなかったアプリは「取得不可」と理由（`HTTP 500`・`接続できません`など。URLやトークンは含めない）を出し、
   合計には含めない。0件と区別するため
-- 連携先が未設定なら区画ごと出さない。`AI_APP_USAGE_SOURCES` が壊れているときも出さず、サーバーのログに理由が出る
+- 連携先が未設定でも管理画面を出し、そこから追加できる。設定ファイルが壊れているときは、使用量を出さずサーバーのログに理由が出る
 - **issue-deckだけは使用量APIを待たずに出る。** 既存のTypeSafe連携（`TYPESAFE_USAGE_URL`）の取得結果を
-  issue-deckの行（モデル `Jev`）として使う。`AI_APP_USAGE_SOURCES` に `issue-deck` を入れた時点で、
+  issue-deckの行（モデル `Jev`）として使う。連携先に `issue-deck` を入れた時点で、
   そちらが正になり、TypeSafeからの補完は止まる（Jevの分が二重に数えられないため）
 - キャッシュは5分（失敗したアプリがあるときは30秒）。ヘッダーの更新ボタンからの取得（`?force=1`）は30秒の間隔を守る
 
@@ -539,7 +540,7 @@ GPT-5.6系（aide-botがCodex CLI経由で使う）はChatGPTの定額枠で請�
 
 - 計測中 — 取得結果（スナップショット）にアプリがあり、取得できている（issue-deckのTypeSafe補完も含む）
 - 取得不可 — 連携先に載っているが取得できていない
-- 未連携 — AI APIを呼ぶが、使用量を読む連携先に載っていない（asset-manager・dayspan・portfolio・stockly・research-deskなど）。アプリ側に使用量APIを足して `AI_APP_USAGE_SOURCES` へ載せると「計測中」になる
+- 未連携 — AI APIを呼ぶが、使用量を読む連携先に載っていない（asset-manager・dayspan・portfolio・stockly・research-deskなど）。アプリ側に使用量APIを足して管理画面へ載せると「計測中」になる
 - 枠のみ — サブスクの利用枠を使う用途（Claude Code・5時間枠の先開け・Codex）。アプリ別には数えられず、提供元別の利用枠カードで見る
 - Claude.ai・ChatGPTの手動利用は取得手段が無いため載せない
 
@@ -685,6 +686,24 @@ Authorization: Bearer <OPS_API_TOKEN>
 - **認証**: `src/lib/session.ts` の `requireSessionOrApiToken()` で、ログインセッションか
   `OPS_API_TOKEN` のどちらかを求める。画面からの利用はこれまでどおりセッションで通り、挙動は変わらない。
   `OPS_API_TOKEN` が未設定ならトークン経路は無効になり、セッション必須だった従来の状態に戻る
+
+### アプリ別AI利用の連携先設定API
+
+`/api/ai-app-usage/sources` は、ログイン済み画面とAIエージェントが同じ連携先一覧を操作するためのAPIである。
+画面では「連携先を管理」を使う。エージェントは、取得した一覧を編集してから `PUT` で丸ごと置き換える。
+
+```text
+GET /api/ai-app-usage/sources
+PUT /api/ai-app-usage/sources
+Authorization: Bearer <AI_APP_USAGE_SOURCES_WRITE_TOKEN>
+Content-Type: application/json
+
+{ "sources": [{ "app": "issue-deck", "url": "https://example.com/api/ai-usage" }] }
+```
+
+- 認証はログインセッションまたは `AI_APP_USAGE_SOURCES_WRITE_TOKEN`。**読み取り用の `OPS_API_TOKEN` では通さない**
+- `PUT` は連携先を丸ごと置き換える。`app` の重複と、https・ループバック以外のhttp URLは拒否する
+- 保存後はアプリ別AI利用のキャッシュを無効化するため、次の取得から新しい一覧で読む
 - **トークンの照合**: 両方をSHA-256で固定長へ畳んでから `timingSafeEqual` で比較する。
   `timingSafeEqual` は長さが違うと例外を投げるため、素で渡すと期待値の長さを推測されうる
 - **トークンを分けている理由**: 用途（読み取り全般 / ウィジェット中継 / メトリクス受信）が違うため、
@@ -911,7 +930,7 @@ Content-Type: application/json
 - **CI**: `.github/workflows/ci.yml`。`develop`へのpushと`main`/`develop`へのPRでlint・型チェック・buildを実行
 - **デプロイ**: `.github/workflows/deploy.yml`。`main`へのpushで、`package.json`のversionからGitタグ・GitHub Releaseを作成し、ビルド成果物をVPSへ配置してPM2で再起動する（`deploy/ecosystem.config.js`）
 - **シークレット**: ワークフローは実行時に**GitHubのsecret / variable**から値を取る（`op://`の実行時参照は行わない。#51）。どの値をGitHub側のどこへ置くかの対応表が`.github/secrets-manifest.tsv`で、VPSへの接続情報（`SERVER_*`）とSupabase（`SUPABASE_*`）はorganizationの共通値を継承し、それ以外はこのリポジトリのsecret / variableに置く。`deploy.yml`のenvブロックは`scripts/generate-workflow-env-block.sh`で生成できる
-- **シークレットの更新**: 1Password（`apps`ボールトの`ops-dashboard`アイテム）は「人が管理する唯一の正」として残す。値を変えたときだけ`op signin`のうえ`scripts/sync-github-secrets.sh`（`--dry-run`で差分だけ確認できる）を実行してGitHub側へ同期する。ここで使う`op`は個人アカウントのセッションのため、サービスアカウントの日次レート制限を消費しない。AI使用状況の表示には`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id` / `typesafe-usage-url` / `typesafe-usage-token`、GitHubの制限の表示には`github-usage-token` / `github-usage-org`、iPhoneウィジェット向けAPIには`widget-token`（32文字以上のランダム文字列）、サーバー間参照向けの読み取りAPIには`ops-api-token`（同じく32文字以上のランダム文字列）のフィールドをアイテムへ追加してから同期する（GitHub側が未設定のままだと、デプロイでその値が空のままVPSの`.env`へ書かれる）。1Passwordのレート制限の表示には、GitHub Secretsの`OP_SERVICE_ACCOUNT_TOKEN`がそのままVPSの`.env`へ渡る（1Password側のフィールド追加は不要）
+- **シークレットの更新**: 1Password（`apps`ボールトの`ops-dashboard`アイテム）は「人が管理する唯一の正」として残す。値を変えたときだけ`op signin`のうえ`scripts/sync-github-secrets.sh`（`--dry-run`で差分だけ確認できる）を実行してGitHub側へ同期する。ここで使う`op`は個人アカウントのセッションのため、サービスアカウントの日次レート制限を消費しない。AI使用状況の表示には`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id` / `typesafe-usage-url` / `typesafe-usage-token`、GitHubの制限の表示には`github-usage-token` / `github-usage-org`、iPhoneウィジェット向けAPIには`widget-token`（32文字以上のランダム文字列）、サーバー間参照向けの読み取りAPIには`ops-api-token`（同じく32文字以上のランダム文字列）、アプリ別AI利用をAIエージェントから変更するには`ai-app-usage-sources-write-token`（同じく32文字以上のランダム文字列）のフィールドをアイテムへ追加してから同期する（GitHub側が未設定のままだと、デプロイでその値が空のままVPSの`.env`へ書かれる）。1Passwordのレート制限の表示には、GitHub Secretsの`OP_SERVICE_ACCOUNT_TOKEN`がそのままVPSの`.env`へ渡る（1Password側のフィールド追加は不要）
 - **ログイン通知**: `SIGNALY_LOGIN_WEBHOOK_URL`は全アプリ共通の1チャンネルへ集約したため、organizationの共通値を継承する（マニフェストの`inherit`。[guchi-apps/issue-deck#2287](https://github.com/guchi-apps/issue-deck/issues/2287)）。共通チャンネルではどのアプリへのログインかがチャンネルからは分からないので、`src/lib/signaly.ts`は送信ボディの`source`にリポジトリ名（`ops-dashboard`）を入れて送る。**同名のrepository secretはorganization secretを覆い隠す**ため、マニフェストを`inherit`にしても、repository secretが残っている間は従来のアプリ別チャンネルへ送られる。アラート通知（`SIGNALY_ALERT_WEBHOOK_URL`）はこのリポジトリのsecretのまま
 - **環境変数の渡り方**: VPS上の`.env`は`next start`（Next.js）自身が起動時に読み込む。`deploy/ecosystem.config.js`がPM2から渡しているのは`NODE_ENV`と`PORT`だけだが、それで足りている（`dotenv`は不要）。**そのため`pm2 show ops-dashboard`の環境変数一覧には`.env`の値は出てこない**（PM2が注入した分しか表示されないため）。出ていないことは値が渡っていない証拠にはならない。切り分けは`.env`の中身と、実際にAPIを叩いた結果で行う（[issue #102](https://github.com/guchi-apps/ops-dashboard/issues/102)）
 - **Apache**: リバースプロキシ設定は`vps`リポジトリ（`apache/sites-available/admin.gucchii.com.conf`）が一次情報源。`deploy/apache-vhost.example.conf`は参考用の雛形

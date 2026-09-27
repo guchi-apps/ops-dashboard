@@ -102,6 +102,18 @@ export async function requireSessionOrApiToken(
 }
 
 /**
+ * 連携先一覧の設定API用。読み取り用 `OPS_API_TOKEN` を設定変更へ流用せず、
+ * issue-deckなどへ配る専用トークンだけを受け付ける。
+ */
+export async function requireSessionOrAiAppUsageSourcesWriteToken(
+  request: Request,
+): Promise<
+  { caller: ApiCaller; response?: undefined } | { caller?: undefined; response: NextResponse }
+> {
+  return requireSessionOrToken(request, process.env.AI_APP_USAGE_SOURCES_WRITE_TOKEN);
+}
+
+/**
  * ログインセッションか、指定した固定トークンのどちらかを求める。
  *
  * トークンは用途ごとに分けている（読み取り全般は `OPS_API_TOKEN`、ウィジェット中継は
