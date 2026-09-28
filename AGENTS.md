@@ -179,9 +179,17 @@ AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/s
 - **トークンは `AIDE_STATUS_TOKEN`（AIDE側は `AIDE_STATUS_SECRET`）で、`OPS_API_TOKEN` とは別。**
   `OPS_API_TOKEN` はAIDEがこちらを読む向きのもので、同じ値にすると片方が漏れたときに両方向とも読める。
   AIDEの `AIDE_READ_SECRET` も流用しない（残高のAPIまで読めてしまう）
+- **トークンの正は1Passwordではなくissue-deckの共有トークンAPI**（`src/lib/shared-token.ts`。#444）。
+  `readAideConfig()`（`src/lib/aide-status.ts`）が起動のたびに`GET $ISSUE_DECK_URL/api/shared-tokens?name=AIDE_STATUS_TOKEN`
+  を叩き、結果をプロセス内に10分キャッシュする。取得に失敗したら直前の値を使い続け、キャッシュも無ければ
+  環境変数 `AIDE_STATUS_TOKEN` へフォールバックする（1Password複製の移行期のみの経路。移行後は
+  `ISSUE_DECK_URL`・`SHARED_TOKEN_API_SECRET`の2つだけが残る想定）。**`isAideStatusConfigured()`は
+  同期関数のまま**（タブを出すかの判定に使うため）で、実際に取得を試みず「フォールバックenvか
+  共有トークンAPIの設定が揃っているか」だけで判定している
 - 取得に失敗したときのステータスで原因を切り分ける。401はトークンのずれ、503はAIDE側の未設定、
   404はAIDEにAPIがまだ無い（デプロイ前）
-- `AIDE_STATUS_TOKEN` が未設定ならタブもチップも出ない。worktreeでそのまま動かしてよい
+- `AIDE_STATUS_TOKEN`・`ISSUE_DECK_URL`+`SHARED_TOKEN_API_SECRET`のいずれも未設定ならタブもチップも
+  出ない。worktreeでそのまま動かしてよい
 - **「定期ジョブ」の行を押すと実行記録のモーダルが開く**（#387。`job-history-modal.tsx`）。ただしAIDEは
   実行記録をジョブごとに直近1件しか持たず、履歴（`jobs[].recentRuns`・新しい順・最大30件）を返すのは
   guchi-apps/aide#441の対応後。それまでは任意フィールドが届かず「実行記録がありません」の空状態になる。
