@@ -1,3 +1,4 @@
+import { resolveSharedToken, type SharedTokenCacheEntry } from "@/lib/shared-token"
 import { fetchWithTimeout, isPermissionStatus } from "@/lib/upstream"
 import type {
     AideHealth,
@@ -42,23 +43,49 @@ interface AideConfig {
     token: string
 }
 
+/** issue-deckの共有トークンAPIから取得したトークンをプロセス内に持つ（#444） */
+let sharedTokenCache: SharedTokenCacheEntry | null = null
+
+/**
+ * issue-deckが未設定・取得に失敗したときのフォールバック（試行中の暫定措置。#444の範囲外で
+ * 削除予定）。使われるとしても、AIDE側の AIDE_STATUS_SECRET と同じ値である必要がある
+ */
+function legacyToken(): string | undefined {
+    return process.env.AIDE_STATUS_TOKEN
+}
+
+/** issue-deckの共有トークンAPIを使える設定が揃っているか（値を取得できるかどうかとは別） */
+function isSharedTokenApiConfigured(): boolean {
+    return Boolean(process.env.ISSUE_DECK_URL && process.env.SHARED_TOKEN_API_SECRET)
+}
+
 /** トークンは認証情報として扱う。戻り値をログ・レスポンスへ出さないこと */
-function readAideConfig(): AideConfig | null {
-    const token = process.env.AIDE_STATUS_TOKEN
+async function readAideConfig(): Promise<AideConfig | null> {
+    const { value, cache } = await resolveSharedToken("AIDE_STATUS_TOKEN", "ops-dashboard", sharedTokenCache)
+    sharedTokenCache = cache
+
+    const token = value ?? legacyToken()
     if (!token) return null
 
     const baseUrl = process.env.AIDE_BASE_URL || DEFAULT_BASE_URL
     return { baseUrl: baseUrl.replace(/\/+$/, ""), token }
 }
 
-/** 未設定の環境（worktree・開発機）ではタブごと出さない。ページ側で判定に使う */
+/**
+ * 未設定の環境（worktree・開発機）ではタブごと出さない。ページ側で判定に使う同期関数のため
+ * 実際には取得を試みず、取得できる見込み（フォールバックenvか共有トークンAPIの設定）が
+ * あるかだけで判定する
+ */
 export function isAideStatusConfigured(): boolean {
-    return readAideConfig() !== null
+    return Boolean(legacyToken()) || isSharedTokenApiConfigured()
 }
 
 class AideHttpError extends Error {
-    constructor(readonly status: number) {
+    readonly status: number
+
+    constructor(status: number) {
         super(`HTTP ${status}`)
+        this.status = status
         this.name = "AideHttpError"
     }
 }
@@ -131,7 +158,7 @@ let lastGood: { health: AideHealth; tools: string[]; fetchedAt: string } | null 
 
 export async function getAideStatusSnapshot(): Promise<AideStatusSnapshot> {
     const fetchedAt = new Date().toISOString()
-    const config = readAideConfig()
+    const config = await readAideConfig()
     if (!config) {
         return {
             status: "unconfigured",
@@ -171,7 +198,7 @@ export async function getAideStatusSnapshot(): Promise<AideStatusSnapshot> {
 
 /** 疎通確認。**押されたときだけ呼ぶ**（AIDEが外部サービスへ問い合わせるため） */
 export async function runAideStatusChecks(): Promise<AideProbeResponse> {
-    const config = readAideConfig()
+    const config = await readAideConfig()
     if (!config) {
         return { status: "unconfigured", message: "AIDE_STATUS_TOKEN が未設定です", results: [] }
     }
