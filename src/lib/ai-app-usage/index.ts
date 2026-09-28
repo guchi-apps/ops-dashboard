@@ -1,6 +1,7 @@
 import { collectAiAppUsage } from "@/lib/ai-app-usage/collect"
 import { getAiAppUsageSources } from "@/lib/ai-app-usage/sources"
 import { getTypeSafeUsageEntry } from "@/lib/ai-usage/typesafe"
+import { readOpsApiToken } from "@/lib/ops-api-token"
 import {
     createSingleFlight,
     isUsageCacheFresh,
@@ -38,7 +39,7 @@ async function fetchSnapshot(force: boolean): Promise<UsageCacheEntry<AiAppUsage
 
     const apps = await collectAiAppUsage({
         sources,
-        token: process.env.OPS_API_TOKEN?.trim() || undefined,
+        token: await readOpsApiToken(),
         typesafe,
     })
 
