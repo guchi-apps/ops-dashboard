@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
 import { isEmailAllowed } from "@/lib/allowed-emails";
+import { readOpsApiToken } from "@/lib/ops-api-token";
 
 export type Session = {
   user: {
@@ -98,7 +99,11 @@ export async function requireSessionOrApiToken(
 ): Promise<
   { caller: ApiCaller; response?: undefined } | { caller?: undefined; response: NextResponse }
 > {
-  return requireSessionOrToken(request, process.env.OPS_API_TOKEN);
+  // セッションで通る画面からのアクセスでは共有トークンの取得を待たせない
+  const session = await getSession();
+  if (session) return { caller: { kind: "session", session } };
+
+  return requireSessionOrToken(request, await readOpsApiToken());
 }
 
 /**

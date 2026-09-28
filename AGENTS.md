@@ -186,6 +186,11 @@ AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/s
   `ISSUE_DECK_URL`・`SHARED_TOKEN_API_SECRET`の2つだけが残る想定）。**`isAideStatusConfigured()`は
   同期関数のまま**（タブを出すかの判定に使うため）で、実際に取得を試みず「フォールバックenvか
   共有トークンAPIの設定が揃っているか」だけで判定している
+- **`OPS_API_TOKEN` も同じ共有トークンAPIから取る**（#448。`src/lib/ops-api-token.ts` の `readOpsApiToken()`）。
+  受ける側（`requireSessionOrApiToken()`。セッションで通る場合は取得を待たない）・連携先へ送るBearer・TypeSafe使用量
+  （フォールバックは `TYPESAFE_USAGE_TOKEN`）の3か所でキャッシュを共有し、利用元は `ops-dashboard` で記録される。
+  取得できなければ環境変数へフォールバックするため、**フォールバックに黙って落ちていないかは
+  issue-deckの設定画面の利用元表示で確かめる**
 - 取得に失敗したときのステータスで原因を切り分ける。401はトークンのずれ、503はAIDE側の未設定、
   404はAIDEにAPIがまだ無い（デプロイ前）
 - `AIDE_STATUS_TOKEN`・`ISSUE_DECK_URL`+`SHARED_TOKEN_API_SECRET`のいずれも未設定ならタブもチップも
