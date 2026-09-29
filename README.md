@@ -1,4 +1,4 @@
-# ops-dashboard
+# status-hub（旧 ops-dashboard）
 
 VPS稼働状況・UptimeRobot・Uptime Kuma監視ダッシュボード。Next.js App Router + Supabase Auth（Google認証）で構成。
 経緯は [portfolio issue #65](https://github.com/m-guchi/portfolio/issues/65) を参照。
@@ -26,7 +26,7 @@ Supabaseダッシュボードの Authentication → URL Configuration の Redire
 データの取得は共通のプロバイダに一本化している（ホスト30秒・監視60秒・AI/GitHub/1Password 5分）。
 狭い画面ではタブが横スクロールになり、tmuxの一覧は表からカードに切り替わる。
 
-ヘッダーの更新ボタンを押すと、この自動取得を待たずにホスト・AI・GitHub・1Password・監視をまとめて取り直す（[issue #29](https://github.com/guchi-apps/ops-dashboard/issues/29)）。
+ヘッダーの更新ボタンを押すと、この自動取得を待たずにホスト・AI・GitHub・1Password・監視をまとめて取り直す（[issue #29](https://github.com/guchi-apps/status-hub/issues/29)）。
 AI・GitHub・1Passwordはサーバー側にもキャッシュ（既定5分）があるため、このボタンからの取得だけ `?force=1` を付けてキャッシュを飛ばし、提供元へ取りにいく。
 連打で提供元を叩き続けないよう、押した直後30秒はボタンを押せず、サーバー側も同じ30秒のあいだは `force` でもキャッシュを返す（`src/lib/usage-cache.ts`）。
 **AIだけは180秒**（Anthropicの推奨間隔）で、これを下回る `force` にはキャッシュを返す。下回ると429が返り、使用状況のカードがエラー表示に置き換わるため。
@@ -72,7 +72,7 @@ WSL2はNAT構成のため、Windowsホスト側でWSLへのポートフォワー
 
 ## ホスト（VPS・サブPC）のステータス表示
 
-VPSと自宅LAN内のホスト（サブPC・Mac mini等）について、CPU・メモリ・ディスク等の現在値と直近24時間の推移をホストごとに表示する（[issue #34](https://github.com/m-guchi/ops-dashboard/issues/34)）。
+VPSと自宅LAN内のホスト（サブPC・Mac mini等）について、CPU・メモリ・ディスク等の現在値と直近24時間の推移をホストごとに表示する（[issue #34](https://github.com/guchi-apps/status-hub/issues/34)）。
 
 収集は**すべて push 型に一本化**している。自宅LAN内のホストはNAT配下にいてVPSからポーリングできないため、ホスト側から定期的にPOSTしてもらう必要があり、VPSだけ別方式にすると同じ表示を二重に実装することになるためである。
 VPS上ではダッシュボード自身が同じマシンで動いているので、送信先は `http://localhost:3110`（外部を経由しない）。
@@ -111,7 +111,7 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 | 稼働時間 | `/proc/uptime` | |
 | CPU温度 | `/sys/class/thermal/thermal_zone*` → 無ければ `/sys/class/hwmon/hwmon*` | 取れないマシンではカードごと省かれる。詳細は下記 |
 | CPU上位プロセス | `ps -eo pcpu=,rss=,args= --sort=-pcpu` | 上位5件。カーネルスレッドは除く |
-| メモリ上位プロセス | `ps -eo pcpu=,rss=,args= --sort=-rss` | 上位5件。CPU順の一覧には犯人が出てこないメモリ枯渇を捕まえるために別で送る（[issue #54](https://github.com/guchi-apps/ops-dashboard/issues/54)） |
+| メモリ上位プロセス | `ps -eo pcpu=,rss=,args= --sort=-rss` | 上位5件。CPU順の一覧には犯人が出てこないメモリ枯渇を捕まえるために別で送る（[issue #54](https://github.com/guchi-apps/status-hub/issues/54)） |
 | サービス死活 | `systemctl is-active <名前>` | 指定したサービスをバッジで表示。socket activation されたものは下記の扱い |
 | 再起動待ち | `/var/run/reboot-required` の有無 | Debian系のみ |
 | 未適用の更新 | `/var/lib/update-notifier/updates-available` | `update-notifier-common` が入っていれば表示される。ESM（有償の延長サポート）分は数えない |
@@ -125,7 +125,7 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 
 更新件数は `/usr/lib/update-notifier/apt-check` でも取れるが、1回あたり1.5秒ほどCPUを使う一方で値は1日に数回しか変わらないため、update-notifier が書き出したファイルを読むだけにしている。
 
-**CPU温度は `/sys/class/thermal` だけでは取れないマシンがある**（[issue #101](https://github.com/guchi-apps/ops-dashboard/issues/101)）。
+**CPU温度は `/sys/class/thermal` だけでは取れないマシンがある**（[issue #101](https://github.com/guchi-apps/status-hub/issues/101)）。
 サブPC（AMD Athlon 200GE）では `k10temp` が hwmon にしか登録せず、`/sys/class/thermal` に `thermal_zone*` が1つも無い。
 そのため thermal_zone で見つからなければ `/sys/class/hwmon/hwmon*` を見に行く。選び方は次のとおり。
 
@@ -142,7 +142,7 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 
 ### アプリ別リソース
 
-ホストタブの指標カードの下に、アプリごとのメモリ・ディスク使用量を横棒で出す（[issue #226](https://github.com/guchi-apps/ops-dashboard/issues/226)）。
+ホストタブの指標カードの下に、アプリごとのメモリ・ディスク使用量を横棒で出す（[issue #226](https://github.com/guchi-apps/status-hub/issues/226)）。
 エージェントの `HOST_STATS_APPS_ROOT`（VPSは `/home/github-user/apps`）を設定したホストだけが送り、未設定のホストや古いエージェントからは項目ごと届かないためパネルも出ない。
 現在値だけを持ち、履歴には残さない。
 
@@ -156,13 +156,13 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 ### tmuxセッション一覧
 
 サブPCはClaude Codeの作業セッションを常駐させるホストで、リポジトリをまたいだセッションが同じ `tmux ls` に並ぶ（セッション名は issue-deck 側で `<リポジトリ名>-issue-<番号>` に統一している）。
-いま何が動いているかが見えないと二重起動や放置セッションに気づけないため、ホストのメトリクスと一緒に送っている（[issue #38](https://github.com/m-guchi/ops-dashboard/issues/38)）。
+いま何が動いているかが見えないと二重起動や放置セッションに気づけないため、ホストのメトリクスと一緒に送っている（[issue #38](https://github.com/guchi-apps/status-hub/issues/38)）。
 
-送信は20件で打ち切るが、**総数は切り捨てる前の実数を別に送る**（[issue #54](https://github.com/guchi-apps/ops-dashboard/issues/54)）。
+送信は20件で打ち切るが、**総数は切り捨てる前の実数を別に送る**（[issue #54](https://github.com/guchi-apps/status-hub/issues/54)）。
 一覧の長さで総数を数えると、上限に張り付いた時点で「セッションが積み上がっている」という兆候そのものが画面から消えるため。
 2026-08-14にサブPCが34セッションまで積み上がってメモリ枯渇で停止した際、画面には20件しか出ておらず、直前まで異常を読み取れなかった。
 
-状態は各ペインの実行コマンドから判定する（[issue #40](https://github.com/guchi-apps/ops-dashboard/issues/40)）。
+状態は各ペインの実行コマンドから判定する（[issue #40](https://github.com/guchi-apps/status-hub/issues/40)）。
 デタッチしたまま裏でclaudeが走っているのが普通の使い方で、アタッチの有無では「いま作業が動いているか」を判断できないため。
 
 | 状態 | 判定 |
@@ -172,9 +172,9 @@ Prometheus + Grafana は、VPSがメモリ2GBでNext.jsを10本抱えている�
 | 待機中 | シェルだけで止まっている |
 | 放置 | デタッチのまま24時間以上 活動がない |
 
-**入力待ちはフックの記録を第一の根拠にする**（[issue #45](https://github.com/guchi-apps/ops-dashboard/issues/45)）。`permission_prompt` が最後なら、承認プロンプトや質問を出したまま人を待っていることが**確定している**ので、画面の動きから推し量る必要がない。
+**入力待ちはフックの記録を第一の根拠にする**（[issue #45](https://github.com/guchi-apps/status-hub/issues/45)）。`permission_prompt` が最後なら、承認プロンプトや質問を出したまま人を待っていることが**確定している**ので、画面の動きから推し量る必要がない。
 
-issue-deck の `session-notify.sh` が記録するイベントは3種類だけで、意味はそれぞれ違う（[issue #72](https://github.com/guchi-apps/ops-dashboard/issues/72)）。
+issue-deck の `session-notify.sh` が記録するイベントは3種類だけで、意味はそれぞれ違う（[issue #72](https://github.com/guchi-apps/status-hub/issues/72)）。
 
 | イベント | 意味 | 入力待ちか |
 | --- | --- | --- |
@@ -186,13 +186,13 @@ issue-deck の `session-notify.sh` が記録するイベントは3種類だけ�
 
 画面が止まっているかどうかは、フックが届かないセッション（手で立てたもの）と、`working` / `Stop` で止まっているセッションのための代替手段。出力の無いビルドを「入力待ち」と誤判定する、スピナーが回っているだけのセッションを「稼働中」と読み続ける、といった外し方をするため、あくまで補助として使う。
 
-**「画面が動いているか」に使うのは `#{window_activity}` で、`#{session_activity}` ではない**（[issue #72](https://github.com/guchi-apps/ops-dashboard/issues/72)）。`session_activity` が更新されるのはクライアントの操作（アタッチ・キー入力）で、**ペインの出力では動かない**。デタッチしたまま裏で claude が走っているのが常態のこのホストでは、`session_activity` が `session_created` のまま何時間も止まり、スピナーが回り続けているセッションまで「60秒以上 画面が止まっている」と読まれていた（結果、ほぼ全セッションが入力待ちになる）。窓側の活動時刻はペインの出力で更新されるため、そちらとの新しい方を最終活動として送っている。
+**「画面が動いているか」に使うのは `#{window_activity}` で、`#{session_activity}` ではない**（[issue #72](https://github.com/guchi-apps/status-hub/issues/72)）。`session_activity` が更新されるのはクライアントの操作（アタッチ・キー入力）で、**ペインの出力では動かない**。デタッチしたまま裏で claude が走っているのが常態のこのホストでは、`session_activity` が `session_created` のまま何時間も止まり、スピナーが回り続けているセッションまで「60秒以上 画面が止まっている」と読まれていた（結果、ほぼ全セッションが入力待ちになる）。窓側の活動時刻はペインの出力で更新されるため、そちらとの新しい方を最終活動として送っている。
 
 窓の活動時刻でも取りこぼす場合が1つある。**ペインを上へスクロールしたままのセッションは、claude が動いていても画面が描き変わらない**（新しい行が見えていないため）。この状態では出力が止まって見えるので、フックのイベントが無ければ60秒後に入力待ちへ倒れる。
 
 `commands` / `busy` / `path` / `lastActivityAt` はいずれも任意の項目のため、エージェントを更新していないホストからのレポートもそのまま受け取れる（その場合はアタッチの有無で稼働中を判定する）。
 
-#### 残す理由（[issue #59](https://github.com/guchi-apps/ops-dashboard/issues/59)）
+#### 残す理由（[issue #59](https://github.com/guchi-apps/status-hub/issues/59)）
 
 issue-deck の回収スクリプトは毎分すべてのセッションを判定して「畳まない理由」を持っているが、届くのは journald だけで、しかも**同じ理由が続く間は出力されない**（同じ行でjournaldが埋まるのを防ぐため）。放置なのか正当に待っているのかが画面から区別できなかった。
 
@@ -215,7 +215,7 @@ issue-deck の回収スクリプトは毎分すべてのセッションを判定
 
 - tmuxのソケットはユーザーごとに `/tmp/tmux-<UID>/` にあり、root で `tmux ls` を叩いても root 自身のサーバーしか見えない。そのためソケットを列挙して `tmux -S <ソケット>` で個別に問い合わせている（ディレクトリは 0700 だが root は読める）
 - そのため `ops-dashboard-host-stats.service` は `PrivateTmp=no` にしてある。`PrivateTmp=yes` だとサービス専用の空の `/tmp` が見えるだけで、セッションを1件も拾えない。`ProtectSystem=strict` により `/tmp` は読み取り専用のままなので、書き込みはできない
-- 後述の「残す理由」はユーザーのホーム配下を読むため、`ProtectHome=read-only` にしてある（[issue #65](https://github.com/guchi-apps/ops-dashboard/issues/65)）。`yes` だと `/home` が空に見え、理由を1件も拾えない。**設置手順の `--print` はサンドボックスの外で走るため手では読めてしまい、timer 経由だけ空になる**という気づきにくい壊れ方をする
+- 後述の「残す理由」はユーザーのホーム配下を読むため、`ProtectHome=read-only` にしてある（[issue #65](https://github.com/guchi-apps/status-hub/issues/65)）。`yes` だと `/home` が空に見え、理由を1件も拾えない。**設置手順の `--print` はサンドボックスの外で走るため手では読めてしまい、timer 経由だけ空になる**という気づきにくい壊れ方をする
 
 **既にエージェントを設置済みのホストでは、`agent.sh` と一緒にユニットファイルも配り直すこと**（`PrivateTmp` や `ProtectHome` の変更が効かないと、tmux の行や残す理由が出ない）。
 
@@ -229,7 +229,7 @@ sudo systemctl start ops-dashboard-host-stats.service
 拾えるのは既定のソケット（`/tmp/tmux-<UID>/*`）にあるセッションだけで、`tmux -S <別のパス>` で作った独自ソケットのセッションは対象外。
 ソケットの置き場所を変えているホストでは `HOST_STATS_TMUX_SOCKET_ROOT` で探索先を指定する。
 
-### tmuxセッションを閉じる（[issue #409](https://github.com/guchi-apps/ops-dashboard/issues/409)）
+### tmuxセッションを閉じる（[issue #409](https://github.com/guchi-apps/status-hub/issues/409)）
 
 tmuxタブの各行の「閉じる」から、そのセッションを終了できる。確認を挟んだうえで `tmux kill-session` を実行する。
 
@@ -358,7 +358,7 @@ tail -f /var/log/ops-dashboard-host-stats.log
 この種のサービスは接続が来るまで `.service` が inactive で、待ち受けは `.socket` が持つ。エージェントは
 `inactive` のとき起動元（`TriggeredBy`）の `.socket`・`.path` を見にいき、それが active なら
 `listening` として送るため、稼働中（緑バッジ）になる。`.socket` の側を書く必要はない
-（[issue #187](https://github.com/guchi-apps/ops-dashboard/issues/187)）。なお `failed` は待ち受けの
+（[issue #187](https://github.com/guchi-apps/status-hub/issues/187)）。なお `failed` は待ち受けの
 有無に関わらず `failed` のまま送る。
 
 タイマー起動の oneshot はこの対象外で、`inactive` のまま送る。実行していない間を稼働中にすると
@@ -383,7 +383,7 @@ Kumaの Accepted Status Codes に `401` を足せば「起動していればup�
 
 ### 定期ジョブ（systemd timer）の監視と通知
 
-[issue #75](https://github.com/guchi-apps/ops-dashboard/issues/75)。`HOST_STATS_SERVICES` とは別枠で、
+[issue #75](https://github.com/guchi-apps/status-hub/issues/75)。`HOST_STATS_SERVICES` とは別枠で、
 `HOST_STATS_TIMERS` に監視したいタイマーをカンマ区切りで書く。`.timer` は省略してよい。
 
 ```
@@ -421,7 +421,7 @@ HOST_STATS_TIMERS=guchi@aide-zaim-sync,guchi@aide-zaim-keep-alive
 
 **設置後の確認に `--print` を使わないこと。** `--print` はサンドボックスの外で走るため、
 timer 経由では読めないユニットでも手では読めてしまう（tmux で同じ壊れ方をした前例が
-[issue #65](https://github.com/guchi-apps/ops-dashboard/issues/65)）。
+[issue #65](https://github.com/guchi-apps/status-hub/issues/65)）。
 `sudo systemctl start ops-dashboard-host-stats.service` で1回走らせ、画面に「取得できず」が
 出ていないかで確かめる。
 
@@ -484,12 +484,12 @@ Claude / ChatGPT のトークン使用状況と課金プランをダッシュボ
 
 TypeSafeの公開APIはアカウントの残高・無料枠を返さず、POST /v1/systemone の応答にその呼び出しのトークン数だけを返す。そのため、TypeSafeを呼ぶアプリが集計したAPIを `TYPESAFE_USAGE_URL` に、同APIのBearerトークンを `TYPESAFE_USAGE_TOKEN` に設定する。両方未設定ならカードは表示しない。表示する金額は入力単価 `$0.042 / 100万トークン` を使った概算で、請求額そのものではない。
 
-**Jevのクレジット枠**（[#426](https://github.com/guchi-apps/ops-dashboard/issues/426)）: 購入したクレジットを消費する形をClaudeのクレジット枠と同じ見た目で出す。TypeSafeにも連携先の集計APIにも残高・購入額を返す項目は無いため、Claudeと同じく画面の「購入・残高を記録」から購入と補正残高を登録し（`.data/typesafe-credit-ledger.json`。`TYPESAFE_CREDIT_LEDGER_PATH` で変更可）、そこから消費を差し引いて残高を推定する。消費額は連携先の応答に**任意の `totalInputTokens`（集計開始からの累計入力トークン）** が含まれるときだけ積む（直近24時間・7日間のローリング値からは累計を作れないため）。含まれない間は「使用額は累計待ち」と表示し、残高は補正値＋その後の購入のままになる。
+**Jevのクレジット枠**（[#426](https://github.com/guchi-apps/status-hub/issues/426)）: 購入したクレジットを消費する形をClaudeのクレジット枠と同じ見た目で出す。TypeSafeにも連携先の集計APIにも残高・購入額を返す項目は無いため、Claudeと同じく画面の「購入・残高を記録」から購入と補正残高を登録し（`.data/typesafe-credit-ledger.json`。`TYPESAFE_CREDIT_LEDGER_PATH` で変更可）、そこから消費を差し引いて残高を推定する。消費額は連携先の応答に**任意の `totalInputTokens`（集計開始からの累計入力トークン）** が含まれるときだけ積む（直近24時間・7日間のローリング値からは累計を作れないため）。含まれない間は「使用額は累計待ち」と表示し、残高は補正値＋その後の購入のままになる。
 
 ### アプリ別のAI利用
 
 「どのアプリが、どのモデルで、どれくらいAIを使っているか」を、上の提供元別の利用枠とは別の軸で出す
-（[issue #325](https://github.com/guchi-apps/ops-dashboard/issues/325)）。AI・GitHub・1Passwordタブの、AI Usageの下の区画で、
+（[issue #325](https://github.com/guchi-apps/status-hub/issues/325)）。AI・GitHub・1Passwordタブの、AI Usageの下の区画で、
 24時間・7日間を切り替え、アプリの行を開くと機能ごと×モデルごとの内訳が出る。
 
 **各アプリが使用量APIを持ち、ダッシュボードのサーバーがそれを読みにいく**（TypeSafe・AIDEと同じ向き）。
@@ -533,7 +533,7 @@ GPT-5.6系（aide-botがCodex CLI経由で使う）はChatGPTの定額枠で請�
   そちらが正になり、TypeSafeからの補完は止まる（Jevの分が二重に数えられないため）
 - キャッシュは5分（失敗したアプリがあるときは30秒）。ヘッダーの更新ボタンからの取得（`?force=1`）は30秒の間隔を守る
 
-#### AIの用途一覧（[issue #415](https://github.com/guchi-apps/ops-dashboard/issues/415)）
+#### AIの用途一覧（[issue #415](https://github.com/guchi-apps/status-hub/issues/415)）
 
 アプリ別の表は使用量APIを持つアプリしか出ないため、その下に「AIを使っている用途」の一覧を出し、数えられていないものを見つけられるようにする。
 用途は `src/lib/ai-app-usage/purposes.ts` の `AI_PURPOSES` に**手で登録する**（他リポジトリのソースは実行時に読めない）。
@@ -666,7 +666,7 @@ Authorization: Bearer <WIDGET_TOKEN>
 
 ## サーバー間参照向けの読み取りAPI
 
-ダッシュボードの読み取りAPIを、ログインセッションを持たないサーバープロセスからも参照できるようにしている（[issue #85](https://github.com/guchi-apps/ops-dashboard/issues/85)）。
+ダッシュボードの読み取りAPIを、ログインセッションを持たないサーバープロセスからも参照できるようにしている（[issue #85](https://github.com/guchi-apps/status-hub/issues/85)）。
 
 **呼び出し元は同じVPS上で動くAIDEのMCPサーバー**（[guchi-apps/aide#31](https://github.com/guchi-apps/aide/issues/31)）。ClaudeアプリはVPS上のAPIへ直接届かないため、AIDEがここを `http://127.0.0.1:3110` から叩いて「いま異常があるか」の粒度に畳み、1本のMCPツールとして返す。指標の収集はこのダッシュボードが既に行っているので、AIDE側では作り直さない。
 
@@ -716,7 +716,7 @@ Content-Type: application/json
 - **監視系（`/api/uptime-kuma`・`/api/monitors`）は `{ monitors, error }` を返す**。
   取得に失敗した系統は `monitors: []` に加えて `error` に理由（文字列）が入る。成功時・未設定時は
   `error: null`。`monitors` だけを読む呼び出し元はそのまま動くが、`monitors` が空でも
-  「監視が無い」とは限らないため、`error` も見ること（[issue #276](https://github.com/guchi-apps/ops-dashboard/issues/276)）
+  「監視が無い」とは限らないため、`error` も見ること（[issue #276](https://github.com/guchi-apps/status-hub/issues/276)）
 - **レスポンスの形は画面向けと同一**。AIDE側は既存の型（`src/types/host-stats.ts` ほか）を契約として
   実装しているため、**形を変える場合は aide#31 側の追随が要る**
 
@@ -734,7 +734,7 @@ Content-Type: application/json
 ### 本番で401になったときの確認
 
 VPS上で `.env` の値を使って直接叩く。**`.env` の値はダブルクォートで囲まれている**ため、
-取り出すときにクォートを外すこと（[issue #102](https://github.com/guchi-apps/ops-dashboard/issues/102)）。
+取り出すときにクォートを外すこと（[issue #102](https://github.com/guchi-apps/status-hub/issues/102)）。
 
 ```bash
 cd <デプロイ先ディレクトリ>
@@ -880,7 +880,7 @@ op --version
 **未ログイン状態では `/icons/*` と `/manifest.webmanifest` が `/login` へリダイレクト（307）される。**
 `public/`配下の静的ファイルも`src/proxy.ts`を通り、matcherが除外しているのは`_next/static`・
 `_next/image`・`favicon.ico`だけのため。ログイン画面でタブアイコンが出ないのはこれが理由で、
-`curl`でアイコンを取得する検証もそのままでは通らない（[#165](https://github.com/guchi-apps/ops-dashboard/issues/165)）。
+`curl`でアイコンを取得する検証もそのままでは通らない（[#165](https://github.com/guchi-apps/status-hub/issues/165)）。
 
 ## テスト
 
@@ -898,7 +898,7 @@ TypeScriptはNodeの型除去でそのまま読み込み、`@/` の解決だけ 
 
 ## Uptime Kuma へのモニター登録
 
-監視タブの「モニター追加」と `POST /api/uptime-kuma/monitors` から、Uptime Kuma へモニターを登録できる（[issue #214](https://github.com/guchi-apps/ops-dashboard/issues/214)）。新規アプリを作ったときの監視登録を手作業にしないための口である。
+監視タブの「モニター追加」と `POST /api/uptime-kuma/monitors` から、Uptime Kuma へモニターを登録できる（[issue #214](https://github.com/guchi-apps/status-hub/issues/214)）。新規アプリを作ったときの監視登録を手作業にしないための口である。
 
 **Uptime Kuma にはモニターを作るREST APIが無い。** 公開されている `/api/status-page/*` は読み取り専用で、作成できるのは管理者としてログインした socket.io セッションから `add` イベントを送る経路だけである。`src/lib/uptime-kuma-admin.ts` がこの経路を実装しているが、公式に約束された仕様ではないため、Kumaを更新すると壊れうる。詳細な注意点は `AGENTS.md` の同名の節にまとめてある。
 
@@ -933,6 +933,6 @@ Content-Type: application/json
 - **シークレット**: ワークフローは実行時に**GitHubのsecret / variable**から値を取る（`op://`の実行時参照は行わない。#51）。どの値をGitHub側のどこへ置くかの対応表が`.github/secrets-manifest.tsv`で、VPSへの接続情報（`SERVER_*`）とSupabase（`SUPABASE_*`）はorganizationの共通値を継承し、それ以外はこのリポジトリのsecret / variableに置く。`deploy.yml`のenvブロックは`scripts/generate-workflow-env-block.sh`で生成できる
 - **シークレットの更新**: 1Password（`apps`ボールトの`ops-dashboard`アイテム）は「人が管理する唯一の正」として残す。値を変えたときだけ`op signin`のうえ`scripts/sync-github-secrets.sh`（`--dry-run`で差分だけ確認できる）を実行してGitHub側へ同期する。ここで使う`op`は個人アカウントのセッションのため、サービスアカウントの日次レート制限を消費しない。AI使用状況の表示には`anthropic-oauth-refresh-token` / `openai-chatgpt-refresh-token` / `openai-chatgpt-account-id` / `typesafe-usage-url` / `typesafe-usage-token`、GitHubの制限の表示には`github-usage-token` / `github-usage-org`、iPhoneウィジェット向けAPIには`widget-token`（32文字以上のランダム文字列）、サーバー間参照向けの読み取りAPIには`ops-api-token`（同じく32文字以上のランダム文字列）、アプリ別AI利用をAIエージェントから変更するには`ai-app-usage-sources-write-token`（同じく32文字以上のランダム文字列）のフィールドをアイテムへ追加してから同期する（GitHub側が未設定のままだと、デプロイでその値が空のままVPSの`.env`へ書かれる）。1Passwordのレート制限の表示には、GitHub Secretsの`OP_SERVICE_ACCOUNT_TOKEN`がそのままVPSの`.env`へ渡る（1Password側のフィールド追加は不要）
 - **ログイン通知**: `SIGNALY_LOGIN_WEBHOOK_URL`は全アプリ共通の1チャンネルへ集約したため、organizationの共通値を継承する（マニフェストの`inherit`。[guchi-apps/issue-deck#2287](https://github.com/guchi-apps/issue-deck/issues/2287)）。共通チャンネルではどのアプリへのログインかがチャンネルからは分からないので、`src/lib/signaly.ts`は送信ボディの`source`にリポジトリ名（`ops-dashboard`）を入れて送る。**同名のrepository secretはorganization secretを覆い隠す**ため、マニフェストを`inherit`にしても、repository secretが残っている間は従来のアプリ別チャンネルへ送られる。アラート通知（`SIGNALY_ALERT_WEBHOOK_URL`）はこのリポジトリのsecretのまま
-- **環境変数の渡り方**: VPS上の`.env`は`next start`（Next.js）自身が起動時に読み込む。`deploy/ecosystem.config.js`がPM2から渡しているのは`NODE_ENV`と`PORT`だけだが、それで足りている（`dotenv`は不要）。**そのため`pm2 show ops-dashboard`の環境変数一覧には`.env`の値は出てこない**（PM2が注入した分しか表示されないため）。出ていないことは値が渡っていない証拠にはならない。切り分けは`.env`の中身と、実際にAPIを叩いた結果で行う（[issue #102](https://github.com/guchi-apps/ops-dashboard/issues/102)）
+- **環境変数の渡り方**: VPS上の`.env`は`next start`（Next.js）自身が起動時に読み込む。`deploy/ecosystem.config.js`がPM2から渡しているのは`NODE_ENV`と`PORT`だけだが、それで足りている（`dotenv`は不要）。**そのため`pm2 show ops-dashboard`の環境変数一覧には`.env`の値は出てこない**（PM2が注入した分しか表示されないため）。出ていないことは値が渡っていない証拠にはならない。切り分けは`.env`の中身と、実際にAPIを叩いた結果で行う（[issue #102](https://github.com/guchi-apps/status-hub/issues/102)）
 - **Apache**: リバースプロキシ設定は`vps`リポジトリ（`apache/sites-available/admin.gucchii.com.conf`）が一次情報源。`deploy/apache-vhost.example.conf`は参考用の雛形
 - **Supabase**: Authentication → URL Configuration の Redirect URLs に `https://admin.gucchii.com/auth/callback` を追加登録すること

@@ -14,7 +14,7 @@ import webpush, { type PushSubscription } from "web-push"
  * VAPIDの連絡先。プッシュサービスが送信元へ連絡するためのもので、`mailto:` か `https:` で書く。
  * 個人のメールアドレスをリポジトリへ置かないよう、リポジトリのURLを既定にしている。
  */
-const DEFAULT_SUBJECT = "https://github.com/guchi-apps/ops-dashboard"
+const DEFAULT_SUBJECT = "https://github.com/guchi-apps/status-hub"
 
 /** 端末がオフラインのときにプッシュサービスが保持する時間。枠の通知は数時間で意味を失う */
 const PUSH_TTL_SECONDS = 60 * 60

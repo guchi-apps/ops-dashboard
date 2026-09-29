@@ -1,6 +1,6 @@
 [Unit]
 Description=ops-dashboard へこのホストのメトリクスを送信する
-Documentation=https://github.com/m-guchi/ops-dashboard
+Documentation=https://github.com/guchi-apps/status-hub
 After=network-online.target
 Wants=network-online.target
 

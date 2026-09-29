@@ -23,7 +23,7 @@
 #   org項目  … gh の `admin:org` スコープ
 set -euo pipefail
 
-REPO="${REPO:-guchi-apps/ops-dashboard}"
+REPO="${REPO:-guchi-apps/status-hub}"
 ORG="${ORG:-guchi-apps}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="$REPO_ROOT/.github/secrets-manifest.tsv"
