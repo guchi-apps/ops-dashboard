@@ -4,11 +4,15 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-# ops-dashboard — エージェント向けガイド
+# status-hub（旧 ops-dashboard）— エージェント向けガイド
 
 自宅VPS・サブPC・AI利用枠などの状態を1画面で見るための個人向けダッシュボード。技術スタックと
 セットアップ手順は [README.md](./README.md) を参照する。ここにはエージェント（Claude Code）が守る
 運用ルールと、READMEに書かれていない判断基準だけを書く。
+
+**GitHubのリポジトリ名だけを `status-hub` に改めた（#457）。** PM2のプロセス名・systemdユニット名・
+1Passwordの `apps/ops-dashboard` アイテム・`TARGET_DIR`・`NOTIFY_APP` などの識別子は本番が参照しているため
+`ops-dashboard` のまま据え置いている。**これらを黙って改名しないこと**（改名するなら手作業を伴う別Issueにする）。
 
 **GitHub Actions 上での無人実行は、このリポジトリをチェックアウトしたワークツリーしか参照できない。**
 ローカル実行ではユーザー個人環境のグローバルルール（`~/.claude/CLAUDE.md`）も読み込まれるが、
