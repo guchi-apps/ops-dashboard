@@ -1,3 +1,4 @@
+import { readOpsApiToken } from "@/lib/ops-api-token"
 import { fetchWithTimeout } from "@/lib/upstream"
 import { getProviderEntry, type ProviderCacheEntry, type ProviderFetchResult } from "@/lib/ai-usage/provider-cache"
 import type { AiMeteredFeatureUsage, AiMeteredTotals, AiProviderUsage } from "@/types/ai-usage"
@@ -81,7 +82,7 @@ function unconfigured(message: string): ProviderFetchResult {
 
 async function fetchTypeSafeUsage(): Promise<ProviderFetchResult> {
     const url = process.env.TYPESAFE_USAGE_URL?.trim()
-    const token = process.env.TYPESAFE_USAGE_TOKEN?.trim()
+    const token = await readOpsApiToken("TYPESAFE_USAGE_TOKEN")
     if (!url || !token) return unconfigured("TYPESAFE_USAGE_URL / TYPESAFE_USAGE_TOKEN が未設定です")
 
     try {
