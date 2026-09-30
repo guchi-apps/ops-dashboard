@@ -1,5 +1,6 @@
 "use client"
 
+import { CSRF_HEADERS } from "@/lib/csrf-headers"
 import { Bell, BellOff, ChevronDown } from "lucide-react"
 import { useCallback, useEffect, useId, useState } from "react"
 import { MENU_ITEM_CLASS } from "@/components/header-menu"
@@ -60,7 +61,7 @@ function toApplicationServerKey(base64Url: string): Uint8Array<ArrayBuffer> {
 async function postSubscription(subscription: PushSubscription, confirm: boolean): Promise<boolean> {
     const res = await fetch("/api/push-subscriptions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...CSRF_HEADERS },
         body: JSON.stringify({ subscription: subscription.toJSON(), confirm }),
     })
     return res.ok
@@ -153,7 +154,7 @@ export function UsageNotifications() {
             if (subscription) {
                 await fetch("/api/push-subscriptions", {
                     method: "DELETE",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", ...CSRF_HEADERS },
                     body: JSON.stringify({ endpoint: subscription.endpoint }),
                 })
                 await subscription.unsubscribe()

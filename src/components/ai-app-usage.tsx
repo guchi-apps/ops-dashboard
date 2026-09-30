@@ -1,5 +1,6 @@
 "use client"
 
+import { CSRF_HEADERS } from "@/lib/csrf-headers"
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { ArrowLeft, Pencil, Plus, Trash2, X } from "lucide-react"
@@ -100,7 +101,7 @@ function AiAppUsageSourcesModal({ onClose, onSaved }: { onClose: () => void; onS
         try {
             const response = await fetch("/api/ai-app-usage/sources", {
                 method: "PUT",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...CSRF_HEADERS },
                 body: JSON.stringify({ sources: nextSources }),
             })
             const result = (await response.json()) as { sources?: unknown; error?: unknown }

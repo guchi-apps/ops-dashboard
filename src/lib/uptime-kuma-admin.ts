@@ -1,5 +1,7 @@
 import { io, type Socket } from "socket.io-client"
 
+import { fetchWithTimeout } from "@/lib/upstream"
+
 /**
  * Uptime Kuma へモニターを登録する経路。
  *
@@ -324,9 +326,9 @@ async function fetchPublicGroupList(baseUrl: string, slug: string): Promise<Kuma
     // 公開APIから読むしかない。Kumaはこの応答を数分キャッシュすることがあり、古い一覧を
     // 読むと直前に足したモニターを外して保存してしまう。キャッシュのキーはクエリ文字列を
     // 含むため、毎回違う値を付けて必ず最新を読ませる（Kuma側はクエリを見ない）
-    const res = await fetch(`${baseUrl}/api/status-page/${slug}?_=${Date.now()}`, {
-        cache: "no-store",
-    })
+    // `serialize` の中で走るため、ここが止まると後続の登録もキューで待ち続ける。
+    // タイムアウトはボディの読み取り（`res.json()`）にも効く
+    const res = await fetchWithTimeout(`${baseUrl}/api/status-page/${slug}?_=${Date.now()}`)
     if (!res.ok) {
         throw new UptimeKumaAdminError(
             `ステータスページ（${slug}）を取得できませんでした: ${res.status}`

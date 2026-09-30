@@ -6,6 +6,7 @@ import {
     getAiAppUsageSources,
     saveAiAppUsageSources,
 } from "@/lib/ai-app-usage/sources"
+import { rejectCrossSiteRequest } from "@/lib/csrf"
 import { requireSessionOrAiAppUsageSourcesWriteToken } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
@@ -22,8 +23,12 @@ export async function GET(request: NextRequest) {
 
 /** `{ sources: [{ app, url }] }` で連携先一覧を丸ごと置き換える。 */
 export async function PUT(request: NextRequest) {
-    const { response } = await requireSessionOrAiAppUsageSourcesWriteToken(request)
+    const { response, caller } = await requireSessionOrAiAppUsageSourcesWriteToken(request)
     if (response) return response
+    if (caller.kind === "session") {
+        const rejected = rejectCrossSiteRequest(request)
+        if (rejected) return rejected
+    }
 
     let payload: unknown
     try {

@@ -1,5 +1,6 @@
 "use client"
 
+import { CSRF_HEADERS } from "@/lib/csrf-headers"
 import { Fragment, useEffect, useState } from "react"
 import { StatusDot, TEXT_TONES, type StatusTone } from "@/components/status-badge"
 import { formatAge, formatUptime } from "@/lib/host-stats/format"
@@ -109,7 +110,7 @@ function useTmuxClose() {
         try {
             const response = await fetch("/api/tmux-close", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "Content-Type": "application/json", ...CSRF_HEADERS },
                 body: JSON.stringify({
                     hostId: session.hostId,
                     user: session.user,

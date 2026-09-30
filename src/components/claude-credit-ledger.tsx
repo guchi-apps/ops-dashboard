@@ -1,5 +1,6 @@
 "use client"
 
+import { CSRF_HEADERS } from "@/lib/csrf-headers"
 import { useId, useState } from "react"
 import { Pencil, Trash2, X } from "lucide-react"
 import { useDashboardData } from "@/components/dashboard-data"
@@ -41,7 +42,7 @@ function formatCorrectedAt(iso: string): string {
 async function send(init: RequestInit & { url: string }): Promise<string | null> {
     const res = await fetch(init.url, {
         ...init,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...CSRF_HEADERS },
     })
     if (res.ok) return null
 
