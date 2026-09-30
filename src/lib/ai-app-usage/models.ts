@@ -24,6 +24,8 @@ export interface ModelInfo {
     provider: string
     family: ModelFamily
     price: ModelPrice
+    /** 単価表に添える注記（出典が未確認・換算の目安など）。単価と一緒に更新するため、この一覧に持たせる */
+    note?: string
 }
 
 /**
@@ -97,6 +99,7 @@ const MODELS: ModelInfo[] = [
         label: "GPT-5.6 Sol",
         provider: "OpenAI",
         family: "gpt",
+        note: "換算の目安",
         price: { input: 4, output: 20, cacheWrite: 4, cacheRead: 0.4 },
     },
     {
@@ -104,6 +107,7 @@ const MODELS: ModelInfo[] = [
         label: "GPT-5.6 Terra",
         provider: "OpenAI",
         family: "gpt",
+        note: "換算の目安",
         price: { input: 2, output: 12, cacheWrite: 2, cacheRead: 0.2 },
     },
     {
@@ -111,6 +115,7 @@ const MODELS: ModelInfo[] = [
         label: "GPT-5.6 Luna",
         provider: "OpenAI",
         family: "gpt",
+        note: "換算の目安",
         price: { input: 0.2, output: 1.2, cacheWrite: 0.2, cacheRead: 0.02 },
     },
     {
@@ -118,6 +123,7 @@ const MODELS: ModelInfo[] = [
         label: "GPT-6 Sol",
         provider: "OpenAI",
         family: "gpt",
+        note: "出典未確認",
         price: { input: 2, output: 10, cacheWrite: 2.5, cacheRead: 0.2 },
     },
     {
@@ -125,9 +131,15 @@ const MODELS: ModelInfo[] = [
         label: "GPT-6 Luna",
         provider: "OpenAI",
         family: "gpt",
+        note: "出典未確認",
         price: { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01 },
     },
 ]
+
+/** 単価表の表示用に、一覧を登録順のまま返す（呼び出し側が並びを変えても元の一覧には響かないコピー） */
+export function listModels(): readonly ModelInfo[] {
+    return [...MODELS]
+}
 
 /**
  * モデルの識別子から一覧の1件を引く。

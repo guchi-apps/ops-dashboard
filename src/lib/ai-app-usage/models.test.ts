@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { canonicalModelId, estimateCostUsd, findModel, modelLabel } from "@/lib/ai-app-usage/models"
+import { canonicalModelId, estimateCostUsd, findModel, listModels, modelLabel } from "@/lib/ai-app-usage/models"
 import { TYPESAFE_INPUT_USD_PER_MILLION_TOKENS } from "@/lib/ai-usage/typesafe"
 
 const NONE = { cacheReadTokens: 0, cacheWriteTokens: 0 }
@@ -119,5 +119,25 @@ describe("estimateCostUsd", () => {
         near(estimateCostUsd("gpt-5.6-terra", tokens), 2 + 1.2 + 0.4 + 0.8)
         near(estimateCostUsd("gpt-5.6-luna", tokens), 0.2 + 0.12 + 0.04 + 0.08)
         near(estimateCostUsd("claude-fable-5-1", tokens), 10 + 5 + 0.5 + 5)
+    })
+})
+
+describe("listModels", () => {
+    it("IDが重複せず、どの行も findModel で自分自身に引き当たる", () => {
+        const models = listModels()
+        assert.equal(new Set(models.map((info) => info.id)).size, models.length)
+        for (const info of models) assert.equal(findModel(info.id), info)
+    })
+
+    it("返した配列を書き換えても元の一覧は変わらない", () => {
+        const before = listModels().length
+        ;(listModels() as unknown[]).pop()
+        assert.equal(listModels().length, before)
+    })
+
+    it("GPT-5.6系は換算の目安、GPT-6系は出典未確認の注記を持つ", () => {
+        assert.equal(findModel("gpt-5.6-sol")?.note, "換算の目安")
+        assert.equal(findModel("gpt-6-sol")?.note, "出典未確認")
+        assert.equal(findModel("claude-opus-5")?.note, undefined)
     })
 })
