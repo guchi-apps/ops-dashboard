@@ -118,6 +118,27 @@ describe("getAideStatusSnapshot: フォールバック", () => {
     })
 })
 
+describe("getAideStatusSnapshot: 共有トークンAPI", () => {
+    const sharedEnv = {
+        ISSUE_DECK_URL: "https://issuedeck.example",
+        SHARED_TOKEN_API_SECRET: "secret",
+    }
+
+    it("取得に失敗しフォールバックも無いときは、未設定ではなくエラーとして返す", async () => {
+        const restore = setEnv(sharedEnv)
+        try {
+            stubFetch(() => new Response("down", { status: 503 }))
+
+            const snapshot = await getAideStatusSnapshot()
+
+            assert.equal(snapshot.status, "error")
+            assert.match(snapshot.message ?? "", /issue-deck/)
+        } finally {
+            restore()
+        }
+    })
+})
+
 describe("runAideStatusChecks: フォールバック", () => {
     it("共有トークンAPIが未設定ならAIDE_STATUS_TOKENを使う", async () => {
         const restore = setEnv({ AIDE_STATUS_TOKEN: "legacy-token" })

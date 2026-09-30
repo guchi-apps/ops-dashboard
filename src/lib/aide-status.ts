@@ -41,7 +41,12 @@ const HTTP_HINTS: Record<number, string> = {
 interface AideConfig {
     baseUrl: string
     token: string
+    /** 共有トークンAPIから得た値か（401のときにキャッシュを捨てて取り直す対象かの判定に使う） */
+    fromShared: boolean
 }
+
+/** readAideConfig が null を返した理由。取得失敗を「未設定」と説明しないために分ける */
+type AideConfigResult = { config: AideConfig } | { config: null; reason: "unconfigured" | "unavailable" }
 
 /** issue-deckの共有トークンAPIから取得したトークンをプロセス内に持つ（#444） */
 let sharedTokenCache: SharedTokenCacheEntry | null = null
@@ -60,15 +65,39 @@ function isSharedTokenApiConfigured(): boolean {
 }
 
 /** トークンは認証情報として扱う。戻り値をログ・レスポンスへ出さないこと */
-async function readAideConfig(): Promise<AideConfig | null> {
-    const { value, cache } = await resolveSharedToken("AIDE_STATUS_TOKEN", "ops-dashboard", sharedTokenCache)
+async function readAideConfig(): Promise<AideConfigResult> {
+    const { value, cache, failed } = await resolveSharedToken("AIDE_STATUS_TOKEN", "ops-dashboard", sharedTokenCache)
     sharedTokenCache = cache
 
     const token = value ?? legacyToken()
-    if (!token) return null
+    if (!token) return { config: null, reason: failed ? "unavailable" : "unconfigured" }
 
     const baseUrl = process.env.AIDE_BASE_URL || DEFAULT_BASE_URL
-    return { baseUrl: baseUrl.replace(/\/+$/, ""), token }
+    return { config: { baseUrl: baseUrl.replace(/\/+$/, ""), token, fromShared: value != null } }
+}
+
+const UNAVAILABLE_MESSAGE = "issue-deckから AIDE_STATUS_TOKEN を取得できませんでした"
+
+/**
+ * AIDEが401を返したら、キャッシュした共有トークンを捨てて1回だけ取り直して再要求する。
+ * issue-deck側でトークンをローテーションしたあと、最大10分間「ずれている」表示が続くのを避ける
+ */
+async function requestAideWithRefresh(
+    config: AideConfig,
+    path: string,
+    method: "GET" | "POST",
+    timeoutMs: number
+): Promise<unknown> {
+    try {
+        return await requestAide(config, path, method, timeoutMs)
+    } catch (error) {
+        if (!config.fromShared || !(error instanceof AideHttpError) || error.status !== 401) throw error
+
+        sharedTokenCache = null
+        const retry = await readAideConfig()
+        if (!retry.config || retry.config.token === config.token) throw error
+        return requestAide(retry.config, path, method, timeoutMs)
+    }
 }
 
 /**
@@ -158,20 +187,21 @@ let lastGood: { health: AideHealth; tools: string[]; fetchedAt: string } | null 
 
 export async function getAideStatusSnapshot(): Promise<AideStatusSnapshot> {
     const fetchedAt = new Date().toISOString()
-    const config = await readAideConfig()
+    const { config, ...rest } = await readAideConfig()
     if (!config) {
+        const unavailable = "reason" in rest && rest.reason === "unavailable"
         return {
-            status: "unconfigured",
-            message: "AIDE_STATUS_TOKEN が未設定です",
-            health: null,
-            tools: [],
+            status: unavailable ? "error" : "unconfigured",
+            message: unavailable ? UNAVAILABLE_MESSAGE : "AIDE_STATUS_TOKEN が未設定です",
+            health: lastGood?.health ?? null,
+            tools: lastGood?.tools ?? [],
             fetchedAt,
-            healthFetchedAt: null,
+            healthFetchedAt: lastGood?.fetchedAt ?? null,
         }
     }
 
     try {
-        const payload = await requestAide(config, "/api/status", "GET", STATUS_TIMEOUT_MS)
+        const payload = await requestAideWithRefresh(config, "/api/status", "GET", STATUS_TIMEOUT_MS)
         if (!isStatusPayload(payload)) throw new SyntaxError("unexpected payload")
 
         lastGood = { health: payload.health, tools: payload.tools, fetchedAt }
@@ -198,13 +228,16 @@ export async function getAideStatusSnapshot(): Promise<AideStatusSnapshot> {
 
 /** 疎通確認。**押されたときだけ呼ぶ**（AIDEが外部サービスへ問い合わせるため） */
 export async function runAideStatusChecks(): Promise<AideProbeResponse> {
-    const config = await readAideConfig()
+    const { config, ...rest } = await readAideConfig()
     if (!config) {
+        if ("reason" in rest && rest.reason === "unavailable") {
+            return { status: "error", message: UNAVAILABLE_MESSAGE, results: [] }
+        }
         return { status: "unconfigured", message: "AIDE_STATUS_TOKEN が未設定です", results: [] }
     }
 
     try {
-        const payload = await requestAide(config, "/api/status/checks", "POST", CHECKS_TIMEOUT_MS)
+        const payload = await requestAideWithRefresh(config, "/api/status/checks", "POST", CHECKS_TIMEOUT_MS)
         if (!isRecord(payload) || !Array.isArray(payload.results)) {
             throw new SyntaxError("unexpected payload")
         }

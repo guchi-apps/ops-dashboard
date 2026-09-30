@@ -93,7 +93,8 @@ describe("resolveSharedToken", () => {
             })
 
             assert.equal(result.value, "last-good")
-            assert.deepEqual(result.cache, cache)
+            assert.equal(result.failed, true)
+            assert.deepEqual(result.cache, { ...cache, failedAtMs: 1_000 + 10 * 60 * 1000 + 1 })
         } finally {
             restore()
         }
@@ -107,7 +108,65 @@ describe("resolveSharedToken", () => {
             const result = await resolveSharedToken("AIDE_STATUS_TOKEN", "ops-dashboard", null, { now: 1_000 })
 
             assert.equal(result.value, null)
-            assert.equal(result.cache, null)
+            assert.equal(result.failed, true)
+            assert.deepEqual(result.cache, { value: null, fetchedAtMs: 0, failedAtMs: 1_000 })
+        } finally {
+            restore()
+        }
+    })
+
+    it("失敗の直後は取りにいかず、直前の値を即座に返す", async () => {
+        const restore = setEnv("https://issuedeck.example", "api-secret")
+        try {
+            const fetchMock = stubFetch(() => new Response("error", { status: 500 }))
+            const first = await resolveSharedToken("AIDE_STATUS_TOKEN", "ops-dashboard", null, { now: 1_000 })
+
+            const second = await resolveSharedToken("AIDE_STATUS_TOKEN", "ops-dashboard", first.cache, {
+                now: 1_000 + 30_000,
+            })
+
+            assert.equal(fetchMock.mock.calls.length, 1)
+            assert.equal(second.value, null)
+            assert.equal(second.failed, true)
+        } finally {
+            restore()
+        }
+    })
+
+    it("失敗から待機時間を過ぎたら取り直し、成功すれば失敗の記録が消える", async () => {
+        const restore = setEnv("https://issuedeck.example", "api-secret")
+        try {
+            const failed = { value: "last-good", fetchedAtMs: 1_000, failedAtMs: 2_000 }
+            const fetchMock = stubFetch(() => Response.json({ value: "fresh" }))
+
+            const result = await resolveSharedToken("AIDE_STATUS_TOKEN", "ops-dashboard", failed, {
+                now: 2_000 + 60_000,
+            })
+
+            assert.equal(fetchMock.mock.calls.length, 1)
+            assert.deepEqual(result.cache, { value: "fresh", fetchedAtMs: 62_000 })
+            assert.equal(result.failed, undefined)
+        } finally {
+            restore()
+        }
+    })
+
+    it("同時に来た要求は1回の取得にまとめる", async () => {
+        const restore = setEnv("https://issuedeck.example", "api-secret")
+        try {
+            const fetchMock = stubFetch(() => Response.json({ value: "shared" }))
+
+            const results = await Promise.all([
+                resolveSharedToken("AIDE_STATUS_TOKEN", "ops-dashboard", null, { now: 1_000 }),
+                resolveSharedToken("AIDE_STATUS_TOKEN", "ops-dashboard", null, { now: 1_000 }),
+                resolveSharedToken("AIDE_STATUS_TOKEN", "ops-dashboard", null, { now: 1_000 }),
+            ])
+
+            assert.equal(fetchMock.mock.calls.length, 1)
+            assert.deepEqual(
+                results.map((r) => r.value),
+                ["shared", "shared", "shared"]
+            )
         } finally {
             restore()
         }
