@@ -22,7 +22,9 @@ const CACHE_SECONDS = 300
 const ERROR_CACHE_SECONDS = 30
 
 let cache: UsageCacheEntry<AiAppUsageSnapshot> | null = null
-const singleFlight = createSingleFlight<UsageCacheEntry<AiAppUsageSnapshot>>()
+let singleFlight = createSingleFlight<UsageCacheEntry<AiAppUsageSnapshot>>()
+/** invalidate のたびに進める。取得の開始時の値と一致するときだけキャッシュへ書く */
+let generation = 0
 
 /** 壊れた設定を毎回ログへ出さないよう、直前に出した内容を覚えておく */
 let lastConfigError: string | null = null
@@ -52,15 +54,22 @@ export async function getAiAppUsageSnapshot({ force = false }: UsageFetchOptions
     // キャッシュの判定から取得の開始までに await を挟まない（挟むと相乗りをすり抜ける。usage-cache.ts）
     if (cache && isUsageCacheFresh(cache, force)) return cache.snapshot
 
+    const startedGeneration = generation
     const entry = await singleFlight(async () => {
         const fetched = await fetchSnapshot(force)
-        cache = fetched
+        // 取得中に設定が保存されていたら、古い連携先の結果はキャッシュに書かない
+        if (startedGeneration === generation) cache = fetched
         return fetched
     })
     return entry.snapshot
 }
 
-/** 設定を保存した直後の次の取得には、古い連携先のキャッシュを使わない。 */
+/**
+ * 設定を保存した直後の次の取得には、古い連携先のキャッシュを使わない。
+ * 取得中の処理があっても、その結果はキャッシュへ書かせず、以降の要求も相乗りさせない。
+ */
 export function invalidateAiAppUsageCache(): void {
+    generation += 1
     cache = null
+    singleFlight = createSingleFlight<UsageCacheEntry<AiAppUsageSnapshot>>()
 }
