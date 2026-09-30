@@ -18,6 +18,8 @@ async function fetchSource(source: AiAppUsageSource, token: string): Promise<AiA
     try {
         const response = await fetchWithTimeout(source.url, {
             headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+            // 許可ホストから別のホストへ転送されても、トークン付きで追わない（#465）
+            redirect: "error",
         })
         if (!response.ok) {
             return { app: source.app, status: "error", message: `HTTP ${response.status}`, features: [] }
