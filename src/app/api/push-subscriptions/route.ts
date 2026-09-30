@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { rejectCrossSiteRequest } from "@/lib/csrf"
 import { requireSessionForApi } from "@/lib/session"
 import {
     getVapidPublicKey,
@@ -32,6 +33,9 @@ export async function GET() {
 export async function POST(request: NextRequest) {
     const { response } = await requireSessionForApi()
     if (response) return response
+
+    const rejected = rejectCrossSiteRequest(request)
+    if (rejected) return rejected
 
     if (!isWebPushConfigured()) {
         return NextResponse.json({ error: "通知の鍵が設定されていません" }, { status: 503 })
@@ -68,6 +72,9 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
     const { response } = await requireSessionForApi()
     if (response) return response
+
+    const rejected = rejectCrossSiteRequest(request)
+    if (rejected) return rejected
 
     let payload: unknown
     try {

@@ -1,5 +1,6 @@
 "use client"
 
+import { CSRF_HEADERS } from "@/lib/csrf-headers"
 import { Fragment, useCallback, useState } from "react"
 import { useDashboardData } from "@/components/dashboard-data"
 import { JobHistoryModal } from "@/components/job-history-modal"
@@ -648,7 +649,7 @@ function ConnectorsPanel({ connectors, now }: { connectors: AideConnector[]; now
         try {
             const res = await fetch("/api/aide-status/checks", {
                 method: "POST",
-                headers: { "x-requested-with": "ops-dashboard" },
+                headers: CSRF_HEADERS,
                 cache: "no-store",
             })
             if (!res.ok) throw new Error(`/api/aide-status/checks が ${res.status} を返しました`)

@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server"
 import { enqueueCloseRequest } from "@/lib/host-stats/close-requests"
 import { ID_PATTERN } from "@/lib/host-stats/report"
 import { readSnapshot } from "@/lib/host-stats/store"
+import { rejectCrossSiteRequest } from "@/lib/csrf"
 import { requireSessionForApi } from "@/lib/session"
 
 export const dynamic = "force-dynamic"
@@ -19,6 +20,9 @@ export const dynamic = "force-dynamic"
 export async function POST(request: NextRequest) {
     const { response } = await requireSessionForApi()
     if (response) return response
+
+    const rejected = rejectCrossSiteRequest(request)
+    if (rejected) return rejected
 
     let payload: unknown
     try {

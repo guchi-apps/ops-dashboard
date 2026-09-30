@@ -407,6 +407,14 @@ ChatGPTの5時間枠は対象外（Issueの指定）。
   `attachDayMarks` を作り物の時刻で何度か呼ぶのが早い（`.data/` はworktreeと本番で別物のため、
   開発サーバーをそのまま動かしても線は出ない）
 
+## セッションで受ける書き込みAPIのCSRF対策
+
+**GET以外でログインセッション（Cookie）を受けるルートは、認証の直後に `rejectCrossSiteRequest(request)`
+（`src/lib/csrf.ts`）を通す**（#466）。`request.json()` はContent-Typeを見ないため、`*.gucchii.com` の
+他アプリのXSSからCookie付きでJSONを送れてしまう。画面側のfetchは `CSRF_HEADERS`
+（`src/lib/csrf-headers.ts`。クライアントから `next/server` を読ませないため別ファイル）を `headers` へ
+展開する。Bearerトークンで受ける経路（`ai-app-usage/sources` のPUTなど）はセッションのときだけ確認する。
+
 ## ログイン通知の接続元IP
 
 ログイン通知（`src/lib/signaly.ts`）の `接続元IP` は、Signalyが「見覚えのない接続元か」を判定する
