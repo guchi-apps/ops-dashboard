@@ -15,9 +15,27 @@ export interface ParsedSources {
 
 export class AiAppUsageSourcesError extends Error {}
 
+/** 既定で送信を許すドメイン（自分のアプリのサブドメイン）。 */
+const DEFAULT_ALLOWED_DOMAIN = "gucchii.com"
+
+function isAllowedHost(hostname: string): boolean {
+    if (hostname === DEFAULT_ALLOWED_DOMAIN || hostname.endsWith(`.${DEFAULT_ALLOWED_DOMAIN}`)) return true
+
+    // `AI_APP_USAGE_ALLOWED_HOSTS`（カンマ区切り）で追加。`example.com` は完全一致、`*.example.com` はサブドメイン。
+    const extra = (process.env.AI_APP_USAGE_ALLOWED_HOSTS ?? "")
+        .split(",")
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean)
+    return extra.some((entry) =>
+        entry.startsWith("*.") ? hostname.endsWith(entry.slice(1)) : hostname === entry,
+    )
+}
+
 /**
- * Bearerトークン（`OPS_API_TOKEN`）を平文で送らないよう、通信は https か、同じホスト内の
- * ループバックに限る。同一VPS上のアプリを `http://127.0.0.1:<ポート>` で読む構成を許すため。
+ * Bearerトークン（`OPS_API_TOKEN`）を送る先なので、通信は許可ホストへの https か、同じホスト内の
+ * ループバックに限る（任意のホストを登録できると、設定の書き込み権限から読み取り用トークンを
+ * 取り出せてしまう。#465）。同一VPS上のアプリを `http://127.0.0.1:<ポート>` で読む構成を許すため
+ * ループバックの http は通す。保存時・読み込み時の両方で {@link parseSourceValues} が検証する。
  */
 function isAllowedUrl(value: string): boolean {
     let url: URL
@@ -27,7 +45,7 @@ function isAllowedUrl(value: string): boolean {
         return false
     }
 
-    if (url.protocol === "https:") return true
+    if (url.protocol === "https:") return isAllowedHost(url.hostname.toLowerCase())
     return url.protocol === "http:" && (url.hostname === "127.0.0.1" || url.hostname === "localhost")
 }
 
@@ -44,7 +62,7 @@ export function parseSourceValues(data: unknown): ParsedSources {
         if (!app || !isAllowedUrl(url)) {
             return {
                 sources: [],
-                error: "各連携先には app と、https（またはループバックのhttp）の url が要ります",
+                error: "各連携先には app と、許可されたホストの https（またはループバックのhttp）の url が要ります",
             }
         }
         if (seen.has(app)) return { sources: [], error: `${app} が重複しています` }
