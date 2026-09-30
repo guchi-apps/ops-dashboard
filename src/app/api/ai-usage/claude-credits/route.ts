@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { rejectCrossSiteRequest } from "@/lib/csrf"
 import { requireSessionForApi } from "@/lib/session"
 import { getAiUsageSnapshot } from "@/lib/ai-usage"
 import {
@@ -22,6 +23,9 @@ import {
 export async function POST(request: NextRequest) {
     const { response } = await requireSessionForApi()
     if (response) return response
+
+    const rejected = rejectCrossSiteRequest(request)
+    if (rejected) return rejected
 
     let payload: unknown
     try {
@@ -64,6 +68,9 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
     const { response } = await requireSessionForApi()
     if (response) return response
+
+    const rejected = rejectCrossSiteRequest(request)
+    if (rejected) return rejected
 
     const id = request.nextUrl.searchParams.get("id")
     if (!id) {
