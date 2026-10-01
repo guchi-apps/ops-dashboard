@@ -14,6 +14,13 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.46.1",
+        date: "2026-10-01",
+        changes: [
+            "iPhoneで監視モニターの表示名を編集するとき、入力欄をタップしても画面が自動で拡大されなくなりました。",
+        ],
+    },
+    {
         version: "0.46.0",
         date: "2026-10-01",
         changes: [
