@@ -205,6 +205,21 @@ AIDEタブは `aide.gucchii.com/status` と同じ内容を、AIDEの `GET /api/s
   **こちらで履歴を貯め直す形にはしない**（AIDE側が正）。モーダルは、タブ切り替えの transform の中では
   `fixed` が画面基準にならないため `createPortal` で body 直下に出している
 
+## 監視モニターの表示名の変更
+
+監視タブのカードの鉛筆ボタンで、モニターの表示名を変えられる（#479）。**名前はこのダッシュボードの
+`.data/monitor-display-names.json`（`{"kuma:12": "名前"}` の形。環境変数 `MONITOR_NAMES_PATH` で差し替え可）にだけ
+持ち、Kuma・UptimeRobot 側のモニター名は変えない。** UptimeRobot は読み取り専用キーで書けず、Kuma の
+改名は socket 経路（`uptime-kuma-admin.ts`）頼みで壊れやすいため。別の経路で改名を探さないこと。
+
+- 上書きは取得結果へ適用する（`applyMonitorDisplayNames`）。`name`（UptimeRobotは `friendly_name`）が
+  変更後の名前になり、変更済みのときだけ `originalName` が付く。`/api/uptime-kuma`・`/api/monitors` を読む
+  AIDEにも変更後の名前で届く
+- キーは `kuma:<id>` / `robot:<id>`。IDは別系統で重なるため系統を前に付ける。空文字で保存すると上書きを消す
+- 書き込みは `PUT/DELETE /api/monitor-names`（セッション＋`rejectCrossSiteRequest`。`OPS_API_TOKEN` では通さない）
+- ダイアログは portal で body 直下へ出す（カードが外部リンクの `<a>` で、タブ切り替えの transform もあるため）。
+  クライアントが読む定数は `node:fs` を含む `monitor-names.ts` ではなく `monitor-source.ts` に置く
+
 ## Uptime Kuma へのモニター登録
 
 **Uptime Kuma にはモニターを作るREST APIが無い**（1.x・2.x とも）。公開されている

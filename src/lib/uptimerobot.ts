@@ -1,8 +1,12 @@
+import { applyMonitorDisplayNames } from "@/lib/monitor-names";
 import { monitorFeedError, monitorFeedOk, type MonitorFeed } from "@/lib/monitor-feed";
 
 export interface UptimeRobotMonitor {
     id: number;
+    /** 画面に出す名前。表示名を変更していれば変更後（#479） */
     friendly_name: string;
+    /** 表示名を変更しているときの、UptimeRobot 側の名前 */
+    originalName?: string;
     url: string;
     type: number;
     sub_type?: string;
@@ -41,7 +45,14 @@ async function fetchUptimeRobotMonitors(
         const data = await res.json().catch(() => null);
 
         if (data?.stat === 'ok' && Array.isArray(data.monitors)) {
-            return monitorFeedOk(data.monitors);
+            return monitorFeedOk(
+                await applyMonitorDisplayNames(
+                    'robot',
+                    data.monitors as UptimeRobotMonitor[],
+                    (monitor) => monitor.friendly_name,
+                    (monitor, name, originalName) => ({ ...monitor, friendly_name: name, originalName })
+                )
+            );
         }
 
         console.error('UptimeRobot API Error:', res.status, data?.error);
@@ -58,20 +69,4 @@ async function fetchUptimeRobotMonitors(
 
 export async function fetchUptimeRobotMonitorsServer(): Promise<MonitorFeed<UptimeRobotMonitor>> {
     return fetchUptimeRobotMonitors(process.env.UPTIMEROBOT_READ_ONLY_KEY);
-}
-
-export function getUptimeRobotStatusInfo(status: number): { text: string; color: string } {
-    switch (status) {
-        case 2:
-            return { text: "Running", color: "text-status-ok" }
-        case 8:
-        case 9:
-            return { text: "Down", color: "text-red-400" }
-        case 0:
-            return { text: "Paused", color: "text-yellow-400" }
-        case 1:
-            return { text: "Checking...", color: "text-primary" }
-        default:
-            return { text: "Unknown", color: "text-slate-400" }
-    }
 }
