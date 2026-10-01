@@ -314,6 +314,9 @@ jobs:
 
             echo "Updating .env..."
             update_env NODE_ENV production
+            # 共通アクセス設定のDBが本番であることを示す（秘密ではないためリテラルで渡す。#489）。
+            # 未設定だと development 扱いになり、本番DBと食い違って全拒否になる
+            update_env ACCESS_ENVIRONMENT production
             update_env PORT "$PORT"
             update_env NEXT_PUBLIC_SUPABASE_URL "$NEXT_PUBLIC_SUPABASE_URL"
             update_env NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY "$NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"
