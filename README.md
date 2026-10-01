@@ -8,7 +8,7 @@ VPS稼働状況・UptimeRobot・Uptime Kuma監視ダッシュボード。Next.js
 Supabaseダッシュボードの Authentication → URL Configuration の Redirect URLs に
 `http://localhost:3000/auth/callback`（本番は `https://<ドメイン>/auth/callback`）を登録すること。
 
-`db-console`と異なり、破壊的操作を持たない読み取り専用の監視表示のみのため、独自DBでのセッション管理（監査ログ・8時間絶対タイムアウト・reauth）は実装せず、Supabase自身が管理するセッション + 共通アクセス設定（許可メール・権限。管理画面 `/admin/access`）の判定のみで認証を完結させている。許可の追加・取り消しは再デプロイ無しで効く。契約・反映時間・復旧手順は [docs/access-control.md](./docs/access-control.md)。
+`db-console`と異なり、破壊的操作を持たない読み取り専用の監視表示のみのため、独自DBでのセッション管理（監査ログ・8時間絶対タイムアウト・reauth）は実装せず、Supabase自身が管理するセッション + 共通アクセス設定（許可メール・権限。管理画面 `/admin/access`）の判定のみで認証を完結させている。許可の追加・取り消しは再デプロイ無しで効く。契約・反映時間・復旧手順は [docs/access-control.md](./docs/access-control.md)。各アプリへの導入状況と移行手順は [docs/access-rollout.md](./docs/access-rollout.md)。
 
 ## 画面の構成
 

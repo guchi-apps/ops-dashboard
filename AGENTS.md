@@ -426,6 +426,7 @@ ChatGPTの5時間枠は対象外（Issueの指定）。
 
 ログインの許可は `ALLOWED_EMAILS` ではなく、**StatusHub内のSQLite（`.data/access.sqlite`）**で判定する（#489）。
 契約・失敗時の動作・反映時間・復旧手順は [docs/access-control.md](./docs/access-control.md)。
+各アプリへの導入状況・移行CLIは [docs/access-rollout.md](./docs/access-rollout.md)（#490）。**対象アプリのリポジトリはすべて公開のため、アプリ別の弱点・迂回口はここにも導入Issue・PRにも書かない**（非公開の `guchi-apps/docs` に置く）。
 
 - **`ALLOWED_EMAILS` は初回のDB作成時に管理者として取り込むだけ。** 判定へ戻さないこと。判定は `src/lib/access/status-hub.ts`
   （30秒キャッシュ。DBが読めないときは直前の判定を最大5分、一度も読めていなければ拒否）。**読めないことを理由に許可を広げない**
