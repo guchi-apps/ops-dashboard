@@ -162,6 +162,7 @@ function NameDialog({
                     <label htmlFor={inputId} className="block text-xs text-muted-foreground">
                         表示名
                     </label>
+                    {/* iOSは16px未満の入力欄にフォーカスすると画面を自動拡大するため、スマホ幅は16px（#483） */}
                     <input
                         id={inputId}
                         ref={inputRef}
@@ -169,7 +170,7 @@ function NameDialog({
                         onChange={(event) => setValue(event.target.value)}
                         maxLength={MAX_DISPLAY_NAME_LENGTH}
                         disabled={sending}
-                        className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:opacity-50"
+                        className="h-9 w-full rounded-md border bg-background px-3 text-base outline-none sm:text-sm transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:opacity-50"
                     />
                     <p className="text-[11px] text-muted-foreground">
                         このダッシュボードの表示だけが変わります。空にして保存すると元の名前に戻ります。
