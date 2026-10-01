@@ -74,6 +74,8 @@ interface DashboardData extends DashboardInitialData {
      * ヘッダーの更新ボタンと違って全ソースを叩かないため、連打の抑制も掛けていない。
      */
     refreshUptimeKuma: () => Promise<boolean>
+    /** Kuma と UptimeRobot の一覧を取り直す。表示名を変えた直後に使う（#479） */
+    refreshMonitors: () => Promise<boolean>
     /**
      * AI使用状況だけを取り直す。クレジットの購入・残高を記録した直後に使う。
      * サーバー側のキャッシュは飛ばさない（台帳の値はキャッシュを返す回も載せ直されるため）。
@@ -185,6 +187,15 @@ export function DashboardDataProvider({
         [refreshUptimeKumaOnly]
     )
 
+    const refreshUptimeRobotOnly = uptimeRobot.refresh
+    const refreshMonitors = useCallback(
+        async () => {
+            const results = await Promise.all([refreshUptimeKumaOnly(false), refreshUptimeRobotOnly(false)])
+            return results.every(Boolean)
+        },
+        [refreshUptimeKumaOnly, refreshUptimeRobotOnly]
+    )
+
     const refreshAiUsageOnly = aiUsage.refresh
     const refreshAiUsage = useCallback(() => refreshAiUsageOnly(false), [refreshAiUsageOnly])
 
@@ -216,11 +227,13 @@ export function DashboardDataProvider({
             refreshState: manualRefresh.state,
             refreshCooldownSeconds: manualRefresh.cooldownSeconds,
             refreshUptimeKuma,
+            refreshMonitors,
             refreshAiUsage,
             refreshAiAppUsage,
         }),
         [
             refreshUptimeKuma,
+            refreshMonitors,
             refreshAiUsage,
             refreshAiAppUsage,
             hostStats,

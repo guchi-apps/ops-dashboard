@@ -1,10 +1,14 @@
+import { applyMonitorDisplayNames } from "@/lib/monitor-names"
 import { monitorFeedError, monitorFeedOk, type MonitorFeed } from "@/lib/monitor-feed"
 
 export type UptimeKumaStatus = "up" | "down" | "pending" | "maintenance"
 
 export interface UptimeKumaMonitor {
     id: number
+    /** 画面に出す名前。表示名を変更していれば変更後（#479） */
     name: string
+    /** 表示名を変更しているときの、Kuma 側の名前 */
+    originalName?: string
     url?: string
     status: UptimeKumaStatus
     /** Oldest → newest, up to the last 25 heartbeats. */
@@ -114,7 +118,14 @@ async function fetchMonitorsForSlug(
             }
         })
 
-        return monitorFeedOk(mapped)
+        return monitorFeedOk(
+            await applyMonitorDisplayNames(
+                "kuma",
+                mapped,
+                (monitor) => monitor.name,
+                (monitor, name, originalName) => ({ ...monitor, name, originalName })
+            )
+        )
     } catch (err) {
         console.error("Failed to fetch Uptime Kuma data:", err)
         // JSONとして読めなかった（プロキシのHTML応答など）ときと、接続できなかったときを分ける

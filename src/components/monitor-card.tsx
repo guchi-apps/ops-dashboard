@@ -1,7 +1,10 @@
 "use client"
 
 import { Link as LinkIcon } from "lucide-react"
+import { MonitorNameEditor } from "@/components/monitor-name-editor"
+import { OriginalName } from "@/components/uptime-kuma-card"
 import { DashboardCard } from "@/components/dashboard-card"
+import type { MonitorSource } from "@/lib/monitor-source"
 import { cn } from "@/lib/utils"
 
 function BoldLinkLabel({ label, className }: { label: string; className?: string }) {
@@ -43,12 +46,15 @@ export function MonitorCard({
     statusColor,
     uptimeLabel,
     href,
+    edit,
 }: {
     label: string
     statusText: string
     statusColor: string
     uptimeLabel?: string
     href?: string
+    /** 表示名を変えられるカードのとき、保存先の系統とID（#479） */
+    edit?: { source: MonitorSource; id: number; originalName?: string }
 }) {
     return (
         <MonitorCardLink href={href} label={label}>
@@ -58,6 +64,15 @@ export function MonitorCard({
                     href && "cursor-pointer"
                 )}
             >
+                {edit && (
+                    <MonitorNameEditor
+                        source={edit.source}
+                        id={edit.id}
+                        name={label}
+                        originalName={edit.originalName}
+                        className="absolute right-2 top-2"
+                    />
+                )}
                 {href ? (
                     <BoldLinkLabel label={label} className="text-xs sm:text-sm" />
                 ) : (
@@ -68,6 +83,7 @@ export function MonitorCard({
                         {label}
                     </span>
                 )}
+                {edit?.originalName && <OriginalName name={edit.originalName} />}
                 <div className={`text-xl sm:text-2xl font-bold font-mono ${statusColor}`}>{statusText}</div>
                 {uptimeLabel && (
                     <div className="text-xs sm:text-sm font-medium text-muted-foreground">
