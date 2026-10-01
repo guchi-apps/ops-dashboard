@@ -7,7 +7,7 @@ import { MonitorCard, MonitorCardGrid } from "@/components/monitor-card"
 import { SectionHeading } from "@/components/section-heading"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { UptimeKumaDashboardCard } from "@/components/uptime-kuma-card"
-import { getUptimeRobotStatusInfo } from "@/lib/uptimerobot"
+import { getUptimeRobotStatusInfo } from "@/lib/uptimerobot-status"
 
 /**
  * 監視タブの中身。
@@ -95,6 +95,7 @@ export function MonitorSections({
                                     statusColor={status.color}
                                     uptimeLabel={`${ratio}% uptime (30d)`}
                                     href={monitor.url}
+                                    edit={{ source: "robot", id: monitor.id, originalName: monitor.originalName }}
                                 />
                             )
                         })}
