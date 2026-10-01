@@ -21,6 +21,7 @@ export default async function Home() {
         <DashboardDataProvider initial={{ uptimeKuma, uptimeRobot }}>
             <DashboardShell
                 userEmail={session.user.email ?? ""}
+                isAdmin={session.isAdmin}
                 // モニター追加のURLと、画面から直接登録できるかの判定はサーバー側の
                 // 環境変数から決まるため、ここで解決して渡す
                 addMonitorUrl={getUptimeKumaAddMonitorUrl()}

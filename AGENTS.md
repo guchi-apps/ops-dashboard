@@ -422,6 +422,22 @@ ChatGPTの5時間枠は対象外（Issueの指定）。
   `attachDayMarks` を作り物の時刻で何度か呼ぶのが早い（`.data/` はworktreeと本番で別物のため、
   開発サーバーをそのまま動かしても線は出ない）
 
+## 共通アクセス設定（ログインの許可・アプリ別権限）
+
+ログインの許可は `ALLOWED_EMAILS` ではなく、**StatusHub内のSQLite（`.data/access.sqlite`）**で判定する（#489）。
+契約・失敗時の動作・反映時間・復旧手順は [docs/access-control.md](./docs/access-control.md)。
+
+- **`ALLOWED_EMAILS` は初回のDB作成時に管理者として取り込むだけ。** 判定へ戻さないこと。判定は `src/lib/access/status-hub.ts`
+  （30秒キャッシュ。DBが読めないときは直前の判定を最大5分、一度も読めていなければ拒否）。**読めないことを理由に許可を広げない**
+- **`ACCESS_ENVIRONMENT` は `deploy.yml` の `update_env ACCESS_ENVIRONMENT production` 1行で渡す**（秘密ではなく、env ブロックは
+  `generate-workflow-env-block.sh` の生成物のため触らない）。DBの記録と食い違えば全拒否。直すのは `scripts/access-recover.mjs set-environment`
+- **`node:sqlite` の型は `src/types/node-sqlite.d.ts` に手書き**（`@types/node` は v20 で型が無い。依存は上げていない）。使うメソッドを増やすときはここへ足す。
+  CI・デプロイのNodeは22.23.1（`.nvmrc`）。`node:sqlite` はフラグ無しで動くがExperimentalWarningが出る
+- **`/api/access/v1` だけが `src/proxy.ts` の認証対象外**（アプリ別トークンをルート側で照合）。`/api/access/admin/*` は管理者のセッション
+  （`requireAdminForApi`）＋CSRF（`handleAdminWrite`）。アプリ別トークンでは管理APIを通さない
+- 反映状況は**StatusHub側だけの推定**（アプリが申告する `appliedVersion` の記録）。保存成功を「反映済み」にしない
+- 認可の判定・管理画面・復旧CLIのパスは `claude-review-develop.yml` の `risk-paths` に載せてある。新しいファイルを足したら合わせる
+
 ## セッションで受ける書き込みAPIのCSRF対策
 
 **GET以外でログインセッション（Cookie）を受けるルートは、認証の直後に `rejectCrossSiteRequest(request)`

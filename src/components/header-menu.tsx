@@ -1,6 +1,6 @@
 "use client"
 
-import { LogOut, Menu } from "lucide-react"
+import { LogOut, Menu, ShieldCheck } from "lucide-react"
 import { useEffect, useId, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 
@@ -20,9 +20,12 @@ export const MENU_ITEM_CLASS =
  */
 export function HeaderMenu({
     userEmail,
+    isAdmin = false,
     children,
 }: {
     userEmail: string
+    /** 管理者にだけ「アクセス管理」への行を出す（#489） */
+    isAdmin?: boolean
     /** ログインの表示とログアウトの間に置く行（通知の設定） */
     children?: React.ReactNode
 }) {
@@ -85,6 +88,13 @@ export function HeaderMenu({
                 )}
 
                 {children}
+
+                {isAdmin && (
+                    <a href="/admin/access" className={MENU_ITEM_CLASS}>
+                        <ShieldCheck className="size-3.5 text-muted-foreground" aria-hidden />
+                        アクセス管理
+                    </a>
+                )}
 
                 <div className="mt-1 border-t border-border pt-1">
                     <form action="/auth/signout" method="POST">

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
-import { isEmailAllowed } from "@/lib/allowed-emails";
+import { getStatusHubAccess } from "@/lib/access/status-hub";
 import { sanitizeReturnTo } from "@/lib/return-to";
 import { getRequestOrigin } from "@/lib/request-origin";
 import { notifySignalyLogin } from "@/lib/signaly";
@@ -29,7 +29,11 @@ export async function GET(request: Request) {
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
 
-  if (!claims?.email || !isEmailAllowed(claims.email)) {
+  if (
+    !claims?.email ||
+    claims.user_metadata?.email_verified === false ||
+    !getStatusHubAccess(claims.email).allowed
+  ) {
     // 許可外ユーザーでも、共有 Supabase 上の他アプリのセッションは失効させない。
     await signOutLocally(supabase);
     return NextResponse.redirect(`${origin}/login?error=forbidden`);
