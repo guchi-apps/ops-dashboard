@@ -155,11 +155,14 @@ function RefreshControl({
 
 export function DashboardShell({
     userEmail,
+    isAdmin,
     addMonitorUrl,
     canAddMonitor,
     aideConfigured,
 }: {
     userEmail: string
+    /** 共通アクセス設定でStatusHubの管理者か（#489）。メニューに管理画面への行を出す */
+    isAdmin: boolean
     addMonitorUrl: string | null
     /** Kumaの管理者認証情報が揃っていて、画面から直接モニターを登録できるか */
     canAddMonitor: boolean
@@ -286,7 +289,7 @@ export function DashboardShell({
                             cooldownSeconds={refreshCooldownSeconds}
                             onRefresh={refresh}
                         />
-                        <HeaderMenu userEmail={userEmail}>
+                        <HeaderMenu userEmail={userEmail} isAdmin={isAdmin}>
                             <UsageNotifications />
                         </HeaderMenu>
                     </div>

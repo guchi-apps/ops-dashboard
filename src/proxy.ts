@@ -7,6 +7,9 @@ import { createServerClient } from "@supabase/ssr";
 // ここでは素通りさせ、ルート側で WIDGET_TOKEN による認証を行う。
 // /api/host-stats はサブPCのエージェントがメトリクスをPOSTする受け口で、同じくログイン画面を
 // 通れないため素通りさせ、ルート側で HOST_STATS_TOKEN による認証を行う。
+// /api/access/v1 は各アプリのサーバーが共通アクセス設定を引く契約API（#489）。ログイン画面を
+// 通れないため素通りさせ、ルート側でアプリ別トークンを照合する。管理用の /api/access/admin は
+// 含めず、ここを通ったうえで管理者のセッションを求める。
 // 残りの読み取りAPIは、同一VPS上のAIDE（MCPサーバー）から参照するために素通りさせ、ルート側の
 // requireSessionOrApiToken() でログインセッションまたは OPS_API_TOKEN による認証を行う。
 //
@@ -17,6 +20,7 @@ const PUBLIC_PATH_PREFIXES = [
   "/auth",
   "/api/claude-usage",
   "/api/host-stats",
+  "/api/access/v1",
   "/api/monitors",
   "/api/uptime-kuma",
   "/api/ai-usage",
