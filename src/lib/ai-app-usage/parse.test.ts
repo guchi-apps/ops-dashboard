@@ -20,7 +20,14 @@ describe("parseAiAppUsageResponse", () => {
         assert.equal(result.length, 1)
         assert.equal(result[0].label, "チャット")
         assert.equal(result[0].model, "claude-opus-5")
-        assert.deepEqual(result[0].last24h, { calls: 2, inputTokens: 1_000_000, outputTokens: 100_000, costUsd: 7.5 })
+        assert.deepEqual(result[0].last24h, {
+            calls: 2,
+            inputTokens: 1_000_000,
+            outputTokens: 100_000,
+            cacheReadTokens: null,
+            cacheWriteTokens: null,
+            costUsd: 7.5,
+        })
     })
 
     it("入力はキャッシュの書き込み・読み出しを含めた合計で出し、金額は各単価で換算する", () => {
@@ -59,12 +66,37 @@ describe("parseAiAppUsageResponse", () => {
         assert.equal(result[0].last24h.costUsd, 0.042)
     })
 
+    it("キャッシュの内訳を残し、省略は0ではなく不明（null）にする。入力は二重に足さない（#498）", () => {
+        const result = parseAiAppUsageResponse({
+            features: [
+                feature({
+                    last24h: { calls: 1, inputTokens: 100, outputTokens: 10, cacheReadTokens: 2_000, cacheWriteTokens: 0 },
+                    last7d: { calls: 1, inputTokens: 100, outputTokens: 10, cacheReadTokens: 2_000 },
+                }),
+            ],
+        })
+
+        assert.equal(result?.[0].last24h.inputTokens, 2_100)
+        assert.equal(result?.[0].last24h.cacheReadTokens, 2_000)
+        assert.equal(result?.[0].last24h.cacheWriteTokens, 0)
+        // 書込を省略した行: 合計は読出だけ足し、書込は不明
+        assert.equal(result?.[0].last7d.inputTokens, 2_100)
+        assert.equal(result?.[0].last7d.cacheWriteTokens, null)
+    })
+
     it("入力トークンを省略した行は数えていないものとして扱い、金額も出さない（Codex CLIのアプリなど）", () => {
         const result = parseAiAppUsageResponse({
             features: [feature({ model: "gpt-6-sol", last24h: { calls: 12 }, last7d: { calls: 40, inputTokens: null } })],
         })
 
-        assert.deepEqual(result?.[0].last24h, { calls: 12, inputTokens: null, outputTokens: null, costUsd: null })
+        assert.deepEqual(result?.[0].last24h, {
+            calls: 12,
+            inputTokens: null,
+            outputTokens: null,
+            cacheReadTokens: null,
+            cacheWriteTokens: null,
+            costUsd: null,
+        })
         assert.equal(result?.[0].last7d.inputTokens, null)
     })
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { RefreshCw } from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { AideStatus } from "@/components/aide-status"
 import { AiUsage } from "@/components/ai-usage"
 import { AiAppUsage } from "@/components/ai-app-usage"
@@ -10,6 +10,7 @@ import { GitHubUsage } from "@/components/github-usage"
 import { HeaderMenu } from "@/components/header-menu"
 import { HostCard } from "@/components/host-card"
 import { HostStats } from "@/components/host-stats"
+import { IncidentButton, IncidentPanel, useIncidents } from "@/components/incidents"
 import { MonitorSections } from "@/components/monitor-sections"
 import { MonitorTiles, getMonitorStatusText } from "@/components/monitor-tiles"
 import { OnePasswordUsage } from "@/components/onepassword-usage"
@@ -189,6 +190,9 @@ export function DashboardShell({
         () => (aideConfigured ? TAB_IDS : TAB_IDS.filter((tab) => tab !== "aide")),
         [aideConfigured]
     )
+    const incidents = useIncidents()
+    const [incidentsOpen, setIncidentsOpen] = useState(false)
+    const incidentsPanelId = useId()
     const storedTab = useSyncExternalStore(subscribeActiveTab, getStoredTab, getInitialTab)
     const activeTab: TabId = tabIds.includes(storedTab) ? storedTab : "overview"
 
@@ -210,20 +214,23 @@ export function DashboardShell({
     // 通知をタップして開いたときは、通知が指したタブ（利用枠）を出す（#263）。
     // アプリが閉じていれば `?tab=` 付きで開き、開いていればService Workerからメッセージで届く
     useEffect(() => {
-        const openTab = (tab: unknown) => {
+        const openTab = (tab: unknown, panel?: unknown) => {
             if (typeof tab === "string" && tabIds.includes(tab as TabId)) storeActiveTab(tab as TabId)
+            // 通知から開いたときは、ヘッダーの未解消エラー一覧も開く（#495）
+            if (panel === "incidents") setIncidentsOpen(true)
         }
 
         const url = new URL(window.location.href)
-        if (url.searchParams.has("tab")) {
-            openTab(url.searchParams.get("tab"))
+        if (url.searchParams.has("tab") || url.searchParams.has("panel")) {
+            openTab(url.searchParams.get("tab"), url.searchParams.get("panel"))
             url.searchParams.delete("tab")
+            url.searchParams.delete("panel")
             window.history.replaceState(null, "", url.pathname + url.search + url.hash)
         }
 
         const onMessage = (event: MessageEvent) => {
-            const data = event.data as { type?: string; tab?: unknown } | null
-            if (data?.type === "open-tab") openTab(data.tab)
+            const data = event.data as { type?: string; tab?: unknown; panel?: unknown } | null
+            if (data?.type === "open-tab") openTab(data.tab, data.panel)
         }
         navigator.serviceWorker?.addEventListener("message", onMessage)
         return () => navigator.serviceWorker?.removeEventListener("message", onMessage)
@@ -289,6 +296,12 @@ export function DashboardShell({
                             cooldownSeconds={refreshCooldownSeconds}
                             onRefresh={refresh}
                         />
+                        <IncidentButton
+                            snapshot={incidents}
+                            open={incidentsOpen}
+                            onToggle={() => setIncidentsOpen((value) => !value)}
+                            controlsId={incidentsPanelId}
+                        />
                         <HeaderMenu userEmail={userEmail} isAdmin={isAdmin}>
                             <UsageNotifications />
                         </HeaderMenu>
@@ -335,6 +348,14 @@ export function DashboardShell({
                     ))}
                 </div>
             </div>
+
+            {incidentsOpen && incidents && (
+                <IncidentPanel
+                    snapshot={incidents}
+                    id={incidentsPanelId}
+                    onClose={() => setIncidentsOpen(false)}
+                />
+            )}
 
             <SwipeTabs
                 label={TAB_LABELS[activeTab]}

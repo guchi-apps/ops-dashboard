@@ -25,6 +25,9 @@ const PUSH_TTL_SECONDS = 60 * 60
  */
 const PUSH_URGENCY = "high"
 
+/** 応答しないプッシュサービスに、定期判定（#495）が詰まらないよう待つ上限 */
+const PUSH_TIMEOUT_MS = 10_000
+
 export interface PushMessage {
     title: string
     body: string
@@ -32,6 +35,12 @@ export interface PushMessage {
     tag?: string
     /** 通知をタップしたときに開くパス */
     url?: string
+    /**
+     * PWAアイコンに出す未解消エラー件数と、その通番（#495）。どちらもあるときだけService Workerが
+     * 反映する（AI利用枠の通知は持たない）。通番が保存済みより古いPushでは件数を巻き戻さない
+     */
+    badge?: number
+    seq?: number
 }
 
 /** 送信1回ぶんの結果 */
@@ -44,7 +53,11 @@ export interface PushSendResult {
     failures: (number | "error")[]
 }
 
-interface StoredSubscription extends PushSubscription {
+export interface StoredSubscription extends PushSubscription {
+    /** 登録したログイン利用者のメール（#495）。記録が無い古い購読は、次の登録し直しで紐づく */
+    email?: string
+    /** ホスト停止・監視異常の通知を受けるか。未設定はオン。端末ごとに切り替える */
+    hostAlerts?: boolean
     /** 初めて登録した日時。同じ端末の登録し直しでは変えない（購読が入れ替わったかを見分けるため。#297） */
     createdAt: string
     /** 最後に端末から登録し直された日時。アプリを開くたびに更新される */
@@ -119,8 +132,16 @@ export function isPushSubscription(value: unknown): value is PushSubscription {
     return typeof p256dh === "string" && typeof auth === "string"
 }
 
-/** 購読を登録する。同じ端末（エンドポイント）はすでにあれば鍵だけ置き換える */
-export function saveSubscription(subscription: PushSubscription): Promise<void> {
+/**
+ * 購読を登録する。同じ端末（エンドポイント）はすでにあれば鍵だけ置き換える。
+ *
+ * 起動のたびに登録し直されるため、端末ごとの設定（`hostAlerts`）は既存の記録から引き継ぐ。
+ * 利用者はログインセッションのメールで毎回付け直す。`hostAlerts` は渡されたときだけ変える
+ */
+export function saveSubscription(
+    subscription: PushSubscription,
+    owner?: { email: string; hostAlerts?: boolean }
+): Promise<void> {
     return serialize(async () => {
         const state = await readState()
         const existing = state.subscriptions.find((item) => item.endpoint === subscription.endpoint)
@@ -131,6 +152,10 @@ export function saveSubscription(subscription: PushSubscription): Promise<void> 
             keys: { p256dh: subscription.keys.p256dh, auth: subscription.keys.auth },
             createdAt: existing?.createdAt ?? now,
             lastSeenAt: now,
+            ...((owner?.email ?? existing?.email) && { email: owner?.email ?? existing?.email }),
+            ...((owner?.hostAlerts ?? existing?.hostAlerts) !== undefined && {
+                hostAlerts: owner?.hostAlerts ?? existing?.hostAlerts,
+            }),
         })
         await writeState({ subscriptions: others })
     })
@@ -146,6 +171,28 @@ export function removeSubscriptions(endpoints: string[]): Promise<void> {
             await writeState({ subscriptions: remaining })
         }
     })
+}
+
+/**
+ * 端末の購読を、その持ち主のときだけ消す。持ち主が記録されていない古い購読は、
+ * ログイン済みの利用者なら消せる（記録が無く、照合できないため）
+ */
+export function removeSubscriptionOf(
+    endpoint: string,
+    email: string
+): Promise<"removed" | "missing" | "forbidden"> {
+    return serialize(async () => {
+        const state = await readState()
+        const target = state.subscriptions.find((item) => item.endpoint === endpoint)
+        if (!target) return "missing"
+        if (target.email && target.email !== email) return "forbidden"
+        await writeState({ subscriptions: state.subscriptions.filter((item) => item !== target) })
+        return "removed"
+    })
+}
+
+export async function listSubscriptions(): Promise<StoredSubscription[]> {
+    return (await readState()).subscriptions
 }
 
 export async function hasSubscriptions(): Promise<boolean> {
@@ -173,6 +220,7 @@ async function sendTo(subscriptions: PushSubscription[], message: PushMessage): 
                     vapidDetails,
                     TTL: PUSH_TTL_SECONDS,
                     urgency: PUSH_URGENCY,
+                    timeout: PUSH_TIMEOUT_MS,
                 })
                 return true
             } catch (error) {
@@ -201,6 +249,14 @@ async function sendTo(subscriptions: PushSubscription[], message: PushMessage): 
 /** 登録済みの全端末へ送る */
 export async function sendPushToAll(message: PushMessage): Promise<PushSendResult> {
     return sendTo((await readState()).subscriptions, message)
+}
+
+/** 条件に合う購読だけへ送る（ホスト通知を、いまアクセスが許可されている利用者の端末に絞る。#495） */
+export async function sendPushWhere(
+    predicate: (subscription: StoredSubscription) => boolean,
+    message: PushMessage
+): Promise<PushSendResult> {
+    return sendTo((await readState()).subscriptions.filter(predicate), message)
 }
 
 /** 1台だけへ送る（通知をオンにした直後の確認用） */

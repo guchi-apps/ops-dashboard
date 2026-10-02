@@ -406,6 +406,33 @@ ChatGPTの5時間枠は対象外（Issueの指定）。
 - worktreeで送信まで確かめるには、鍵を作ってコマンドに渡し、ログインした画面から登録する必要がある。
   GUIの無い環境では購読を作れないため、判定だけを `evaluateUsageAlerts` に作り物のスナップショットを流して確かめる
 
+## ホスト停止のPush通知と未解消エラー件数（#495）
+
+詳細は [docs/host-incident-alerts.md](./docs/host-incident-alerts.md)。守ること:
+
+- **判定は `src/instrumentation.ts` のプロセス内タイマー（30秒）。** 画面のGETや `POST /api/host-stats` を契機にしない。
+  `register` は `NEXT_RUNTIME === "nodejs"` のときだけ動的importする（`node:sqlite`・`web-push` を読むため）
+- **オンライン判定は `judgeHostOnline` の1関数を画面と共有する。** 通知と件数で別々に決めない。
+  定期ジョブは `summarizeTimers` を使い回し、独自の除外処理を書かない
+- **Pushはホストの停止・復旧・再起動だけ。** サイトDOWN・ジョブ・サービスの増減はPushしない（iOSは表示なしの
+  バッジ更新Pushが使えず、ジョブはSignalyと二重になるため）。バッジは `seq` で巻き戻りを防ぎ、`public/sw.js` と
+  `badge-client.ts` は同じIndexedDB（`status-hub-badge`）を読み書きする
+- 送信先は `isHostAlertRecipient`（いまアクセス許可・端末オン・利用者記録あり）だけ。`sendPushToAll` を使わない
+- 監視の取得失敗を「DOWN 0件」にしない（前回を持ち越し、取得不可へ出す）。通知の文面で原因を断定しない
+
+## モデル単価表の定期チェック（#497）
+
+詳細は [docs/model-price-watch.md](./docs/model-price-watch.md)。守ること:
+
+- **チェックは `src/instrumentation.ts` のプロセス内タイマー**（`runModelPriceWatchIfDue`。既定は毎週月曜05:00 JST）。
+  画面のGETから公式ページへ取りにいかない。本番（`NODE_ENV=production`）か `MODEL_PRICE_WATCH_ENABLED=1` のときだけ動く
+- **`models.ts` は自動で書き換えない。** 結果は `.data/model-price-watch.json` に残し、人が候補を確かめて出典付きで直す。
+  旧モデルの行は消さない（過去の金額を「不明」にしないため。価格を変えると過去期間の概算も新単価で再計算される）
+- **公式の表の取り違えを避ける。** OpenAIは節見出し `### Standard pricing data` だけ読む（Batch等は同じ列構成の別節）。
+  `-` は0にしない。条件付きの行は通常価格にしない。Anthropicの表示名からIDを推測しない。
+  `findModel` の前方一致は使わない（`claude-sonnet-5-5` が `claude-sonnet-5` に当たる。#362）
+- **取得失敗を「変更なし」にしない。** 失敗した提供元は前回の候補を持ち越す。通知の宛先は `sendPushWhere`（`sendPushToAll` を使わない）
+
 ## 週間枠の「1日ごとの区切り」
 
 週間枠のバーに立つ細い点線は、**その日の終わりまでの累計使用率**の位置にあり、線と線の間隔が
