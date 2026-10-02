@@ -43,6 +43,9 @@ function fromMeteredTotals(totals: AiMeteredTotals): AiAppUsageTotals {
         inputTokens: totals.inputTokens,
         // TypeSafeは出力トークンを数えない（現在は無料）
         outputTokens: null,
+        // Jevにキャッシュは無い（金額の換算に渡す値と同じ0）。省略（不明）にすると注記が常に付いてしまう
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
         costUsd: estimateCostUsd(TYPESAFE_MODEL, {
             inputTokens: totals.inputTokens,
             outputTokens: null,
