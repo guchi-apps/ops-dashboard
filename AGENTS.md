@@ -406,6 +406,20 @@ ChatGPTの5時間枠は対象外（Issueの指定）。
 - worktreeで送信まで確かめるには、鍵を作ってコマンドに渡し、ログインした画面から登録する必要がある。
   GUIの無い環境では購読を作れないため、判定だけを `evaluateUsageAlerts` に作り物のスナップショットを流して確かめる
 
+## ホスト停止のPush通知と未解消エラー件数（#495）
+
+詳細は [docs/host-incident-alerts.md](./docs/host-incident-alerts.md)。守ること:
+
+- **判定は `src/instrumentation.ts` のプロセス内タイマー（30秒）。** 画面のGETや `POST /api/host-stats` を契機にしない。
+  `register` は `NEXT_RUNTIME === "nodejs"` のときだけ動的importする（`node:sqlite`・`web-push` を読むため）
+- **オンライン判定は `judgeHostOnline` の1関数を画面と共有する。** 通知と件数で別々に決めない。
+  定期ジョブは `summarizeTimers` を使い回し、独自の除外処理を書かない
+- **Pushはホストの停止・復旧・再起動だけ。** サイトDOWN・ジョブ・サービスの増減はPushしない（iOSは表示なしの
+  バッジ更新Pushが使えず、ジョブはSignalyと二重になるため）。バッジは `seq` で巻き戻りを防ぎ、`public/sw.js` と
+  `badge-client.ts` は同じIndexedDB（`status-hub-badge`）を読み書きする
+- 送信先は `isHostAlertRecipient`（いまアクセス許可・端末オン・利用者記録あり）だけ。`sendPushToAll` を使わない
+- 監視の取得失敗を「DOWN 0件」にしない（前回を持ち越し、取得不可へ出す）。通知の文面で原因を断定しない
+
 ## 週間枠の「1日ごとの区切り」
 
 週間枠のバーに立つ細い点線は、**その日の終わりまでの累計使用率**の位置にあり、線と線の間隔が

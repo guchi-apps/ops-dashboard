@@ -223,6 +223,35 @@ function downsample(points: HostStatsHistoryPoint[]): HostStatsHistoryPoint[] {
     return result
 }
 
+/**
+ * 最終受信からの経過と、OFFLINEかどうかの判定。画面（`readHostView`）と、定期判定による
+ * ホスト停止の検知・エラー件数（`src/lib/incidents/`）が同じ判定を共有する（#495）。
+ */
+export function judgeHostOnline(
+    receivedAt: string,
+    now: number,
+    offlineAfterSeconds: number
+): { ageSeconds: number; online: boolean } {
+    const ageSeconds = Math.max(0, Math.round((now - new Date(receivedAt).getTime()) / 1000))
+    return { ageSeconds, online: ageSeconds <= offlineAfterSeconds }
+}
+
+function toHostView(
+    id: string,
+    latest: HostStatsSnapshot,
+    history: HostStatsHistoryPoint[],
+    now: number,
+    offlineAfterSeconds: number
+): HostStatsHostView {
+    return {
+        id,
+        label: latest.label || latest.hostname,
+        latest,
+        ...judgeHostOnline(latest.receivedAt, now, offlineAfterSeconds),
+        history,
+    }
+}
+
 async function readHostView(
     id: string,
     cutoffSeconds: number,
@@ -231,19 +260,25 @@ async function readHostView(
     const [latest, history] = await Promise.all([readSnapshot(id), readHistoryFile(id, cutoffSeconds)])
     if (!latest) return null
 
-    const ageSeconds = Math.max(
-        0,
-        Math.round((Date.now() - new Date(latest.receivedAt).getTime()) / 1000)
+    return toHostView(id, latest, downsample(history), Date.now(), offlineAfterSeconds)
+}
+
+/**
+ * 全ホストの最新スナップショットだけを返す（履歴は空）。数十秒おきの定期判定向けで、
+ * 24時間分の履歴を毎回読まない。時刻は引数で渡す（テストと、判定の基準時刻を揃えるため）。
+ */
+export async function getHostLatestViews(now: number): Promise<HostStatsHostView[]> {
+    const offlineAfterSeconds = getOfflineAfterSeconds()
+    const views = await Promise.all(
+        (await listHostIds()).map(async (id) => {
+            const latest = await readSnapshot(id)
+            return latest ? toHostView(id, latest, [], now, offlineAfterSeconds) : null
+        })
     )
 
-    return {
-        id,
-        label: latest.label || latest.hostname,
-        latest,
-        ageSeconds,
-        online: ageSeconds <= offlineAfterSeconds,
-        history: downsample(history),
-    }
+    return views
+        .filter((view): view is HostStatsHostView => view !== null)
+        .sort((a, b) => a.id.localeCompare(b.id))
 }
 
 /** ダッシュボード表示用に、全ホストの最新スナップショットと間引いた履歴をまとめて返す */

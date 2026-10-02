@@ -58,13 +58,26 @@ function toApplicationServerKey(base64Url: string): Uint8Array<ArrayBuffer> {
     return bytes
 }
 
-async function postSubscription(subscription: PushSubscription, confirm: boolean): Promise<boolean> {
+async function postSubscription(
+    subscription: PushSubscription,
+    confirm: boolean,
+    extra: { hostAlerts?: boolean; test?: boolean } = {}
+): Promise<{ ok: boolean; delivered?: boolean }> {
     const res = await fetch("/api/push-subscriptions", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...CSRF_HEADERS },
-        body: JSON.stringify({ subscription: subscription.toJSON(), confirm }),
+        body: JSON.stringify({ subscription: subscription.toJSON(), confirm, ...extra }),
     })
-    return res.ok
+    const body = res.ok ? ((await res.json().catch(() => ({}))) as { delivered?: boolean }) : {}
+    return { ok: res.ok, delivered: body.delivered }
+}
+
+/** この端末の、ホスト・監視の通知がオンか。サーバーに記録が無い・取れないときは null */
+async function fetchHostAlerts(subscription: PushSubscription): Promise<boolean | null> {
+    const url = `/api/push-subscriptions?endpoint=${encodeURIComponent(subscription.endpoint)}`
+    const res = await fetch(url, { cache: "no-store" }).catch(() => null)
+    if (!res?.ok) return null
+    return ((await res.json()) as { hostAlerts?: boolean | null }).hostAlerts ?? null
 }
 
 async function subscribe(publicKey: string): Promise<PushSubscription> {
@@ -85,6 +98,8 @@ export function UsageNotifications() {
     const [open, setOpen] = useState(false)
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [hostAlerts, setHostAlerts] = useState<boolean | null>(null)
+    const [testResult, setTestResult] = useState<string | null>(null)
     const detailId = useId()
 
     // 鍵の有無を確かめ、Service Workerを登録する。すでに許可済みの端末は、サーバー側の記録が
@@ -109,6 +124,7 @@ export function UsageNotifications() {
             if (permission === "granted") {
                 const subscription = await subscribe(key)
                 await postSubscription(subscription, false)
+                setHostAlerts(await fetchHostAlerts(subscription))
             }
             if (cancelled) return
 
@@ -132,10 +148,11 @@ export function UsageNotifications() {
             if (permission !== "granted") return
 
             const subscription = await subscribe(publicKey)
-            if (!(await postSubscription(subscription, true))) {
+            if (!(await postSubscription(subscription, true)).ok) {
                 setError("サーバーへの登録に失敗しました。時間をおいてもう一度押してください。")
                 return
             }
+            setHostAlerts(true)
             setOpen(false)
         } catch (reason) {
             console.error("通知をオンにできませんでした:", reason)
@@ -144,6 +161,52 @@ export function UsageNotifications() {
             setBusy(false)
         }
     }, [publicKey])
+
+    const toggleHostAlerts = useCallback(async () => {
+        setBusy(true)
+        setError(null)
+        setTestResult(null)
+        try {
+            const registration = await navigator.serviceWorker.ready
+            const subscription = await registration.pushManager.getSubscription()
+            if (!subscription) return
+            const next = hostAlerts === false
+            if (!(await postSubscription(subscription, false, { hostAlerts: next })).ok) {
+                setError("設定を保存できませんでした。時間をおいてもう一度押してください。")
+                return
+            }
+            setHostAlerts(next)
+        } catch (reason) {
+            console.error("ホスト通知の設定を変えられませんでした:", reason)
+            setError("設定を保存できませんでした。")
+        } finally {
+            setBusy(false)
+        }
+    }, [hostAlerts])
+
+    const sendTest = useCallback(async () => {
+        setBusy(true)
+        setError(null)
+        setTestResult(null)
+        try {
+            const registration = await navigator.serviceWorker.ready
+            const subscription = await registration.pushManager.getSubscription()
+            if (!subscription) return
+            const result = await postSubscription(subscription, false, { test: true })
+            setTestResult(
+                !result.ok
+                    ? "テスト通知を送れませんでした。"
+                    : result.delivered
+                      ? "テスト通知を送りました。数秒で届きます。"
+                      : "テスト通知が配信されませんでした。端末の通知設定を確認してください。"
+            )
+        } catch (reason) {
+            console.error("テスト通知を送れませんでした:", reason)
+            setError("テスト通知を送れませんでした。")
+        } finally {
+            setBusy(false)
+        }
+    }, [])
 
     const disable = useCallback(async () => {
         setBusy(true)
@@ -211,7 +274,21 @@ export function UsageNotifications() {
                             <p className="font-bold">通知は有効です</p>
                             <NotifyConditions />
                             <p className="text-muted-foreground">アプリを閉じていても届きます。</p>
-                            <div className="flex justify-end">
+                            <div className="flex items-center gap-2 rounded-md border border-border p-2">
+                                <span className="flex-1">
+                                    <span className="font-bold">ホスト・監視の障害通知</span>
+                                    <span className="ml-1.5 text-muted-foreground">
+                                        {hostAlerts === false ? "オフ" : "オン"}
+                                    </span>
+                                </span>
+                                <Button variant="outline" size="sm" type="button" onClick={toggleHostAlerts} disabled={busy}>
+                                    {hostAlerts === false ? "オンにする" : "オフにする"}
+                                </Button>
+                            </div>
+                            <div className="flex justify-end gap-2">
+                                <Button variant="outline" size="sm" type="button" onClick={sendTest} disabled={busy}>
+                                    テスト通知
+                                </Button>
                                 <Button variant="outline" size="sm" type="button" onClick={disable} disabled={busy}>
                                     この端末への通知を止める
                                 </Button>
@@ -250,6 +327,8 @@ export function UsageNotifications() {
                             </p>
                         </>
                     )}
+                    {testResult && <p className="text-muted-foreground">{testResult}</p>}
+                    {state !== "unsupported" && state !== "denied" && <BadgeNotes />}
                     {error && <p className="text-destructive">{error}</p>}
                 </div>
             )}
@@ -257,9 +336,19 @@ export function UsageNotifications() {
     )
 }
 
+function BadgeNotes() {
+    return (
+        <p className="text-muted-foreground">
+            ホーム画面のアイコンには、未解消エラーの件数を表示します（iOS 16.4以降のホーム画面に追加したアプリ）。
+            通知やバッジは端末の設定でオフにされていると出ません。その場合も、画面右上のボタンから件数と一覧を確認できます。
+        </p>
+    )
+}
+
 function NotifyConditions() {
     return (
         <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
+            <li>ホストの受信が5分途絶えた・再開した・再起動した</li>
             <li>Claude 5時間枠が90%以上</li>
             <li>週間枠（Claude・ChatGPT）が95%以上</li>
             <li>上記の枠が100%に到達</li>
