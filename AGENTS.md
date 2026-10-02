@@ -420,6 +420,19 @@ ChatGPTの5時間枠は対象外（Issueの指定）。
 - 送信先は `isHostAlertRecipient`（いまアクセス許可・端末オン・利用者記録あり）だけ。`sendPushToAll` を使わない
 - 監視の取得失敗を「DOWN 0件」にしない（前回を持ち越し、取得不可へ出す）。通知の文面で原因を断定しない
 
+## モデル単価表の定期チェック（#497）
+
+詳細は [docs/model-price-watch.md](./docs/model-price-watch.md)。守ること:
+
+- **チェックは `src/instrumentation.ts` のプロセス内タイマー**（`runModelPriceWatchIfDue`。既定は毎週月曜05:00 JST）。
+  画面のGETから公式ページへ取りにいかない。本番（`NODE_ENV=production`）か `MODEL_PRICE_WATCH_ENABLED=1` のときだけ動く
+- **`models.ts` は自動で書き換えない。** 結果は `.data/model-price-watch.json` に残し、人が候補を確かめて出典付きで直す。
+  旧モデルの行は消さない（過去の金額を「不明」にしないため。価格を変えると過去期間の概算も新単価で再計算される）
+- **公式の表の取り違えを避ける。** OpenAIは節見出し `### Standard pricing data` だけ読む（Batch等は同じ列構成の別節）。
+  `-` は0にしない。条件付きの行は通常価格にしない。Anthropicの表示名からIDを推測しない。
+  `findModel` の前方一致は使わない（`claude-sonnet-5-5` が `claude-sonnet-5` に当たる。#362）
+- **取得失敗を「変更なし」にしない。** 失敗した提供元は前回の候補を持ち越す。通知の宛先は `sendPushWhere`（`sendPushToAll` を使わない）
+
 ## 週間枠の「1日ごとの区切り」
 
 週間枠のバーに立つ細い点線は、**その日の終わりまでの累計使用率**の位置にあり、線と線の間隔が
