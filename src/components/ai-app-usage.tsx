@@ -6,6 +6,7 @@ import { createPortal } from "react-dom"
 import { ArrowLeft, Pencil, Plus, Trash2, X } from "lucide-react"
 import { useDashboardData } from "@/components/dashboard-data"
 import { SkeletonBar, SkeletonGroup } from "@/components/skeleton"
+import { ModelPriceWatch } from "@/components/model-price-watch"
 import { SectionHeading } from "@/components/section-heading"
 import { Button } from "@/components/ui/button"
 import { findModel, listModels, modelLabel, type ModelFamily, type ModelInfo } from "@/lib/ai-app-usage/models"
@@ -609,6 +610,7 @@ export function ModelPriceTable() {
                     </div>
                 }
             />
+            <ModelPriceWatch />
             <div className="overflow-hidden rounded-xl border border-border bg-card">
                 <div className={cn(PRICE_ROW, "hidden border-b border-border bg-muted py-2 text-[10px] uppercase tracking-[0.1em] text-muted-foreground md:grid")} aria-hidden>
                     <span>モデル</span>
