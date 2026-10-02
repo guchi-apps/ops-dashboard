@@ -446,6 +446,12 @@ timer 経由では読めないユニットでも手では読めてしまう（tm
 **数えるのは受信回数ではなく実行回数**（`ExecMainExitTimestamp` が変わった回数）で、
 同じ失敗を毎分受け取ってもしきい値は進まない。
 
+### ホスト停止・再起動のPush通知と未解消エラー件数（[issue #495](https://github.com/guchi-apps/status-hub/issues/495)）
+
+受信が既定5分途絶えたホスト（停止疑い）・再開・再起動を、画面を閉じていてもPWAへPush通知する。ホーム画面アイコンには
+未解消エラー件数（ホスト停止・サービス停止・定期ジョブ異常・サイトDOWN）をバッジで出す。判定はVPSのプロセス内で30秒ごと。
+仕組み・対象・制約・本番反映と実機確認の手順は [docs/host-incident-alerts.md](./docs/host-incident-alerts.md)。
+
 ### 受信APIの仕様
 
 ```
