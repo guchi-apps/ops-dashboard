@@ -14,6 +14,13 @@ export interface AiAppUsageTotals {
     inputTokens: number | null
     /** 出力トークン数。連携先が数えていなければ null */
     outputTokens: number | null
+    /**
+     * `inputTokens` に含まれるキャッシュ読出の分（#498）。連携先が省略したときは null（0ではなく「不明」）。
+     * 金額は従来どおり省略をキャッシュ0として換算する。`inputTokens` に足し直さないこと（二重計上になる）
+     */
+    cacheReadTokens?: number | null
+    /** `inputTokens` に含まれるキャッシュ書込の分。省略は null */
+    cacheWriteTokens?: number | null
     /** 単価表から計算したUSDの概算。単価の分からないモデルなど、計算できなければ null */
     costUsd: number | null
 }

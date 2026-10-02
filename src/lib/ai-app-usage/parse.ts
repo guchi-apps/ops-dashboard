@@ -13,7 +13,8 @@ import type { AiAppFeatureUsage, AiAppUsageTotals } from "@/types/ai-app-usage"
  *           "last7d": { ... } } ] }
  *
  * `inputTokens`・`outputTokens`・`cacheReadTokens`・`cacheWriteTokens` は省略できる。省略した入力・出力トークンは
- * 「数えていない」（null。入力が null の行は金額も null）、キャッシュは 0 として扱う。
+ * 「数えていない」（null。入力が null の行は金額も null）。省略したキャッシュは「不明」（null）として画面に残し、
+ * 金額の換算だけは 0 として計算する（金額には「キャッシュ未集計の可能性」の注記が付く）。
  * 機能の配列が空なのは「取得できたが呼び出しが無かった」で、エラーではない。
  */
 
@@ -59,13 +60,16 @@ function toTotals(model: string, value: unknown): AiAppUsageTotals | null {
         if (outputTokens === null) return null
     }
 
-    const cacheReadTokens = raw.cacheReadTokens === undefined ? 0 : readCount(raw.cacheReadTokens)
-    const cacheWriteTokens = raw.cacheWriteTokens === undefined ? 0 : readCount(raw.cacheWriteTokens)
-    if (cacheReadTokens === null || cacheWriteTokens === null) return null
+    const cacheRead = raw.cacheReadTokens === undefined ? undefined : readCount(raw.cacheReadTokens)
+    const cacheWrite = raw.cacheWriteTokens === undefined ? undefined : readCount(raw.cacheWriteTokens)
+    if (cacheRead === null || cacheWrite === null) return null
+    // 省略は金額の換算では 0、画面では不明（null）
+    const cacheReadTokens = cacheRead ?? 0
+    const cacheWriteTokens = cacheWrite ?? 0
 
     if (inputTokens === null) {
         // トークンを数えていない行は、キャッシュの内訳があっても金額を出さない（一部だけの金額になるため）
-        return { calls, inputTokens: null, outputTokens, costUsd: null }
+        return { calls, inputTokens: null, outputTokens, cacheReadTokens: null, cacheWriteTokens: null, costUsd: null }
     }
 
     return {
@@ -74,6 +78,8 @@ function toTotals(model: string, value: unknown): AiAppUsageTotals | null {
         // 「入力」だけが激減したように見えるため）
         inputTokens: inputTokens + cacheReadTokens + cacheWriteTokens,
         outputTokens,
+        cacheReadTokens: cacheRead ?? null,
+        cacheWriteTokens: cacheWrite ?? null,
         costUsd: estimateCostUsd(model, { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }),
     }
 }
