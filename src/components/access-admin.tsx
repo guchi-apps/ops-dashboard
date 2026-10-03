@@ -48,6 +48,17 @@ const TABS = [
 ] as const
 type TabId = (typeof TABS)[number]["id"]
 
+/** アプリ登録で選べる標準の権限。これ以外は「その他の権限」として追加する（#512） */
+const PRESET_PERMISSIONS = [
+    { value: "viewer", description: "閲覧のみ" },
+    { value: "member", description: "通常の利用" },
+    { value: "editor", description: "内容の編集" },
+    { value: "admin", description: "アプリ内の管理操作" },
+] as const
+/** サーバー（`policy.ts` の PERMISSION_PATTERN）と同じ形式 */
+const PERMISSION_PATTERN = /^[a-z0-9][a-z0-9_-]{0,29}$/
+const MAX_PERMISSIONS = 12
+
 const INPUT_CLASS =
     "h-9 w-full rounded-md border bg-background px-3 text-base outline-none sm:text-sm transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:opacity-50"
 
@@ -343,14 +354,14 @@ function Dialog({ title, onClose, onSubmit, children }: { title: string; onClose
     )
 }
 
-function Footer({ sending, onClose, submitLabel = "保存" }: { sending: boolean; onClose: () => void; submitLabel?: string }) {
+function Footer({ sending, onClose, submitLabel = "保存", disabled = false }: { sending: boolean; onClose: () => void; submitLabel?: string; disabled?: boolean }) {
     return (
         <div className="flex gap-2">
             <span className="hidden flex-1 sm:block" />
             <Button type="button" variant="outline" size="sm" onClick={onClose} className="hidden sm:inline-flex">
                 キャンセル
             </Button>
-            <Button type="submit" size="sm" disabled={sending} className="flex-1 sm:flex-none">
+            <Button type="submit" size="sm" disabled={sending || disabled} className="flex-1 sm:flex-none">
                 {sending ? "保存中…" : submitLabel}
             </Button>
         </div>
@@ -436,22 +447,54 @@ function UserDialog({ apps, user, isSelf, onClose, onSaved }: { apps: AppState[]
 function AppDialog({ app, onClose, onSaved }: { app: AppState | null; onClose: () => void; onSaved: () => void }) {
     const idId = useId()
     const nameId = useId()
-    const permId = useId()
+    const customId = useId()
     const [id, setId] = useState(app?.id ?? "")
     const [name, setName] = useState(app?.name ?? "")
-    const [permissions, setPermissions] = useState(app?.permissions.join(", ") ?? "viewer")
+    const [permissions, setPermissions] = useState<string[]>(app?.permissions ?? ["viewer"])
+    const [customInput, setCustomInput] = useState("")
+    const [customError, setCustomError] = useState<string | null>(null)
+    const presetValues: readonly string[] = PRESET_PERMISSIONS.map((preset) => preset.value)
+    const customPermissions = permissions.filter((permission) => !presetValues.includes(permission))
+
+    const toggle = (permission: string) =>
+        setPermissions((current) => (current.includes(permission) ? current.filter((item) => item !== permission) : [...current, permission]))
+    /** 入力欄の値を権限へ足す。足せたら新しい一覧を、足さなかった（空・不正）なら null を返す */
+    const addCustom = (): string[] | null => {
+        const value = customInput.trim()
+        if (!value) return null
+        if (!PERMISSION_PATTERN.test(value)) {
+            setCustomError("英小文字・数字・_-の1〜30文字で入力してください")
+            return null
+        }
+        const next = permissions.includes(value) ? permissions : [...permissions, value]
+        if (next.length > MAX_PERMISSIONS) {
+            setCustomError(`権限は${MAX_PERMISSIONS}個までです`)
+            return null
+        }
+        setCustomError(null)
+        setCustomInput("")
+        setPermissions(next)
+        return next
+    }
     const [sending, setSending] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
     const submit = async () => {
         if (sending) return
+        // 「追加」を押し忘れた入力は取り込む。取り込めない値が残っているときは保存しない
+        let finalPermissions = permissions
+        if (customInput.trim()) {
+            const added = addCustom()
+            if (!added) return
+            finalPermissions = added
+        }
         setSending(true)
         setError(null)
         try {
             await send("PUT", "/api/access/admin/apps", {
                 id,
                 name,
-                permissions: permissions.split(",").map((item) => item.trim()).filter(Boolean),
+                permissions: finalPermissions,
             })
             onSaved()
         } catch (e) {
@@ -470,13 +513,62 @@ function AppDialog({ app, onClose, onSaved }: { app: AppState | null; onClose: (
                 <label htmlFor={nameId} className="block text-xs text-muted-foreground">表示名</label>
                 <input id={nameId} value={name} onChange={(event) => setName(event.target.value)} disabled={sending} required maxLength={60} className={INPUT_CLASS} />
             </div>
+            <fieldset className="space-y-1.5">
+                <legend className="mb-1 text-xs text-muted-foreground">対応する権限（1つ以上）</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                    {PRESET_PERMISSIONS.map((preset) => (
+                        <label key={preset.value} className="flex min-h-11 items-start gap-2 rounded-md border px-3 py-2 has-[:checked]:border-ring has-[:checked]:bg-muted">
+                            <input type="checkbox" checked={permissions.includes(preset.value)} onChange={() => toggle(preset.value)} disabled={sending} className="mt-1 size-4" />
+                            <span>
+                                <span className="block text-sm font-medium">{preset.value}</span>
+                                <span className="block text-[11px] text-muted-foreground">{preset.description}</span>
+                            </span>
+                        </label>
+                    ))}
+                </div>
+            </fieldset>
             <div className="space-y-1.5">
-                <label htmlFor={permId} className="block text-xs text-muted-foreground">対応する権限（カンマ区切り）</label>
-                <input id={permId} value={permissions} onChange={(event) => setPermissions(event.target.value)} disabled={sending} required className={INPUT_CLASS} />
+                <label htmlFor={customId} className="block text-xs text-muted-foreground">その他の権限</label>
+                <div className="flex gap-2">
+                    <input
+                        id={customId}
+                        value={customInput}
+                        onChange={(event) => setCustomInput(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                                event.preventDefault()
+                                void addCustom()
+                            }
+                        }}
+                        placeholder="例: reviewer"
+                        disabled={sending}
+                        className={INPUT_CLASS}
+                    />
+                    <Button type="button" variant="outline" size="sm" onClick={() => void addCustom()} disabled={sending || !customInput.trim()}>
+                        追加
+                    </Button>
+                </div>
+                {customError && <p role="alert" className="text-[11px] text-destructive">{customError}</p>}
+                {customPermissions.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                        {customPermissions.map((permission) => (
+                            <button
+                                key={permission}
+                                type="button"
+                                onClick={() => toggle(permission)}
+                                disabled={sending}
+                                aria-label={`${permission}を削除`}
+                                className="rounded-full border px-2.5 py-0.5 text-xs hover:bg-muted"
+                            >
+                                {permission} ×
+                            </button>
+                        ))}
+                    </div>
+                )}
                 <p className="text-[11px] text-muted-foreground">権限を減らすと、その権限を持っていたユーザーの付与からも外れます。</p>
             </div>
             <ErrorLine message={error} />
-            <Footer sending={sending} onClose={onClose} />
+            <Footer sending={sending} onClose={onClose} disabled={permissions.length === 0} />
         </Dialog>
     )
 }
