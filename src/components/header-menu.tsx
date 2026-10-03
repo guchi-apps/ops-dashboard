@@ -1,8 +1,15 @@
 "use client"
 
 import { LogOut, Menu, ShieldCheck } from "lucide-react"
-import { useEffect, useId, useRef, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
+
+/** メニューの中身から、メニューを閉じる・メニューボタンへフォーカスを戻すための操作（#503） */
+const HeaderMenuContext = createContext<{ closeMenu: () => void; focusMenuButton: () => void } | null>(null)
+
+export function useHeaderMenu() {
+    return useContext(HeaderMenuContext)
+}
 
 /** メニュー内の1行。通知の行（usage-notifications.tsx）とログアウトで見た目をそろえる */
 export const MENU_ITEM_CLASS =
@@ -33,6 +40,8 @@ export function HeaderMenu({
     const containerRef = useRef<HTMLDivElement>(null)
     const buttonRef = useRef<HTMLButtonElement>(null)
     const panelId = useId()
+    const closeMenu = useCallback(() => setOpen(false), [])
+    const focusMenuButton = useCallback(() => buttonRef.current?.focus(), [])
 
     // 外側を押すか Esc で閉じる。Esc で閉じたときはボタンへフォーカスを戻す
     useEffect(() => {
@@ -87,7 +96,7 @@ export function HeaderMenu({
                     </div>
                 )}
 
-                {children}
+                <HeaderMenuContext.Provider value={{ closeMenu, focusMenuButton }}>{children}</HeaderMenuContext.Provider>
 
                 {isAdmin && (
                     <a href="/admin/access" className={MENU_ITEM_CLASS}>
