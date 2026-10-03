@@ -164,6 +164,23 @@ export interface AiUsageWindowHistory {
     completedCount: number
 }
 
+/**
+ * 週間枠が5時間枠の何倍に当たるかの推定（src/lib/ai-usage/history.ts）。
+ * 提供元は使用率しか返さないため、今週の5時間枠の使用率の合計 ÷ 週間枠の使用率で求める。
+ */
+export interface AiWeeklyMultiple {
+    /** 倍率。週間使用率が小さすぎて推定できないときは null（計測中） */
+    multiple: number | null
+    /** 集計した今週の5時間枠の数 */
+    fiveHourCount: number
+    /** 集計した5時間枠の使用率の合計（%） */
+    fiveHourTotalPercent: number
+    /** 分母にした週間枠の使用率（%） */
+    weeklyPercent: number
+    /** 観測が足りない5時間枠を含み、実際より小さく出ている可能性があるか */
+    lowerBound: boolean
+}
+
 export interface AiProviderUsage {
     id: AiProviderId
     name: string
@@ -183,6 +200,8 @@ export interface AiProviderUsage {
     metered?: AiProviderMeteredUsage
     /** 終わった枠の使い切り実績。記録がまだ無ければ省略される */
     windowHistory?: AiUsageWindowHistory[]
+    /** 週間枠が5時間枠の何倍か（Claudeのみ）。記録がまだ無ければ省略される */
+    weeklyMultiple?: AiWeeklyMultiple
 }
 
 export interface AiUsageSnapshot {
