@@ -14,6 +14,19 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.49.2",
+        date: "2026-10-03",
+        changes: [
+            "アクセス管理画面のアプリ登録・編集で、対応する権限をカンマ区切りで手入力する代わりに、viewer／member／editor／admin をチェックで選べるようになりました。これ以外の権限は「その他の権限」から追加できます。",
+        ],
+        usage: [
+            "アクセス管理画面で、アプリの登録（または既存アプリの編集）を開く",
+            "「対応する権限」で、必要な権限（viewer／member／editor／admin）にチェックを入れる",
+            "標準以外の権限が必要なときは「その他の権限」に入力して「追加」を押す（追加した権限は × を押すと外せる）",
+            "「保存」を押し、アプリの権限一覧に選んだ権限が表示されれば成功",
+        ],
+    },
+    {
         version: "0.49.0",
         date: "2026-10-03",
         changes: [
