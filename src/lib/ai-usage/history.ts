@@ -245,7 +245,10 @@ export function estimateWeeklyMultiple(
 
     let count = 0
     let total = 0
-    let lowerBound = false
+    // 保持数の上限で古い記録が切り捨てられ、週の始まりまで届いていないときも小さく出る
+    let lowerBound =
+        fiveHourEntries.length >= MAX_STORED_ENTRIES &&
+        Date.parse(fiveHourEntries[0].resetsAt) - FIVE_HOUR_SECONDS * 1000 > weekStart
 
     for (const entry of fiveHourEntries) {
         const resetsAt = Date.parse(entry.resetsAt)

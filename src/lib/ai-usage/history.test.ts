@@ -375,4 +375,21 @@ describe("applyAiUsageHistory: 週間枠が5時間枠の何倍か", () => {
         assert.equal(result.fiveHourCount, 1)
         assert.equal(result.fiveHourTotalPercent, 20)
     })
+
+    it("12本を超える5時間枠も全部足し、記録が週の始まりまで届かないときは lowerBound を立てる", async (t) => {
+        setup(t)
+        const weekStart = weekReset - 7 * DAY
+        // 週の途中から5時間おきに14本。各枠は終了間際まで観測する
+        for (let i = 0; i < 14; i++) {
+            const reset = weekStart + DAY + (i + 1) * 5 * HOUR
+            await multipleOf(reset - MINUTE, [window5h(10, reset), weekly(10, weekReset)])
+        }
+        const result = await multipleOf(weekStart + 4 * DAY, [window5h(10, weekStart + 4 * DAY + 5 * HOUR), weekly(50, weekReset)])
+
+        assert.ok(result)
+        assert.equal(result.fiveHourCount, 15)
+        assert.equal(result.fiveHourTotalPercent, 150)
+        assert.equal(result.multiple, 3)
+        assert.equal(result.lowerBound, false)
+    })
 })

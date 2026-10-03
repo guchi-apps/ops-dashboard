@@ -89,28 +89,21 @@ function CreditRow({ credit, now }: { credit: AiProviderCredit; now: number }) {
 
 const WEEK_SECONDS = 7 * 24 * 60 * 60
 
-/** 週間枠が5時間枠の何倍か。記録からの推定なので、根拠と「以上」の注記を添える（#523） */
+/** 週間枠が5時間枠の何倍か。記録からの推定なので、根拠はホバーの title に留めて控えめに出す（#523） */
 function WeeklyMultipleRow({ estimate }: { estimate: AiWeeklyMultiple }) {
     const { multiple } = estimate
+    const basis =
+        multiple === null
+            ? `週間使用が10%に達すると表示します（いま ${estimate.weeklyPercent}%）`
+            : `今週の5時間枠 ${estimate.fiveHourCount}本（合計 ${estimate.fiveHourTotalPercent}%）÷ 週間使用 ${estimate.weeklyPercent}%${
+                  estimate.lowerBound ? "。観測が足りない枠を含むため実際はこれ以上の可能性" : ""
+              }`
 
     return (
-        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 rounded-md border border-dashed border-border px-2.5 py-2">
-            <span className="text-[11px] sm:text-xs">週間枠 ≒ 5時間枠</span>
-            {multiple === null ? (
-                <span className="font-mono text-sm font-bold text-muted-foreground">計測中</span>
-            ) : (
-                <span className="font-mono text-base sm:text-lg font-bold text-primary">
-                    {estimate.lowerBound ? `約${multiple}倍以上` : `約${multiple}倍`}
-                </span>
-            )}
-            <span className="w-full text-[10px] text-muted-foreground">
-                {multiple === null
-                    ? `週間使用が10%に達すると表示します（いま ${estimate.weeklyPercent}%）`
-                    : `今週の5時間枠 ${estimate.fiveHourCount}本（合計 ${estimate.fiveHourTotalPercent}%）÷ 週間使用 ${estimate.weeklyPercent}%${
-                          estimate.lowerBound ? "。観測が足りない枠を含むため実際はこれ以上の可能性" : ""
-                      }`}
-            </span>
-        </div>
+        <p title={basis} className="text-[10px] sm:text-xs text-muted-foreground">
+            5時間枠の
+            {multiple === null ? "何倍か: 計測中" : `約${multiple}倍${estimate.lowerBound ? "以上" : ""}`}
+        </p>
     )
 }
 
@@ -172,7 +165,7 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
             ) : provider.windows.length > 0 ? (
                 <div className="space-y-3">
                     {provider.windows.map((usageWindow, index) => (
-                        <div key={`${usageWindow.label}-${usageWindow.note ?? ""}-${index}`} className="space-y-2">
+                        <div key={`${usageWindow.label}-${usageWindow.note ?? ""}-${index}`} className="space-y-1">
                             <UsageWindowRow window={usageWindow} now={now} />
                             {provider.weeklyMultiple &&
                                 usageWindow.windowSeconds === WEEK_SECONDS &&
