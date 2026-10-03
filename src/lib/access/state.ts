@@ -1,5 +1,5 @@
 import { getAccessDb, STATUS_HUB_APP_ID } from "@/lib/access/db"
-import { computeSyncState, getEnvironment, listApps, listAudit, listUsers, readCheckin } from "@/lib/access/policy"
+import { computeSyncState, getEnvironment, listApps, listAudit, listLoginEvents, listUsers, readCheckin } from "@/lib/access/policy"
 
 /** 管理画面が読む全体の状態（#489）。管理者の確認を済ませた呼び出し元だけが使うこと */
 export function buildAccessState(now: Date = new Date()) {
@@ -19,7 +19,7 @@ export function buildAccessState(now: Date = new Date()) {
                   }
                 : computeSyncState(app.version, readCheckin(db, app.id), now),
     }))
-    return { environment: getEnvironment(db), apps, users: listUsers(db), audit: listAudit(db, 100) }
+    return { environment: getEnvironment(db), apps, users: listUsers(db), audit: listAudit(db, 100), logins: listLoginEvents(db) }
 }
 
 export type AccessState = ReturnType<typeof buildAccessState>

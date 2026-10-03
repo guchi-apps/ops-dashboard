@@ -72,6 +72,15 @@ CREATE TABLE IF NOT EXISTS audit (
     before TEXT,
     after TEXT
 );
+CREATE TABLE IF NOT EXISTS login_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    email TEXT NOT NULL,
+    ip TEXT,
+    user_agent TEXT,
+    new_ip INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS login_events_email_ip ON login_events (email, ip);
 CREATE TABLE IF NOT EXISTS checkins (
     app_id TEXT PRIMARY KEY REFERENCES apps(id),
     applied_version INTEGER,

@@ -509,6 +509,11 @@ mod_proxy はクライアントが送った値を消さず、末尾へ実IPを�
 - `year` / `month` を付けずに叩くと、全リポジトリの合計が単一のリポジトリ名に束ねられて返る。
   リポジトリ別の内訳を出すときは必ず指定する
 - 課金レポートのエンドポイントは **fine-grained PAT に非対応**。classic PAT（`repo` と `read:org`）を使う
+- **「API レート制限」のPAT枠と、issue-deckの「guchi-apps」の枠は別物**（#517）。`GH_USAGE_TOKEN`（PAT）の
+  `/rate_limit` は個人の枠（上限5,000）で、issue-deckが表示するのはGitHub Appインストールトークンの枠
+  （上限5,600）。StatusHubはApp枠を `GET $ISSUE_DECK_URL/api/github/rate-limit/apps`（Bearer `OPS_API_TOKEN`）
+  から読む（`src/lib/github-app-rate-limit.ts`。issue-deck側の対応は guchi-apps/issue-deck#3830）。
+  対応前は404で「取得不可」と出る。**PATの `/rate_limit` にGraphQLを足して代用しない**（Projects v2の消費が現れない）
 
 ## マルチエージェント運用（GitHub Actions 無人実行）
 

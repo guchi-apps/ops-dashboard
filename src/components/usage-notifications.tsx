@@ -6,6 +6,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { MENU_ITEM_CLASS, useHeaderMenu } from "@/components/header-menu"
 import { Button } from "@/components/ui/button"
+import type { LoginAlertsMode } from "@/lib/push/web-push"
 import { cn } from "@/lib/utils"
 
 /**
@@ -62,7 +63,7 @@ function toApplicationServerKey(base64Url: string): Uint8Array<ArrayBuffer> {
 async function postSubscription(
     subscription: PushSubscription,
     confirm: boolean,
-    extra: { hostAlerts?: boolean; test?: boolean } = {}
+    extra: { hostAlerts?: boolean; loginAlerts?: LoginAlertsMode; test?: boolean } = {}
 ): Promise<{ ok: boolean; delivered?: boolean }> {
     const res = await fetch("/api/push-subscriptions", {
         method: "POST",
@@ -81,6 +82,20 @@ async function fetchHostAlerts(subscription: PushSubscription): Promise<boolean 
     return ((await res.json()) as { hostAlerts?: boolean | null }).hostAlerts ?? null
 }
 
+/** この端末のログイン通知の設定。サーバーに記録が無い・取れないときは null */
+async function fetchLoginAlerts(subscription: PushSubscription): Promise<LoginAlertsMode | null> {
+    const url = `/api/push-subscriptions?endpoint=${encodeURIComponent(subscription.endpoint)}`
+    const res = await fetch(url, { cache: "no-store" }).catch(() => null)
+    if (!res?.ok) return null
+    return ((await res.json()) as { loginAlerts?: LoginAlertsMode | null }).loginAlerts ?? null
+}
+
+const LOGIN_ALERTS_OPTIONS: { value: LoginAlertsMode; label: string }[] = [
+    { value: "new", label: "新しい接続元のみ" },
+    { value: "always", label: "毎回" },
+    { value: "off", label: "オフ" },
+]
+
 async function subscribe(publicKey: string): Promise<PushSubscription> {
     const registration = await navigator.serviceWorker.ready
     const existing = await registration.pushManager.getSubscription()
@@ -92,7 +107,7 @@ async function subscribe(publicKey: string): Promise<PushSubscription> {
     })
 }
 
-export function UsageNotifications() {
+export function UsageNotifications({ isAdmin = false }: { isAdmin?: boolean }) {
     const [publicKey, setPublicKey] = useState<string | null>(null)
     const [state, setState] = useState<NotifyState>("default")
     const [iosTab, setIosTab] = useState(false)
@@ -100,6 +115,7 @@ export function UsageNotifications() {
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [hostAlerts, setHostAlerts] = useState<boolean | null>(null)
+    const [loginAlerts, setLoginAlerts] = useState<LoginAlertsMode | null>(null)
     const [testResult, setTestResult] = useState<string | null>(null)
     const menu = useHeaderMenu()
 
@@ -126,6 +142,7 @@ export function UsageNotifications() {
                 const subscription = await subscribe(key)
                 await postSubscription(subscription, false)
                 setHostAlerts(await fetchHostAlerts(subscription))
+                setLoginAlerts(await fetchLoginAlerts(subscription))
             }
             if (cancelled) return
 
@@ -183,6 +200,26 @@ export function UsageNotifications() {
             setBusy(false)
         }
     }, [hostAlerts])
+
+    const changeLoginAlerts = useCallback(async (next: LoginAlertsMode) => {
+        setBusy(true)
+        setError(null)
+        try {
+            const registration = await navigator.serviceWorker.ready
+            const subscription = await registration.pushManager.getSubscription()
+            if (!subscription) return
+            if (!(await postSubscription(subscription, false, { loginAlerts: next })).ok) {
+                setError("設定を保存できませんでした。時間をおいてもう一度押してください。")
+                return
+            }
+            setLoginAlerts(next)
+        } catch (reason) {
+            console.error("ログイン通知の設定を変えられませんでした:", reason)
+            setError("設定を保存できませんでした。")
+        } finally {
+            setBusy(false)
+        }
+    }, [])
 
     const sendTest = useCallback(async () => {
         setBusy(true)
@@ -293,6 +330,30 @@ export function UsageNotifications() {
                             {hostAlerts === false ? "オンにする" : "オフにする"}
                         </Button>
                     </div>
+                    {isAdmin && (
+                        <div className="flex flex-col gap-1.5 rounded-md border border-border p-2">
+                            <span>
+                                <span className="font-bold">ログイン通知</span>
+                                <span className="ml-1.5 text-muted-foreground">管理者の端末だけに届きます</span>
+                            </span>
+                            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="ログイン通知">
+                                {LOGIN_ALERTS_OPTIONS.map((option) => (
+                                    <Button
+                                        key={option.value}
+                                        variant={(loginAlerts ?? "always") === option.value ? "default" : "outline"}
+                                        size="sm"
+                                        type="button"
+                                        role="radio"
+                                        aria-checked={(loginAlerts ?? "always") === option.value}
+                                        onClick={() => changeLoginAlerts(option.value)}
+                                        disabled={busy}
+                                    >
+                                        {option.label}
+                                    </Button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                         <Button variant="outline" size="sm" type="button" className="h-11 sm:h-8" onClick={sendTest} disabled={busy}>
                             テスト通知

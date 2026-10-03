@@ -7,6 +7,7 @@ import {
     type UsageCacheEntry,
     type UsageFetchOptions,
 } from "@/lib/usage-cache"
+import { fetchGitHubAppRateLimits } from "@/lib/github-app-rate-limit"
 import type {
     GitHubActionsRepoUsage,
     GitHubActionsUsage,
@@ -355,7 +356,12 @@ export async function getGitHubUsageSnapshot({
     // 取得中に重なった要求は同じ取得へ相乗りさせる（#274）。課金レポートはリポジトリ数ぶんの
     // リクエストになるため、重なると使用量APIのレート制限を余計に消費する
     return singleFlight(async () => {
-        const snapshot = await buildSnapshot(process.env.GH_USAGE_TOKEN, process.env.GH_USAGE_ORG)
+        // App枠はissue-deck経由でPATとは独立に取る。片方の失敗でもう片方を落とさない
+        const [built, appRateLimits] = await Promise.all([
+            buildSnapshot(process.env.GH_USAGE_TOKEN, process.env.GH_USAGE_ORG),
+            fetchGitHubAppRateLimits(),
+        ])
+        const snapshot = { ...built, appRateLimits }
         const ttlMs = snapshot.status === "ok" ? getCacheTtlMs() : ERROR_CACHE_SECONDS * 1000
         cache = newUsageCacheEntry(snapshot, ttlMs)
         return snapshot

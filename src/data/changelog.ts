@@ -14,6 +14,21 @@ export interface ChangelogEntry {
 // 新しいバージョンを配列の先頭に追記していく（changelog-ja skill の運用ルールに従う）
 export const changelog: ChangelogEntry[] = [
     {
+        version: "0.50.0",
+        date: "2026-10-03",
+        changes: [
+            "利用枠の画面で、GitHub App（guchi-apps）のREST・GraphQLのAPI残り枠も確認できるようになりました。",
+            "ログインしたときの通知が、登録した端末へのプッシュ通知で届くようになりました。",
+            "アクセス管理の画面で、ログインの履歴を確認できるようになりました。",
+        ],
+        usage: [
+            "利用枠の画面を開き、GitHubの使用量の欄でGitHub App（guchi-apps）のREST・GraphQLの枠を見る。数値が表示されれば成功。",
+            "ヘッダー右上のメニューの「通知」行で端末を登録する。",
+            "ログインすると登録した端末にプッシュ通知が届く。通知が表示されれば成功。",
+            "アクセス管理の画面を開き、ログイン履歴に直近のログインが並んでいることを確認する。",
+        ],
+    },
+    {
         version: "0.49.2",
         date: "2026-10-03",
         changes: [

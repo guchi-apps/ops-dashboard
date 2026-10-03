@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getStatusHubAccess } from "@/lib/access/status-hub";
 import { sanitizeReturnTo } from "@/lib/return-to";
 import { getRequestOrigin } from "@/lib/request-origin";
-import { notifySignalyLogin } from "@/lib/signaly";
+import { recordAndNotifyLogin } from "@/lib/login-notify";
 import { signOutLocally } from "@/lib/supabase/sign-out";
 
 export const dynamic = "force-dynamic";
@@ -39,12 +39,8 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/login?error=forbidden`);
   }
 
-  // 接続元IP・User-Agent は notifySignalyLogin がリクエストヘッダーから拾う
-  await notifySignalyLogin({
-    email: claims.email,
-    name: (claims.user_metadata?.full_name as string | undefined) ?? null,
-    provider: (claims.app_metadata?.provider as string | undefined) ?? null,
-  });
+  // 接続元IP・User-Agent は recordAndNotifyLogin がリクエストヘッダーから拾う
+  await recordAndNotifyLogin({ email: claims.email });
 
   return NextResponse.redirect(`${origin}${returnTo}`);
 }
