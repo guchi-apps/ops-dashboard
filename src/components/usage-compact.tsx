@@ -142,7 +142,7 @@ export function GitHubUsageCompact({
             {rateLimit && (
                 <UsageBar
                     label="API レート"
-                    note="core"
+                    note="PAT・REST"
                     usedPercent={getRateLimitUsedPercent(rateLimit)}
                     elapsedPercent={getElapsedPercent(
                         new Date(rateLimit.resetsAt).getTime() - RATE_LIMIT_WINDOW_MS,
@@ -152,6 +152,28 @@ export function GitHubUsageCompact({
                     usedText={`${rateLimit.used.toLocaleString("ja-JP")} / ${rateLimit.limit.toLocaleString("ja-JP")}`}
                     remainingText={formatRemaining(rateLimit.resetsAt, now)}
                 />
+            )}
+
+            {snapshot.appRateLimits?.status === "error" && (
+                <p className="text-[10px] text-destructive">
+                    GitHub App の枠: 取得不可（{snapshot.appRateLimits.message ?? "原因不明"}）
+                </p>
+            )}
+            {snapshot.appRateLimits?.installations.flatMap((installation) =>
+                installation.resources.map((resource) => {
+                    const resetsAtMs = new Date(resource.resetsAt).getTime()
+                    return (
+                        <UsageBar
+                            key={`${installation.accountLogin}:${resource.key}`}
+                            label={resource.label}
+                            note={`${installation.accountLogin}・App`}
+                            usedPercent={getRateLimitUsedPercent(resource)}
+                            elapsedPercent={getElapsedPercent(resetsAtMs - RATE_LIMIT_WINDOW_MS, resetsAtMs, now)}
+                            usedText={`${resource.used.toLocaleString("ja-JP")} / ${resource.limit.toLocaleString("ja-JP")}`}
+                            remainingText={formatRemaining(resource.resetsAt, now)}
+                        />
+                    )
+                })
             )}
 
             {listed.length > 0 && (

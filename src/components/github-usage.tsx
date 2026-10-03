@@ -13,7 +13,7 @@ import {
     getElapsedPercent,
     getRateLimitUsedPercent,
 } from "@/lib/usage-format"
-import type { GitHubActionsUsage, GitHubRateLimit } from "@/types/github-usage"
+import type { GitHubActionsUsage, GitHubAppRateLimits, GitHubRateLimit } from "@/types/github-usage"
 
 /** レート制限の枠の長さ（1時間）。経過位置の目印を出すのに使う */
 const RATE_LIMIT_WINDOW_MS = 3_600_000
@@ -200,7 +200,7 @@ function RateLimitCard({ rateLimit, now }: { rateLimit: GitHubRateLimit; now: nu
 
     return (
         <DashboardCard className="h-full flex flex-col gap-3 px-3 py-3 sm:px-4 sm:py-4">
-            <CardHeader title="API レート制限" badge={`${formatNumber(rateLimit.limit)} req/時`} />
+            <CardHeader title="API レート制限（PAT・個人の枠）" badge={`${formatNumber(rateLimit.limit)} req/時`} />
 
             <UsageBar
                 label="1時間あたり"
@@ -226,11 +226,52 @@ function RateLimitCard({ rateLimit, now }: { rateLimit: GitHubRateLimit; now: nu
     )
 }
 
+/** GitHub Appの枠（issue-deck経由）。issue-deckの「GitHub使用量」と同じ数字で、PATの枠とは別 */
+function AppRateLimitCards({ appRateLimits, now }: { appRateLimits: GitHubAppRateLimits; now: number }) {
+    if (appRateLimits.status === "error") {
+        return (
+            <DashboardCard className="px-3 py-3 sm:px-4 sm:py-4">
+                <CardHeader title="GitHub App のレート制限" />
+                <p className="mt-2 text-[11px] sm:text-xs text-destructive">
+                    取得不可（{appRateLimits.message ?? "原因不明"}）
+                </p>
+            </DashboardCard>
+        )
+    }
+
+    return (
+        <>
+            {appRateLimits.installations.map((installation) => (
+                <DashboardCard
+                    key={installation.accountLogin}
+                    className="h-full flex flex-col gap-3 px-3 py-3 sm:px-4 sm:py-4"
+                >
+                    <CardHeader title={`${installation.accountLogin}（GitHub App）`} badge="issue-deck経由" />
+                    {installation.resources.map((resource) => {
+                        const resetsAtMs = new Date(resource.resetsAt).getTime()
+                        return (
+                            <UsageBar
+                                key={resource.key}
+                                label={resource.label}
+                                usedPercent={getRateLimitUsedPercent(resource)}
+                                elapsedPercent={getElapsedPercent(resetsAtMs - RATE_LIMIT_WINDOW_MS, resetsAtMs, now)}
+                                valueText={`残り ${formatNumber(resource.remaining)}`}
+                                usedText={`使用 ${formatNumber(resource.used)} / ${formatNumber(resource.limit)} req`}
+                                remainingText={formatRemaining(resource.resetsAt, now)}
+                            />
+                        )
+                    })}
+                </DashboardCard>
+            ))}
+        </>
+    )
+}
+
 export function GitHubUsage() {
     const { githubUsage: snapshot, now } = useDashboardData()
 
     // 未設定のときは、使わない環境で「未設定」のカードが出続けないようセクションごと隠す
-    if (snapshot?.status === "unconfigured") return null
+    if (snapshot?.status === "unconfigured" && snapshot.appRateLimits?.status !== "ok") return null
 
     if (!snapshot) {
         return (
@@ -265,7 +306,7 @@ export function GitHubUsage() {
                 }
             />
 
-            {snapshot.status === "error" && snapshot.denied ? (
+            {snapshot.status === "unconfigured" ? null : snapshot.status === "error" && snapshot.denied ? (
                 <DashboardCard className="px-3 py-3 sm:px-4 sm:py-4">
                     <AccessDenied
                         reason={`${snapshot.message ?? "GitHubの課金レポートを読む権限がありません"}。GH_USAGE_TOKEN は classic PAT（repo と read:org）が必要です`}
@@ -281,6 +322,12 @@ export function GitHubUsage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                     {snapshot.actions && <ActionsCard actions={snapshot.actions} now={now} />}
                     {snapshot.rateLimit && <RateLimitCard rateLimit={snapshot.rateLimit} now={now} />}
+                </div>
+            )}
+
+            {snapshot.appRateLimits && snapshot.appRateLimits.status !== "unconfigured" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    <AppRateLimitCards appRateLimits={snapshot.appRateLimits} now={now} />
                 </div>
             )}
         </section>

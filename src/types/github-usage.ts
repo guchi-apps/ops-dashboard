@@ -53,6 +53,35 @@ export interface GitHubRateLimit {
     resetsAt: string
 }
 
+/** GitHub Appのインストールトークンの枠1本分。RESTとGraphQLは別枠 */
+export interface GitHubAppRateLimitResource {
+    key: string
+    /** 画面に出す名前（REST・GraphQL） */
+    label: string
+    limit: number
+    remaining: number
+    used: number
+    /** 枠がリセットされる時刻（ISO 8601） */
+    resetsAt: string
+}
+
+export interface GitHubAppInstallationRateLimit {
+    /** インストール先のアカウント名（guchi-apps など） */
+    accountLogin: string
+    resources: GitHubAppRateLimitResource[]
+}
+
+/**
+ * issue-deckが持つGitHub Appのレート制限。`rateLimit`（GH_USAGE_TOKENのPAT＝個人の枠）とは
+ * 別のトークン主体の枠で、数字は一致しない
+ */
+export interface GitHubAppRateLimits {
+    /** unconfigured は ISSUE_DECK_URL か OPS_API_TOKEN が無い状態 */
+    status: GitHubUsageStatus
+    message?: string
+    installations: GitHubAppInstallationRateLimit[]
+}
+
 export interface GitHubUsageSnapshot {
     status: GitHubUsageStatus
     /** status が ok 以外のときに表示する理由 */
@@ -66,6 +95,8 @@ export interface GitHubUsageSnapshot {
     org: string | null
     actions: GitHubActionsUsage | null
     rateLimit: GitHubRateLimit | null
+    /** issue-deck経由で読むGitHub Appの枠。PATの設定有無とは独立 */
+    appRateLimits?: GitHubAppRateLimits
     /** GitHubへ問い合わせた時刻（ISO 8601） */
     fetchedAt: string
 }
