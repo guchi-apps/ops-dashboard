@@ -4,6 +4,7 @@ import { rejectCrossSiteRequest } from "@/lib/csrf"
 import { requireSessionForApi } from "@/lib/session"
 import {
     getVapidPublicKey,
+    isLoginAlertsMode,
     isPushSubscription,
     isWebPushConfigured,
     listSubscriptions,
@@ -36,13 +37,16 @@ export async function GET(request: NextRequest) {
 
     const target = (await listSubscriptions()).find((item) => item.endpoint === endpoint)
     const own = target && (!target.email || target.email === session.user.email)
-    return NextResponse.json({ publicKey, hostAlerts: own ? target.hostAlerts !== false && !!target.email : null })
+    return NextResponse.json({ publicKey, hostAlerts: own ? target.hostAlerts !== false && !!target.email : null,
+        loginAlerts: own ? (target.loginAlerts ?? "always") : null,
+    })
 }
 
 /**
  * `{ subscription, confirm, hostAlerts, test }` — 端末を登録する。confirm が true なら確認の通知を1通送る
  * （ボタンで通知をオンにしたときだけ。起動のたびの登録し直しでは送らない）。
  * `hostAlerts`（真偽値）を渡すと、この端末のホスト・監視の通知を切り替える（渡さなければ現状のまま）。
+ * `loginAlerts`（always / new / off）は管理者の端末へのログイン通知（#516）。
  * test が true なら、この端末だけへホスト通知のテストを送る。
  * 登録した端末は、ログインしている利用者のものとして記録する。
  */
@@ -64,7 +68,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "JSONとして読めませんでした" }, { status: 400 })
     }
 
-    const { subscription, confirm, hostAlerts, test } = (payload ?? {}) as Record<string, unknown>
+    const { subscription, confirm, hostAlerts, loginAlerts, test } = (payload ?? {}) as Record<string, unknown>
     if (!isPushSubscription(subscription)) {
         return NextResponse.json({ error: "購読の形式が正しくありません" }, { status: 400 })
     }
@@ -72,6 +76,7 @@ export async function POST(request: NextRequest) {
     await saveSubscription(subscription, {
         email: session.user.email,
         hostAlerts: typeof hostAlerts === "boolean" ? hostAlerts : undefined,
+        loginAlerts: isLoginAlertsMode(loginAlerts) ? loginAlerts : undefined,
     })
 
     if (test === true) {

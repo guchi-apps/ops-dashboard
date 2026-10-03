@@ -53,11 +53,20 @@ export interface PushSendResult {
     failures: (number | "error")[]
 }
 
+export const LOGIN_ALERTS_MODES = ["always", "new", "off"] as const
+export type LoginAlertsMode = (typeof LOGIN_ALERTS_MODES)[number]
+
+export function isLoginAlertsMode(value: unknown): value is LoginAlertsMode {
+    return typeof value === "string" && (LOGIN_ALERTS_MODES as readonly string[]).includes(value)
+}
+
 export interface StoredSubscription extends PushSubscription {
     /** 登録したログイン利用者のメール（#495）。記録が無い古い購読は、次の登録し直しで紐づく */
     email?: string
     /** ホスト停止・監視異常の通知を受けるか。未設定はオン。端末ごとに切り替える */
     hostAlerts?: boolean
+    /** ログイン通知（#516）。未設定は毎回。管理者の端末にだけ送る */
+    loginAlerts?: LoginAlertsMode
     /** 初めて登録した日時。同じ端末の登録し直しでは変えない（購読が入れ替わったかを見分けるため。#297） */
     createdAt: string
     /** 最後に端末から登録し直された日時。アプリを開くたびに更新される */
@@ -140,7 +149,7 @@ export function isPushSubscription(value: unknown): value is PushSubscription {
  */
 export function saveSubscription(
     subscription: PushSubscription,
-    owner?: { email: string; hostAlerts?: boolean }
+    owner?: { email: string; hostAlerts?: boolean; loginAlerts?: LoginAlertsMode }
 ): Promise<void> {
     return serialize(async () => {
         const state = await readState()
@@ -155,6 +164,9 @@ export function saveSubscription(
             ...((owner?.email ?? existing?.email) && { email: owner?.email ?? existing?.email }),
             ...((owner?.hostAlerts ?? existing?.hostAlerts) !== undefined && {
                 hostAlerts: owner?.hostAlerts ?? existing?.hostAlerts,
+            }),
+            ...((owner?.loginAlerts ?? existing?.loginAlerts) !== undefined && {
+                loginAlerts: owner?.loginAlerts ?? existing?.loginAlerts,
             }),
         })
         await writeState({ subscriptions: others })
