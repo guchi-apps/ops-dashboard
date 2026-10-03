@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { afterEach, describe, it, mock } from "node:test"
-import { resolveSharedToken } from "@/lib/shared-token"
+import { accessAppTokenName, resolveSharedToken } from "@/lib/shared-token"
 
 const ENV_KEYS = ["ISSUE_DECK_URL", "SHARED_TOKEN_API_SECRET"] as const
 
@@ -214,5 +214,12 @@ describe("resolveSharedToken", () => {
         } finally {
             restore()
         }
+    })
+})
+
+describe("accessAppTokenName", () => {
+    it("アプリIDを大文字にし、記号を _ にそろえる", () => {
+        assert.equal(accessAppTokenName("yoteiflow"), "YOTEIFLOW_ACCESS_APP_TOKEN")
+        assert.equal(accessAppTokenName("issue-deck"), "ISSUE_DECK_ACCESS_APP_TOKEN")
     })
 })

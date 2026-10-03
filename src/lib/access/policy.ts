@@ -403,6 +403,11 @@ export function issueAppToken(db: Db, actor: string, appId: string, now: Date): 
     })
 }
 
+/** 発行したトークンを共有トークンへ書き込んだ事実だけを残す（値は残さない。#504） */
+export function recordSharedTokenWrite(db: Db, actor: string, appId: string, sharedName: string, now: Date): void {
+    writeAudit(db, now, actor, "token.shared_write", appId, null, { sharedToken: sharedName })
+}
+
 export function revokeAppToken(db: Db, actor: string, appId: string, now: Date): void {
     tx(db, () => {
         const app = getApp(db, appId)

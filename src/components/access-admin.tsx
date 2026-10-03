@@ -39,6 +39,7 @@ const ACTION_LABEL: Record<string, string> = {
     "token.issue": "トークンを発行",
     "token.reissue": "トークンを再発行",
     "token.revoke": "トークンを失効",
+    "token.shared_write": "共有トークンへ書き込み",
 }
 const TABS = [
     { id: "users", label: "ユーザー" },
@@ -486,6 +487,7 @@ function TokenDialog({ app, onClose }: { app: AppState; onClose: () => void }) {
     const [sending, setSending] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [copied, setCopied] = useState(false)
+    const [shared, setShared] = useState<{ name: string; written: boolean; reason?: string } | null>(null)
 
     const issue = async () => {
         setSending(true)
@@ -493,6 +495,7 @@ function TokenDialog({ app, onClose }: { app: AppState; onClose: () => void }) {
         try {
             const result = await send("POST", "/api/access/admin/apps/token", { id: app.id })
             setToken(String(result.token))
+            setShared((result.sharedToken as typeof shared) ?? null)
             setHasToken(true)
         } catch (e) {
             setError(e instanceof Error ? e.message : "発行に失敗しました")
@@ -505,6 +508,7 @@ function TokenDialog({ app, onClose }: { app: AppState; onClose: () => void }) {
         try {
             await send("DELETE", `/api/access/admin/apps/token?id=${encodeURIComponent(app.id)}`)
             setToken(null)
+            setShared(null)
             setHasToken(false)
         } catch (e) {
             setError(e instanceof Error ? e.message : "失効に失敗しました")
@@ -532,10 +536,25 @@ function TokenDialog({ app, onClose }: { app: AppState; onClose: () => void }) {
                         <Copy aria-hidden />
                         {copied ? "コピーしました" : "コピー"}
                     </Button>
-                    <p className="text-[11px] text-amber-400">この画面を閉じると二度と表示されません。アプリ側の設定へ登録してください。</p>
+                    {shared?.written ? (
+                        <p className="text-[11px] text-muted-foreground">
+                            issue-deckの共有トークン <code className="font-mono">{shared.name}</code> へ書き込みました。アプリ側は共有トークンから読めば、最大10分で新しい値になります。
+                        </p>
+                    ) : (
+                        <p className="text-[11px] text-amber-400">
+                            共有トークンへ書き込めませんでした{shared?.reason ? `（${shared.reason}）` : ""}。上の値を、issue-deckの設定画面から
+                            <code className="font-mono"> {shared?.name ?? "<アプリID>_ACCESS_APP_TOKEN"} </code>として手で登録してください。
+                        </p>
+                    )}
+                    <p className="text-[11px] text-amber-400">この画面を閉じると二度と表示されません。</p>
                 </div>
             ) : (
-                <p className="text-sm">{hasToken ? "発行済みです。再発行すると古いトークンはすぐ使えなくなります。" : "まだ発行されていません。"}</p>
+                <>
+                    <p className="text-sm">{hasToken ? "発行済みです。再発行すると古いトークンはすぐ使えなくなります。" : "まだ発行されていません。"}</p>
+                    {!hasToken && (
+                        <p className="text-[11px] text-muted-foreground">失効してもissue-deckの共有トークンの値は消えません（削除APIが無いため）。失効済みの値では判定に通りません。不要なら設定画面から削除してください。</p>
+                    )}
+                </>
             )}
             <ErrorLine message={error} />
             <div className="flex flex-wrap gap-2">
