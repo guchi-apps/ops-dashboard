@@ -15,6 +15,9 @@ import {
     getApp,
     issueAppToken,
     listAudit,
+    listLoginEvents,
+    LOGIN_EVENT_LIMIT,
+    recordLoginEvent,
     readCheckin,
     recordCheckin,
     revokeAppToken,
@@ -316,5 +319,31 @@ describe("復旧CLI", () => {
         } finally {
             rmSync(dir, { recursive: true, force: true })
         }
+    })
+})
+
+describe("ログイン履歴", () => {
+    it("同じメールで初めて見る接続元IPだけを newIp にする", () => {
+        const db = freshDb()
+        const input = { email: "Owner@Example.com", ip: "203.0.113.1", userAgent: "UA" }
+        assert.equal(recordLoginEvent(db, input, at(0)).newIp, true)
+        assert.equal(recordLoginEvent(db, input, at(1)).newIp, false)
+        assert.equal(recordLoginEvent(db, { ...input, ip: "203.0.113.2" }, at(2)).newIp, true)
+        // 別のメールでは同じIPでも初めて
+        assert.equal(recordLoginEvent(db, { ...input, email: "other@example.com" }, at(3)).newIp, true)
+        assert.equal(listLoginEvents(db)[0].email, "other@example.com")
+    })
+
+    it("IPが取れないときは newIp にしない", () => {
+        const db = freshDb()
+        assert.equal(recordLoginEvent(db, { email: "a@example.com", ip: null, userAgent: null }, at(0)).newIp, false)
+    })
+
+    it("上限を超えた古い履歴は消す", () => {
+        const db = freshDb()
+        for (let i = 0; i < LOGIN_EVENT_LIMIT + 5; i++) {
+            recordLoginEvent(db, { email: "a@example.com", ip: `10.0.0.${i % 250}`, userAgent: null }, at(i))
+        }
+        assert.equal(listLoginEvents(db, 1000).length, LOGIN_EVENT_LIMIT)
     })
 })

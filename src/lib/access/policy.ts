@@ -54,6 +54,19 @@ export type AuditRecord = {
     after: unknown
 }
 
+export type LoginEventRecord = {
+    id: number
+    at: string
+    email: string
+    ip: string | null
+    userAgent: string | null
+    /** そのメールでは初めて見る接続元IPか */
+    newIp: boolean
+}
+
+/** ログイン履歴に残す件数。超えた古い分は消す（接続元IPは個人情報のため貯め続けない） */
+export const LOGIN_EVENT_LIMIT = 200
+
 export type AccessErrorCode = "invalid" | "not_found" | "last_admin"
 
 export class AccessError extends Error {
@@ -188,6 +201,44 @@ export function listAudit(db: Db, limit = 100): AuditRecord[] {
             target: String(row.target),
             before: parseJson(row.before),
             after: parseJson(row.after),
+        }))
+}
+
+/**
+ * ログイン成功を履歴へ残す（#516）。同じメールで同じ接続元IPが履歴に無ければ `newIp`。
+ * IPが取れないときは、見覚えの有無を判断できないため `newIp` にしない。
+ */
+export function recordLoginEvent(
+    db: Db,
+    input: { email: string; ip: string | null; userAgent: string | null },
+    now: Date
+): LoginEventRecord {
+    const email = input.email.trim().toLowerCase()
+    const seen = input.ip
+        ? db.prepare("SELECT 1 FROM login_events WHERE email = ? AND ip = ? LIMIT 1").get(email, input.ip)
+        : undefined
+    const newIp = Boolean(input.ip) && !seen
+    const at = now.toISOString()
+
+    const result = db
+        .prepare("INSERT INTO login_events (at, email, ip, user_agent, new_ip) VALUES (?, ?, ?, ?, ?)")
+        .run(at, email, input.ip, input.userAgent, newIp ? 1 : 0)
+    db.prepare("DELETE FROM login_events WHERE id <= ?").run(Number(result.lastInsertRowid) - LOGIN_EVENT_LIMIT)
+
+    return { id: Number(result.lastInsertRowid), at, email, ip: input.ip, userAgent: input.userAgent, newIp }
+}
+
+export function listLoginEvents(db: Db, limit = LOGIN_EVENT_LIMIT): LoginEventRecord[] {
+    return db
+        .prepare("SELECT * FROM login_events ORDER BY id DESC LIMIT ?")
+        .all(limit)
+        .map((row) => ({
+            id: Number(row.id),
+            at: String(row.at),
+            email: String(row.email),
+            ip: row.ip === null ? null : String(row.ip),
+            userAgent: row.user_agent === null ? null : String(row.user_agent),
+            newIp: Number(row.new_ip) === 1,
         }))
 }
 

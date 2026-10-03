@@ -96,3 +96,8 @@ node scripts/access-recover.mjs set-environment production    # 環境名の食�
 
 - 管理画面の環境表示が「本番」になっていること（`ACCESS_ENVIRONMENT` が届いている）
 - 既存の `ALLOWED_EMAILS` の全員が、管理画面のユーザーに載っていること（欠落・意図しない追加が無いこと）
+
+## ログイン履歴とログイン通知（#516）
+
+ログイン成功は `login_events`（アクセスDB。直近200件）へ残り、アクセス管理の「ログイン履歴」タブで見られる。同じメールで初めて見る接続元IPは `new_ip`（「新しい接続元」）。
+管理者の端末へはWeb Pushで知らせる（`src/lib/login-notify.ts`）。端末ごとに「毎回／新しい接続元のみ／オフ」を通知メニューで選ぶ（既定は毎回）。記録・送信の失敗でログインは止めない。接続元IPは `X-Forwarded-For` の末尾から読む。

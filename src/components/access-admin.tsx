@@ -12,7 +12,7 @@ import { CSRF_HEADERS } from "@/lib/csrf-headers"
 import { cn } from "@/lib/utils"
 
 /**
- * アクセス管理の画面（#489）。ユーザー・アプリ・監査履歴の3タブ。
+ * アクセス管理の画面（#489）。ユーザー・アプリ・監査履歴・ログイン履歴の4タブ（ログイン履歴は #516）。
  * 更新はすべて `/api/access/admin/*`（管理者のセッション＋CSRFヘッダ）へ送る。
  */
 
@@ -45,6 +45,7 @@ const TABS = [
     { id: "users", label: "ユーザー" },
     { id: "apps", label: "アプリ" },
     { id: "audit", label: "監査履歴" },
+    { id: "logins", label: "ログイン履歴" },
 ] as const
 type TabId = (typeof TABS)[number]["id"]
 
@@ -276,6 +277,33 @@ export function AccessAdmin({ currentEmail, initial }: { currentEmail: string; i
                             </li>
                         ))}
                         {state.audit.length === 0 && <li className="py-3 text-sm text-muted-foreground">履歴はまだありません</li>}
+                    </ul>
+                </Panel>
+            )}
+
+            {state && tab === "logins" && (
+                <Panel title="ログイン履歴">
+                    <p className="mb-2 text-[11px] text-muted-foreground">
+                        直近{state.logins.length}件（最大200件）。「新しい接続元」は、そのメールで初めて見る接続元IPです。通知は、ヘッダーの通知メニューで端末ごとに設定します。
+                    </p>
+                    <ul className="divide-y divide-border">
+                        {state.logins.map((login) => (
+                            <li key={login.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+                                <div className="min-w-0 flex-1 basis-56">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="text-sm font-bold [overflow-wrap:anywhere]">{login.email}</span>
+                                        {login.newIp && <StatusBadge tone="warn">新しい接続元</StatusBadge>}
+                                    </div>
+                                    <div className="mt-0.5 text-[11px] text-muted-foreground [overflow-wrap:anywhere]">
+                                        {login.userAgent ?? "User-Agent不明"}
+                                    </div>
+                                </div>
+                                <span className="text-[11px] text-muted-foreground tabular-nums">
+                                    {formatTime(login.at)} ・ {login.ip ?? "IP不明"}
+                                </span>
+                            </li>
+                        ))}
+                        {state.logins.length === 0 && <li className="py-3 text-sm text-muted-foreground">履歴はまだありません</li>}
                     </ul>
                 </Panel>
             )}

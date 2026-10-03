@@ -303,7 +303,7 @@ export function DashboardShell({
                             controlsId={incidentsPanelId}
                         />
                         <HeaderMenu userEmail={userEmail} isAdmin={isAdmin}>
-                            <UsageNotifications />
+                            <UsageNotifications isAdmin={isAdmin} />
                         </HeaderMenu>
                     </div>
                 </header>
