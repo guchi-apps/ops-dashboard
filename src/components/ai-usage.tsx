@@ -8,7 +8,13 @@ import { AccessDenied, SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
 import { formatExpiry, formatRemaining, formatTokens, formatUsd, getElapsedPercent, toDayMarkers } from "@/lib/usage-format"
-import type { AiProviderCredit, AiProviderMeteredUsage, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
+import type {
+    AiProviderCredit,
+    AiProviderMeteredUsage,
+    AiProviderUsage,
+    AiUsageWindow,
+    AiWeeklyMultiple,
+} from "@/types/ai-usage"
 
 /** サブスク枠と区別が付くよう、クレジット枠の行にはこの補足を添える */
 const CREDIT_LABEL = "クレジット枠"
@@ -81,6 +87,26 @@ function CreditRow({ credit, now }: { credit: AiProviderCredit; now: number }) {
     )
 }
 
+const WEEK_SECONDS = 7 * 24 * 60 * 60
+
+/** 週間枠が5時間枠の何倍か。記録からの推定なので、根拠はホバーの title に留めて控えめに出す（#523） */
+function WeeklyMultipleRow({ estimate }: { estimate: AiWeeklyMultiple }) {
+    const { multiple } = estimate
+    const basis =
+        multiple === null
+            ? `週間使用が10%に達すると表示します（いま ${estimate.weeklyPercent}%）`
+            : `今週の5時間枠 ${estimate.fiveHourCount}本（合計 ${estimate.fiveHourTotalPercent}%）÷ 週間使用 ${estimate.weeklyPercent}%${
+                  estimate.lowerBound ? "。観測が足りない枠を含むため実際はこれ以上の可能性" : ""
+              }`
+
+    return (
+        <p title={basis} className="text-[10px] sm:text-xs text-muted-foreground">
+            5時間枠の
+            {multiple === null ? "何倍か: 計測中" : `約${multiple}倍${estimate.lowerBound ? "以上" : ""}`}
+        </p>
+    )
+}
+
 function PlanBadge({ plan }: { plan: string | null }) {
     if (!plan) return null
 
@@ -139,11 +165,12 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
             ) : provider.windows.length > 0 ? (
                 <div className="space-y-3">
                     {provider.windows.map((usageWindow, index) => (
-                        <UsageWindowRow
-                            key={`${usageWindow.label}-${usageWindow.note ?? ""}-${index}`}
-                            window={usageWindow}
-                            now={now}
-                        />
+                        <div key={`${usageWindow.label}-${usageWindow.note ?? ""}-${index}`} className="space-y-1">
+                            <UsageWindowRow window={usageWindow} now={now} />
+                            {provider.weeklyMultiple &&
+                                usageWindow.windowSeconds === WEEK_SECONDS &&
+                                !usageWindow.note && <WeeklyMultipleRow estimate={provider.weeklyMultiple} />}
+                        </div>
                     ))}
                 </div>
             ) : provider.denied ? (
