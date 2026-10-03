@@ -1,16 +1,17 @@
 "use client"
 
 import { CSRF_HEADERS } from "@/lib/csrf-headers"
-import { Bell, BellOff, ChevronDown } from "lucide-react"
-import { useCallback, useEffect, useId, useState } from "react"
-import { MENU_ITEM_CLASS } from "@/components/header-menu"
+import { Bell, BellOff, ChevronRight, X } from "lucide-react"
+import { useCallback, useEffect, useId, useRef, useState } from "react"
+import { createPortal } from "react-dom"
+import { MENU_ITEM_CLASS, useHeaderMenu } from "@/components/header-menu"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 /**
  * ヘッダーメニュー内の「通知」の行（#263・#268）。AI利用枠が上限に近づいたときのプッシュ通知を、この端末で受け取るかを切り替える。
  *
- * 行を押すとその場で設定が開く。判定と送信はサーバー側（`src/lib/ai-usage/alerts.ts`）で、ここがするのは端末の登録だけ。
+ * 行を押すとメニューを閉じて、設定を全画面のモーダルで開く（#503。メニューの幅では見切れるため）。判定と送信はサーバー側（`src/lib/ai-usage/alerts.ts`）で、ここがするのは端末の登録だけ。
  * 通知の許可はボタン操作の中でしか求められない（特にiOS）ため、「通知をオンにする」を押したときに許可を求める。
  * サーバーに鍵が無ければ行ごと出さない。
  *
@@ -100,7 +101,7 @@ export function UsageNotifications() {
     const [error, setError] = useState<string | null>(null)
     const [hostAlerts, setHostAlerts] = useState<boolean | null>(null)
     const [testResult, setTestResult] = useState<string | null>(null)
-    const detailId = useId()
+    const menu = useHeaderMenu()
 
     // 鍵の有無を確かめ、Service Workerを登録する。すでに許可済みの端末は、サーバー側の記録が
     // 消えていても届くよう、起動のたびに購読を登録し直す（確認の通知は送らない）
@@ -153,7 +154,6 @@ export function UsageNotifications() {
                 return
             }
             setHostAlerts(true)
-            setOpen(false)
         } catch (reason) {
             console.error("通知をオンにできませんでした:", reason)
             setError("通知をオンにできませんでした。時間をおいてもう一度押してください。")
@@ -208,6 +208,12 @@ export function UsageNotifications() {
         }
     }, [])
 
+    const focusMenuButton = menu?.focusMenuButton
+    const closeModal = useCallback(() => {
+        setOpen(false)
+        focusMenuButton?.()
+    }, [focusMenuButton])
+
     const disable = useCallback(async () => {
         setBusy(true)
         setError(null)
@@ -224,7 +230,6 @@ export function UsageNotifications() {
             }
             // 許可そのものはページから取り消せないため、次に押したときは確認なしで登録し直す
             setState("default")
-            setOpen(false)
         } catch (reason) {
             console.error("通知をオフにできませんでした:", reason)
             setError("通知をオフにできませんでした。")
@@ -243,9 +248,11 @@ export function UsageNotifications() {
         <div className="mt-1 border-t border-border pt-1">
             <button
                 type="button"
-                onClick={() => setOpen((value) => !value)}
-                aria-expanded={open}
-                aria-controls={detailId}
+                onClick={() => {
+                    menu?.closeMenu()
+                    setOpen(true)
+                }}
+                aria-haspopup="dialog"
                 className={MENU_ITEM_CLASS}
             >
                 <Icon
@@ -261,78 +268,153 @@ export function UsageNotifications() {
                 >
                     {stateLabel}
                 </span>
-                <ChevronDown
-                    className={cn("size-3.5 text-muted-foreground transition-transform motion-reduce:transition-none", open && "rotate-180")}
-                    aria-hidden
-                />
+                <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden />
             </button>
 
             {open && (
-                <div id={detailId} className="mx-1 mb-1 mt-0.5 space-y-2 rounded-md bg-muted p-3 text-xs">
-                    {state === "granted" && (
-                        <>
-                            <p className="font-bold">通知は有効です</p>
-                            <NotifyConditions />
-                            <p className="text-muted-foreground">アプリを閉じていても届きます。</p>
-                            <div className="flex items-center gap-2 rounded-md border border-border p-2">
-                                <span className="flex-1">
-                                    <span className="font-bold">ホスト・監視の障害通知</span>
-                                    <span className="ml-1.5 text-muted-foreground">
-                                        {hostAlerts === false ? "オフ" : "オン"}
-                                    </span>
-                                </span>
-                                <Button variant="outline" size="sm" type="button" onClick={toggleHostAlerts} disabled={busy}>
-                                    {hostAlerts === false ? "オンにする" : "オフにする"}
-                                </Button>
-                            </div>
-                            <div className="flex justify-end gap-2">
-                                <Button variant="outline" size="sm" type="button" onClick={sendTest} disabled={busy}>
-                                    テスト通知
-                                </Button>
-                                <Button variant="outline" size="sm" type="button" onClick={disable} disabled={busy}>
-                                    この端末への通知を止める
-                                </Button>
-                            </div>
-                        </>
-                    )}
-                    {state === "default" && (
-                        <>
-                            <p className="font-bold">通知をオンにしますか？</p>
-                            <NotifyConditions />
-                            <p className="text-muted-foreground">
-                                アプリを閉じていてもこの端末へ通知します。次に出る確認で「許可」を選んでください。
-                            </p>
-                            <div className="flex justify-end">
-                                <Button size="sm" type="button" onClick={enable} disabled={busy}>
-                                    {busy ? "設定中…" : "通知をオンにする"}
-                                </Button>
-                            </div>
-                        </>
-                    )}
-                    {state === "denied" && (
-                        <>
-                            <p className="font-bold">通知がブロックされています</p>
-                            <p className="text-muted-foreground">
-                                以前「許可しない」を選んだため、ここからは許可を求められません。端末（またはブラウザ）の設定で、このサイトの通知を許可してから開き直してください。
-                            </p>
-                        </>
-                    )}
-                    {state === "unsupported" && (
-                        <>
-                            <p className="font-bold">この開き方では通知を受け取れません</p>
-                            <p className="text-muted-foreground">
-                                {iosTab
-                                    ? "iPhone・iPadでは、共有メニューの「ホーム画面に追加」から追加したアプリで開くと使えます。"
-                                    : "このブラウザはプッシュ通知に対応していません。"}
-                            </p>
-                        </>
-                    )}
-                    {testResult && <p className="text-muted-foreground">{testResult}</p>}
-                    {state !== "unsupported" && state !== "denied" && <BadgeNotes />}
-                    {error && <p className="text-destructive">{error}</p>}
-                </div>
+                <NotificationSettingsModal
+                    stateLabel={stateLabel}
+                    enabled={enabled}
+                    onClose={closeModal}
+                >
+{state === "granted" && (
+                <>
+                    <p className="font-bold">通知は有効です</p>
+                    <NotifyConditions />
+                    <p className="text-muted-foreground">アプリを閉じていても届きます。</p>
+                    <div className="flex items-center gap-2 rounded-md border border-border p-2">
+                        <span className="flex-1">
+                            <span className="font-bold">ホスト・監視の障害通知</span>
+                            <span className="ml-1.5 text-muted-foreground">
+                                {hostAlerts === false ? "オフ" : "オン"}
+                            </span>
+                        </span>
+                        <Button variant="outline" size="sm" type="button" onClick={toggleHostAlerts} disabled={busy}>
+                            {hostAlerts === false ? "オンにする" : "オフにする"}
+                        </Button>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                        <Button variant="outline" size="sm" type="button" className="h-11 sm:h-8" onClick={sendTest} disabled={busy}>
+                            テスト通知
+                        </Button>
+                        <Button variant="outline" size="sm" type="button" className="h-11 sm:h-8" onClick={disable} disabled={busy}>
+                            この端末への通知を止める
+                        </Button>
+                    </div>
+                </>
+            )}
+            {state === "default" && (
+                <>
+                    <p className="font-bold">通知をオンにしますか？</p>
+                    <NotifyConditions />
+                    <p className="text-muted-foreground">
+                        アプリを閉じていてもこの端末へ通知します。次に出る確認で「許可」を選んでください。
+                    </p>
+                    <div className="flex flex-col sm:flex-row sm:justify-end">
+                        <Button size="sm" type="button" className="h-11 sm:h-8" onClick={enable} disabled={busy}>
+                            {busy ? "設定中…" : "通知をオンにする"}
+                        </Button>
+                    </div>
+                </>
+            )}
+            {state === "denied" && (
+                <>
+                    <p className="font-bold">通知がブロックされています</p>
+                    <p className="text-muted-foreground">
+                        以前「許可しない」を選んだため、ここからは許可を求められません。端末（またはブラウザ）の設定で、このサイトの通知を許可してから開き直してください。
+                    </p>
+                </>
+            )}
+            {state === "unsupported" && (
+                <>
+                    <p className="font-bold">この開き方では通知を受け取れません</p>
+                    <p className="text-muted-foreground">
+                        {iosTab
+                            ? "iPhone・iPadでは、共有メニューの「ホーム画面に追加」から追加したアプリで開くと使えます。"
+                            : "このブラウザはプッシュ通知に対応していません。"}
+                    </p>
+                </>
+            )}
+            {testResult && <p className="text-muted-foreground">{testResult}</p>}
+            {state !== "unsupported" && state !== "denied" && <BadgeNotes />}
+            {error && <p className="text-destructive">{error}</p>}
+                </NotificationSettingsModal>
             )}
         </div>
+    )
+}
+
+/**
+ * 通知設定のモーダル（#503）。スマホ幅は全画面、sm以上は中央のダイアログ。
+ * メニューのパネルは transform を持つ祖先の中にあり `fixed` が画面基準にならないため、body 直下へ portal で出す。
+ * 閉じたときのフォーカスは、非表示になった「通知」行ではなく呼び出し側（メニューボタン）へ戻す。
+ */
+function NotificationSettingsModal({
+    stateLabel,
+    enabled,
+    onClose,
+    children,
+}: {
+    stateLabel: string
+    enabled: boolean
+    onClose: () => void
+    children: React.ReactNode
+}) {
+    const closeRef = useRef<HTMLButtonElement>(null)
+    const titleId = useId()
+
+    useEffect(() => {
+        const previousOverflow = document.body.style.overflow
+        document.body.style.overflow = "hidden"
+        closeRef.current?.focus()
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") onClose()
+        }
+        document.addEventListener("keydown", onKeyDown)
+        return () => {
+            document.removeEventListener("keydown", onKeyDown)
+            document.body.style.overflow = previousOverflow
+        }
+    }, [onClose])
+
+    return createPortal(
+        <div className="fixed inset-0 z-[60] bg-black/60 sm:flex sm:items-center sm:justify-center sm:p-5" onClick={onClose}>
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                onClick={(event) => event.stopPropagation()}
+                className="flex h-dvh w-full flex-col bg-popover text-popover-foreground sm:h-auto sm:max-h-[min(86dvh,760px)] sm:max-w-[520px] sm:rounded-2xl sm:border sm:border-border sm:shadow-2xl"
+            >
+                <div className="flex shrink-0 items-center gap-2.5 border-b border-border px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+                    <h2 id={titleId} className="flex-1 text-base font-bold">
+                        通知
+                    </h2>
+                    <span
+                        className={cn(
+                            "rounded-full px-2 py-px text-[11px] font-bold",
+                            enabled ? "bg-primary/10 text-primary" : "font-normal text-muted-foreground"
+                        )}
+                    >
+                        {stateLabel}
+                    </span>
+                    <button
+                        ref={closeRef}
+                        type="button"
+                        onClick={onClose}
+                        aria-label="閉じる"
+                        className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+                    >
+                        <X className="size-4" aria-hidden />
+                    </button>
+                </div>
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4 text-sm">
+                    {children}
+                </div>
+            </div>
+        </div>,
+        document.body
     )
 }
 
