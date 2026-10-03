@@ -319,3 +319,60 @@ describe("applyAiUsageHistory: 観測の粗さ（undersampled）", () => {
         assert.equal(history?.[0].records[0].undersampled, false)
     })
 })
+
+describe("applyAiUsageHistory: 週間枠が5時間枠の何倍か", () => {
+    const weekReset = T0 + 5 * DAY
+
+    async function multipleOf(now: number, windows: AiUsageWindow[]) {
+        const snapshot = makeSnapshot([makeProvider("claude", windows)], now)
+        await applyAiUsageHistory(snapshot)
+        return snapshot.providers[0].weeklyMultiple
+    }
+
+    it("今週の5時間枠の合計 ÷ 週間使用率で倍率を出す", async (t) => {
+        setup(t)
+        // 週の開始 = T0 - 2日。5時間枠を3本、それぞれ終了間際まで観測する
+        await multipleOf(T0 - DAY, [window5h(60, T0 - DAY + 5 * HOUR), weekly(10, weekReset)])
+        await multipleOf(T0 - DAY + 5 * HOUR - MINUTE, [window5h(60, T0 - DAY + 5 * HOUR), weekly(10, weekReset)])
+        await multipleOf(T0 - 12 * HOUR, [window5h(40, T0 - 7 * HOUR), weekly(20, weekReset)])
+        await multipleOf(T0 - 7 * HOUR - MINUTE, [window5h(40, T0 - 7 * HOUR), weekly(20, weekReset)])
+        const result = await multipleOf(T0, [window5h(20, T0 + 5 * HOUR), weekly(40, weekReset)])
+
+        assert.ok(result)
+        assert.equal(result.fiveHourCount, 3)
+        assert.equal(result.fiveHourTotalPercent, 120)
+        assert.equal(result.multiple, 3)
+        assert.equal(result.lowerBound, false)
+    })
+
+    it("週間使用率が10%未満なら倍率は出さず計測中にする", async (t) => {
+        setup(t)
+        const result = await multipleOf(T0, [window5h(30, T0 + 5 * HOUR), weekly(5, weekReset)])
+
+        assert.ok(result)
+        assert.equal(result.multiple, null)
+    })
+
+    it("終了間際に観測できていない5時間枠を含むときは lowerBound を立てる", async (t) => {
+        setup(t)
+        await multipleOf(T0 - 10 * HOUR, [window5h(30, T0 - 5 * HOUR), weekly(15, weekReset)])
+        const result = await multipleOf(T0, [window5h(10, T0 + 5 * HOUR), weekly(20, weekReset)])
+
+        assert.ok(result)
+        assert.equal(result.lowerBound, true)
+    })
+
+    it("週の開始より前に始まった5時間枠は数えない", async (t) => {
+        setup(t)
+        const weekStart = weekReset - 7 * DAY
+        await multipleOf(weekStart + MINUTE, [window5h(50, weekStart + 2 * HOUR), weekly(1, weekReset)])
+        const result = await multipleOf(weekStart + 10 * HOUR, [
+            window5h(20, weekStart + 12 * HOUR),
+            weekly(20, weekReset),
+        ])
+
+        assert.ok(result)
+        assert.equal(result.fiveHourCount, 1)
+        assert.equal(result.fiveHourTotalPercent, 20)
+    })
+})

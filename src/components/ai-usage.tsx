@@ -8,7 +8,13 @@ import { AccessDenied, SkeletonBar, SkeletonGroup } from "@/components/skeleton"
 import { SectionHeading } from "@/components/section-heading"
 import { UsageBar } from "@/components/usage-bar"
 import { formatExpiry, formatRemaining, formatTokens, formatUsd, getElapsedPercent, toDayMarkers } from "@/lib/usage-format"
-import type { AiProviderCredit, AiProviderMeteredUsage, AiProviderUsage, AiUsageWindow } from "@/types/ai-usage"
+import type {
+    AiProviderCredit,
+    AiProviderMeteredUsage,
+    AiProviderUsage,
+    AiUsageWindow,
+    AiWeeklyMultiple,
+} from "@/types/ai-usage"
 
 /** サブスク枠と区別が付くよう、クレジット枠の行にはこの補足を添える */
 const CREDIT_LABEL = "クレジット枠"
@@ -81,6 +87,33 @@ function CreditRow({ credit, now }: { credit: AiProviderCredit; now: number }) {
     )
 }
 
+const WEEK_SECONDS = 7 * 24 * 60 * 60
+
+/** 週間枠が5時間枠の何倍か。記録からの推定なので、根拠と「以上」の注記を添える（#523） */
+function WeeklyMultipleRow({ estimate }: { estimate: AiWeeklyMultiple }) {
+    const { multiple } = estimate
+
+    return (
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 rounded-md border border-dashed border-border px-2.5 py-2">
+            <span className="text-[11px] sm:text-xs">週間枠 ≒ 5時間枠</span>
+            {multiple === null ? (
+                <span className="font-mono text-sm font-bold text-muted-foreground">計測中</span>
+            ) : (
+                <span className="font-mono text-base sm:text-lg font-bold text-primary">
+                    {estimate.lowerBound ? `約${multiple}倍以上` : `約${multiple}倍`}
+                </span>
+            )}
+            <span className="w-full text-[10px] text-muted-foreground">
+                {multiple === null
+                    ? `週間使用が10%に達すると表示します（いま ${estimate.weeklyPercent}%）`
+                    : `今週の5時間枠 ${estimate.fiveHourCount}本（合計 ${estimate.fiveHourTotalPercent}%）÷ 週間使用 ${estimate.weeklyPercent}%${
+                          estimate.lowerBound ? "。観測が足りない枠を含むため実際はこれ以上の可能性" : ""
+                      }`}
+            </span>
+        </div>
+    )
+}
+
 function PlanBadge({ plan }: { plan: string | null }) {
     if (!plan) return null
 
@@ -139,11 +172,12 @@ function ProviderCard({ provider, now }: { provider: AiProviderUsage; now: numbe
             ) : provider.windows.length > 0 ? (
                 <div className="space-y-3">
                     {provider.windows.map((usageWindow, index) => (
-                        <UsageWindowRow
-                            key={`${usageWindow.label}-${usageWindow.note ?? ""}-${index}`}
-                            window={usageWindow}
-                            now={now}
-                        />
+                        <div key={`${usageWindow.label}-${usageWindow.note ?? ""}-${index}`} className="space-y-2">
+                            <UsageWindowRow window={usageWindow} now={now} />
+                            {provider.weeklyMultiple &&
+                                usageWindow.windowSeconds === WEEK_SECONDS &&
+                                !usageWindow.note && <WeeklyMultipleRow estimate={provider.weeklyMultiple} />}
+                        </div>
                     ))}
                 </div>
             ) : provider.denied ? (

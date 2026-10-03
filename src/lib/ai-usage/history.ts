@@ -5,6 +5,7 @@ import type {
     AiUsageWindow,
     AiUsageWindowHistory,
     AiUsageWindowRecord,
+    AiWeeklyMultiple,
 } from "@/types/ai-usage"
 
 /**
@@ -25,7 +26,7 @@ import type {
 export const FULL_USE_PERCENT = 90
 
 /** 枠の種類ごとに残す件数。画面に出す本数より多めに持ち、表示の上限を増やしても記録側を触らずに済むようにする */
-const MAX_STORED_ENTRIES = 24
+const MAX_STORED_ENTRIES = 48
 
 /** 画面に並べる本数。1日より短い枠（5時間枠）は本数を多めにして直近数日ぶんが見えるようにする */
 const SHORT_WINDOW_DISPLAY = 12
@@ -220,6 +221,55 @@ function toHistory(stored: StoredWindow, now: number): AiUsageWindowHistory | nu
     }
 }
 
+const FIVE_HOUR_SECONDS = 5 * 60 * 60
+const WEEK_SECONDS = 7 * 24 * 60 * 60
+
+/** これ未満の週間使用率では、整数%の丸めで倍率が大きくぶれるため推定しない */
+export const MIN_WEEKLY_PERCENT_FOR_MULTIPLE = 10
+
+/**
+ * 週間枠が5時間枠の何倍かを推定する（#523）。
+ * 今週（週間枠の開始以降に始まった）5時間枠の使用率の合計 ÷ 週間枠の使用率。
+ * 観測が足りない終了済みの5時間枠は低く記録されるため、含むときは `lowerBound` を立てる。
+ */
+export function estimateWeeklyMultiple(
+    fiveHourEntries: StoredEntry[],
+    weeklyEntry: StoredEntry,
+    now: number
+): AiWeeklyMultiple | null {
+    const weeklyResetsAt = Date.parse(weeklyEntry.resetsAt)
+    if (Number.isNaN(weeklyResetsAt) || weeklyResetsAt <= now) return null
+
+    const weekStart = weeklyResetsAt - WEEK_SECONDS * 1000
+    const tolerance = undersampledToleranceMs(FIVE_HOUR_SECONDS)
+
+    let count = 0
+    let total = 0
+    let lowerBound = false
+
+    for (const entry of fiveHourEntries) {
+        const resetsAt = Date.parse(entry.resetsAt)
+        if (Number.isNaN(resetsAt)) continue
+        // 週の境目をまたぐ枠は、どちらの週の使用か分からないので数えない
+        if (resetsAt - FIVE_HOUR_SECONDS * 1000 < weekStart) continue
+
+        count += 1
+        total += entry.usedPercent
+        if (resetsAt <= now && resetsAt - Date.parse(entry.observedAt) > tolerance) lowerBound = true
+    }
+
+    const weeklyPercent = weeklyEntry.usedPercent
+    const usable = weeklyPercent >= MIN_WEEKLY_PERCENT_FOR_MULTIPLE && total > 0
+
+    return {
+        multiple: usable ? Math.round((total / weeklyPercent) * 10) / 10 : null,
+        fiveHourCount: count,
+        fiveHourTotalPercent: Math.round(total),
+        weeklyPercent: Math.round(weeklyPercent * 10) / 10,
+        lowerBound,
+    }
+}
+
 function buildHistory(stored: Record<string, StoredWindow>, now: number): AiUsageWindowHistory[] {
     return Object.values(stored)
         .map((window) => toHistory(window, now))
@@ -251,5 +301,12 @@ export async function applyAiUsageHistory(snapshot: AiUsageSnapshot): Promise<vo
 
         const history = buildHistory(stored, now)
         if (history.length > 0) provider.windowHistory = history
+
+        if (provider.id === "claude") {
+            const fiveHour = stored[`${FIVE_HOUR_SECONDS}:`]?.entries
+            const weeklyEntry = stored[`${WEEK_SECONDS}:`]?.entries.at(-1)
+            const multiple = fiveHour && weeklyEntry && estimateWeeklyMultiple(fiveHour, weeklyEntry, now)
+            if (multiple) provider.weeklyMultiple = multiple
+        }
     }
 }
