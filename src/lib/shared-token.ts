@@ -123,3 +123,46 @@ async function fetchSharedToken(
         return { value: cache.value, cache, failed: true }
     }
 }
+
+/**
+ * アプリ別アクセストークンを置く共有トークンの名前（#504）。
+ * `yoteiflow` → `YOTEIFLOW_ACCESS_APP_TOKEN`。アプリIDの記号は `_` にそろえる。
+ */
+export function accessAppTokenName(appId: string): string {
+    return `${appId.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_ACCESS_APP_TOKEN`
+}
+
+export type SharedTokenWriteResult = { ok: true; name: string } | { ok: false; name: string; reason: string }
+
+/**
+ * issue-deckの共有トークンへ値を書き込む（`PUT /api/shared-tokens`。名前があれば置き換え、無ければ作成）。
+ * 失敗しても例外は投げない。呼び出し側は発行自体を成功させ、手で登録する案内を出す。
+ * 値・Bearerはログにも戻り値の`reason`にも含めない。
+ */
+export async function writeSharedToken(name: string, value: string, description: string): Promise<SharedTokenWriteResult> {
+    const baseUrl = process.env.ISSUE_DECK_URL
+    const secret = process.env.SHARED_TOKEN_API_SECRET
+    if (!baseUrl || !secret) return { ok: false, name, reason: "ISSUE_DECK_URL・SHARED_TOKEN_API_SECRET が未設定です" }
+    try {
+        const res = await fetchWithTimeout(
+            `${baseUrl.replace(/\/+$/, "")}/api/shared-tokens`,
+            {
+                method: "PUT",
+                headers: {
+                    authorization: `Bearer ${secret}`,
+                    "x-shared-token-consumer": "ops-dashboard",
+                    "content-type": "application/json",
+                    accept: "application/json",
+                },
+                body: JSON.stringify({ name, value, description }),
+            },
+            TIMEOUT_MS
+        )
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return { ok: true, name }
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : "不明なエラー"
+        console.error(`共有トークンへの書き込みに失敗しました(${name}):`, reason)
+        return { ok: false, name, reason }
+    }
+}
